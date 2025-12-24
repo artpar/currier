@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-integration coverage clean
+.PHONY: build test test-unit test-integration test-e2e e2e e2e-cli e2e-tui e2e-update coverage clean
 
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo "dev")
 LDFLAGS := -X main.version=$(VERSION)
@@ -18,6 +18,25 @@ test-unit:
 # Run integration tests only
 test-integration:
 	go test -v -race ./tests/integration/...
+
+# Run E2E tests
+test-e2e: e2e
+
+# Run all E2E tests
+e2e:
+	go test -v -timeout 5m ./e2e/...
+
+# Run CLI E2E tests only
+e2e-cli:
+	go test -v -timeout 5m ./e2e/cli/...
+
+# Run TUI E2E tests only
+e2e-tui:
+	go test -v -timeout 5m ./e2e/tui/...
+
+# Update golden files
+e2e-update:
+	UPDATE_GOLDEN=1 go test -v -timeout 5m ./e2e/...
 
 # Run tests with coverage
 coverage:
