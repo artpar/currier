@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/tui/views"
 )
 
@@ -42,6 +43,21 @@ func (r *TUIRunner) StartWithSize(t *testing.T, width, height int) *TUISession {
 
 	model := views.NewMainView()
 	model.SetSize(width, height)
+
+	return &TUISession{
+		runner: r,
+		model:  model,
+		t:      t,
+	}
+}
+
+// StartWithCollections starts a TUI session with pre-loaded collections.
+func (r *TUIRunner) StartWithCollections(t *testing.T, collections []*core.Collection) *TUISession {
+	t.Helper()
+
+	model := views.NewMainView()
+	model.SetSize(120, 40)
+	model.SetCollections(collections)
 
 	return &TUISession{
 		runner: r,
