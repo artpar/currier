@@ -29,6 +29,16 @@ type SendRequestMsg struct {
 	Request *core.RequestDefinition
 }
 
+// ResponseReceivedMsg is sent when a response is received.
+type ResponseReceivedMsg struct {
+	Response *core.Response
+}
+
+// RequestErrorMsg is sent when a request fails.
+type RequestErrorMsg struct {
+	Error error
+}
+
 // RequestPanel displays and edits request details.
 type RequestPanel struct {
 	title     string

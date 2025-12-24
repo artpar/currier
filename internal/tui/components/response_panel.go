@@ -37,6 +37,7 @@ type ResponsePanel struct {
 	activeTab    ResponseTab
 	scrollOffset int
 	loading      bool
+	err          error
 }
 
 // NewResponsePanel creates a new response panel.
@@ -171,6 +172,18 @@ func (p *ResponsePanel) View() string {
 			Foreground(lipgloss.Color("214"))
 
 		content := loadingStyle.Render("Loading...")
+		return p.wrapWithBorder(title + "\n" + content)
+	}
+
+	// Error state
+	if p.err != nil {
+		errorStyle := lipgloss.NewStyle().
+			Width(p.width - 4).
+			Height(p.height - 4).
+			Align(lipgloss.Center, lipgloss.Center).
+			Foreground(lipgloss.Color("196"))
+
+		content := errorStyle.Render("Error: " + p.err.Error())
 		return p.wrapWithBorder(title + "\n" + content)
 	}
 
@@ -419,6 +432,7 @@ func (p *ResponsePanel) SetResponse(resp *core.Response) {
 	p.response = resp
 	p.scrollOffset = 0
 	p.loading = false
+	p.err = nil
 }
 
 // ActiveTab returns the currently active tab.
@@ -450,6 +464,17 @@ func (p *ResponsePanel) IsLoading() bool {
 // SetLoading sets the loading state.
 func (p *ResponsePanel) SetLoading(loading bool) {
 	p.loading = loading
+}
+
+// SetError sets an error to display.
+func (p *ResponsePanel) SetError(err error) {
+	p.err = err
+	p.response = nil
+}
+
+// Error returns the current error.
+func (p *ResponsePanel) Error() error {
+	return p.err
 }
 
 // IsSuccess returns true if status is 2xx.

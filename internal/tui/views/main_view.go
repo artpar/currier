@@ -1,11 +1,14 @@
 package views
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
+	httpclient "github.com/artpar/currier/internal/protocol/http"
 	"github.com/artpar/currier/internal/tui"
 	"github.com/artpar/currier/internal/tui/components"
 )
@@ -77,7 +80,17 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 
 	case components.SendRequestMsg:
 		v.response.SetLoading(true)
-		// TODO: Actually send the request
+		v.focusPane(PaneResponse)
+		return v, sendRequest(msg.Request)
+
+	case components.ResponseReceivedMsg:
+		v.response.SetLoading(false)
+		v.response.SetResponse(msg.Response)
+		return v, nil
+
+	case components.RequestErrorMsg:
+		v.response.SetLoading(false)
+		v.response.SetError(msg.Error)
 		return v, nil
 	}
 
@@ -320,4 +333,31 @@ func (v *MainView) ShowHelp() {
 // HideHelp hides the help overlay.
 func (v *MainView) HideHelp() {
 	v.showHelp = false
+}
+
+// sendRequest creates a tea.Cmd that sends an HTTP request asynchronously.
+func sendRequest(reqDef *core.RequestDefinition) tea.Cmd {
+	return func() tea.Msg {
+		// Convert RequestDefinition to Request
+		req, err := reqDef.ToRequest()
+		if err != nil {
+			return components.RequestErrorMsg{Error: err}
+		}
+
+		// Create HTTP client with timeout
+		client := httpclient.NewClient(
+			httpclient.WithTimeout(30 * time.Second),
+		)
+
+		// Send the request
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		resp, err := client.Send(ctx, req)
+		if err != nil {
+			return components.RequestErrorMsg{Error: err}
+		}
+
+		return components.ResponseReceivedMsg{Response: resp}
+	}
 }
