@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
@@ -35,7 +36,12 @@ type MainView struct {
 	showHelp     bool
 	environment  *core.Environment
 	interpolator *interpolate.Engine
+	notification string    // Temporary notification message
+	notifyUntil  time.Time // When to clear notification
 }
+
+// clearNotificationMsg is sent to clear the notification.
+type clearNotificationMsg struct{}
 
 // NewMainView creates a new main view.
 func NewMainView() *MainView {
@@ -97,10 +103,37 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		v.response.SetLoading(false)
 		v.response.SetError(msg.Error)
 		return v, nil
+
+	case components.CopyMsg:
+		return v.handleCopy(msg.Content)
+
+	case clearNotificationMsg:
+		v.notification = ""
+		return v, nil
 	}
 
 	// Forward messages to focused pane
 	return v.forwardToFocusedPane(msg)
+}
+
+func (v *MainView) handleCopy(content string) (tui.Component, tea.Cmd) {
+	err := clipboard.WriteAll(content)
+	if err != nil {
+		v.notification = "✗ Copy failed"
+	} else {
+		size := len(content)
+		if size > 1024 {
+			v.notification = fmt.Sprintf("✓ Copied %.1fKB", float64(size)/1024)
+		} else {
+			v.notification = fmt.Sprintf("✓ Copied %dB", size)
+		}
+	}
+	v.notifyUntil = time.Now().Add(2 * time.Second)
+
+	// Schedule clearing the notification
+	return v, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return clearNotificationMsg{}
+	})
 }
 
 func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
@@ -267,6 +300,18 @@ func (v *MainView) renderStatusBar() string {
 			Foreground(lipgloss.Color("245")).
 			Padding(0, 1)
 		items = append(items, countStyle.Render(fmt.Sprintf("%d vars, %d secrets", len(vars), len(secrets))))
+	}
+
+	// Add notification if present
+	if v.notification != "" {
+		notifyStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("34")).
+			Bold(true).
+			Padding(0, 1)
+		if strings.HasPrefix(v.notification, "✗") {
+			notifyStyle = notifyStyle.Foreground(lipgloss.Color("160"))
+		}
+		items = append(items, notifyStyle.Render(v.notification))
 	}
 
 	// Help hint on the right
