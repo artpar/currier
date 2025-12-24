@@ -1,0 +1,520 @@
+package core
+
+import (
+	"encoding/json"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// Collection represents a group of API requests.
+type Collection struct {
+	id          string
+	name        string
+	description string
+	version     string
+	variables   map[string]string
+	folders     []*Folder
+	requests    []*RequestDefinition
+	auth        AuthConfig
+	preScript   string
+	postScript  string
+	createdAt   time.Time
+	updatedAt   time.Time
+}
+
+// AuthConfig holds authentication configuration.
+type AuthConfig struct {
+	Type     string `json:"type" yaml:"type"`
+	Token    string `json:"token,omitempty" yaml:"token,omitempty"`
+	Username string `json:"username,omitempty" yaml:"username,omitempty"`
+	Password string `json:"password,omitempty" yaml:"password,omitempty"`
+	Key      string `json:"key,omitempty" yaml:"key,omitempty"`
+	Value    string `json:"value,omitempty" yaml:"value,omitempty"`
+	In       string `json:"in,omitempty" yaml:"in,omitempty"` // header, query
+}
+
+// NewCollection creates a new collection with the given name.
+func NewCollection(name string) *Collection {
+	now := time.Now()
+	return &Collection{
+		id:        uuid.New().String(),
+		name:      name,
+		variables: make(map[string]string),
+		folders:   make([]*Folder, 0),
+		requests:  make([]*RequestDefinition, 0),
+		createdAt: now,
+		updatedAt: now,
+	}
+}
+
+func (c *Collection) ID() string          { return c.id }
+func (c *Collection) Name() string        { return c.name }
+func (c *Collection) Description() string { return c.description }
+func (c *Collection) Version() string     { return c.version }
+func (c *Collection) CreatedAt() time.Time { return c.createdAt }
+func (c *Collection) UpdatedAt() time.Time { return c.updatedAt }
+func (c *Collection) Auth() AuthConfig    { return c.auth }
+func (c *Collection) PreScript() string   { return c.preScript }
+func (c *Collection) PostScript() string  { return c.postScript }
+
+func (c *Collection) SetDescription(desc string) {
+	c.description = desc
+	c.touch()
+}
+
+func (c *Collection) SetVersion(version string) {
+	c.version = version
+	c.touch()
+}
+
+func (c *Collection) SetAuth(auth AuthConfig) {
+	c.auth = auth
+	c.touch()
+}
+
+func (c *Collection) SetPreScript(script string) {
+	c.preScript = script
+	c.touch()
+}
+
+func (c *Collection) SetPostScript(script string) {
+	c.postScript = script
+	c.touch()
+}
+
+func (c *Collection) touch() {
+	c.updatedAt = time.Now()
+}
+
+// Variables returns all collection variables.
+func (c *Collection) Variables() map[string]string {
+	result := make(map[string]string)
+	for k, v := range c.variables {
+		result[k] = v
+	}
+	return result
+}
+
+// GetVariable returns a variable value.
+func (c *Collection) GetVariable(key string) string {
+	return c.variables[key]
+}
+
+// SetVariable sets a variable value.
+func (c *Collection) SetVariable(key, value string) {
+	c.variables[key] = value
+	c.touch()
+}
+
+// DeleteVariable removes a variable.
+func (c *Collection) DeleteVariable(key string) {
+	delete(c.variables, key)
+	c.touch()
+}
+
+// Folders returns all top-level folders.
+func (c *Collection) Folders() []*Folder {
+	return c.folders
+}
+
+// AddFolder adds a new folder to the collection.
+func (c *Collection) AddFolder(name string) *Folder {
+	folder := NewFolder(name)
+	c.folders = append(c.folders, folder)
+	c.touch()
+	return folder
+}
+
+// GetFolder returns a folder by ID.
+func (c *Collection) GetFolder(id string) (*Folder, bool) {
+	for _, f := range c.folders {
+		if f.ID() == id {
+			return f, true
+		}
+	}
+	return nil, false
+}
+
+// GetFolderByName returns a folder by name.
+func (c *Collection) GetFolderByName(name string) (*Folder, bool) {
+	for _, f := range c.folders {
+		if f.Name() == name {
+			return f, true
+		}
+	}
+	return nil, false
+}
+
+// RemoveFolder removes a folder by ID.
+func (c *Collection) RemoveFolder(id string) {
+	for i, f := range c.folders {
+		if f.ID() == id {
+			c.folders = append(c.folders[:i], c.folders[i+1:]...)
+			c.touch()
+			return
+		}
+	}
+}
+
+// Requests returns all root-level requests.
+func (c *Collection) Requests() []*RequestDefinition {
+	return c.requests
+}
+
+// AddRequest adds a request to the collection root.
+func (c *Collection) AddRequest(req *RequestDefinition) {
+	c.requests = append(c.requests, req)
+	c.touch()
+}
+
+// GetRequest returns a request by ID from root level.
+func (c *Collection) GetRequest(id string) (*RequestDefinition, bool) {
+	for _, r := range c.requests {
+		if r.ID() == id {
+			return r, true
+		}
+	}
+	return nil, false
+}
+
+// FindRequest searches for a request by ID in the entire collection.
+func (c *Collection) FindRequest(id string) (*RequestDefinition, bool) {
+	// Check root requests
+	if req, ok := c.GetRequest(id); ok {
+		return req, true
+	}
+	// Check folders recursively
+	for _, f := range c.folders {
+		if req, ok := f.FindRequest(id); ok {
+			return req, true
+		}
+	}
+	return nil, false
+}
+
+// RemoveRequest removes a request by ID from root level.
+func (c *Collection) RemoveRequest(id string) {
+	for i, r := range c.requests {
+		if r.ID() == id {
+			c.requests = append(c.requests[:i], c.requests[i+1:]...)
+			c.touch()
+			return
+		}
+	}
+}
+
+// Clone creates a deep copy of the collection.
+func (c *Collection) Clone() *Collection {
+	clone := NewCollection(c.name)
+	clone.description = c.description
+	clone.version = c.version
+	clone.auth = c.auth
+	clone.preScript = c.preScript
+	clone.postScript = c.postScript
+
+	for k, v := range c.variables {
+		clone.variables[k] = v
+	}
+
+	for _, f := range c.folders {
+		clone.folders = append(clone.folders, f.Clone())
+	}
+
+	for _, r := range c.requests {
+		clone.requests = append(clone.requests, r.Clone())
+	}
+
+	return clone
+}
+
+// Folder represents a folder within a collection.
+type Folder struct {
+	id          string
+	name        string
+	description string
+	folders     []*Folder
+	requests    []*RequestDefinition
+}
+
+// NewFolder creates a new folder.
+func NewFolder(name string) *Folder {
+	return &Folder{
+		id:       uuid.New().String(),
+		name:     name,
+		folders:  make([]*Folder, 0),
+		requests: make([]*RequestDefinition, 0),
+	}
+}
+
+func (f *Folder) ID() string          { return f.id }
+func (f *Folder) Name() string        { return f.name }
+func (f *Folder) Description() string { return f.description }
+func (f *Folder) Folders() []*Folder  { return f.folders }
+func (f *Folder) Requests() []*RequestDefinition { return f.requests }
+
+func (f *Folder) SetDescription(desc string) {
+	f.description = desc
+}
+
+func (f *Folder) AddFolder(name string) *Folder {
+	folder := NewFolder(name)
+	f.folders = append(f.folders, folder)
+	return folder
+}
+
+func (f *Folder) AddRequest(req *RequestDefinition) {
+	f.requests = append(f.requests, req)
+}
+
+func (f *Folder) GetRequest(id string) (*RequestDefinition, bool) {
+	for _, r := range f.requests {
+		if r.ID() == id {
+			return r, true
+		}
+	}
+	return nil, false
+}
+
+func (f *Folder) FindRequest(id string) (*RequestDefinition, bool) {
+	if req, ok := f.GetRequest(id); ok {
+		return req, true
+	}
+	for _, folder := range f.folders {
+		if req, ok := folder.FindRequest(id); ok {
+			return req, true
+		}
+	}
+	return nil, false
+}
+
+func (f *Folder) RemoveRequest(id string) {
+	for i, r := range f.requests {
+		if r.ID() == id {
+			f.requests = append(f.requests[:i], f.requests[i+1:]...)
+			return
+		}
+	}
+}
+
+func (f *Folder) Clone() *Folder {
+	clone := NewFolder(f.name)
+	clone.description = f.description
+
+	for _, folder := range f.folders {
+		clone.folders = append(clone.folders, folder.Clone())
+	}
+
+	for _, req := range f.requests {
+		clone.requests = append(clone.requests, req.Clone())
+	}
+
+	return clone
+}
+
+// RequestDefinition represents a saved request definition.
+type RequestDefinition struct {
+	id          string
+	name        string
+	description string
+	method      string
+	url         string
+	headers     map[string]string
+	bodyType    string
+	bodyContent string
+	auth        *AuthConfig
+	preScript   string
+	postScript  string
+}
+
+// NewRequestDefinition creates a new request definition.
+func NewRequestDefinition(name, method, url string) *RequestDefinition {
+	return &RequestDefinition{
+		id:      uuid.New().String(),
+		name:    name,
+		method:  method,
+		url:     url,
+		headers: make(map[string]string),
+	}
+}
+
+func (r *RequestDefinition) ID() string          { return r.id }
+func (r *RequestDefinition) Name() string        { return r.name }
+func (r *RequestDefinition) Description() string { return r.description }
+func (r *RequestDefinition) Method() string      { return r.method }
+func (r *RequestDefinition) URL() string         { return r.url }
+func (r *RequestDefinition) BodyType() string    { return r.bodyType }
+func (r *RequestDefinition) BodyContent() string { return r.bodyContent }
+func (r *RequestDefinition) PreScript() string   { return r.preScript }
+func (r *RequestDefinition) PostScript() string  { return r.postScript }
+
+func (r *RequestDefinition) SetDescription(desc string) {
+	r.description = desc
+}
+
+func (r *RequestDefinition) SetHeader(key, value string) {
+	r.headers[key] = value
+}
+
+func (r *RequestDefinition) GetHeader(key string) string {
+	return r.headers[key]
+}
+
+func (r *RequestDefinition) Headers() map[string]string {
+	result := make(map[string]string)
+	for k, v := range r.headers {
+		result[k] = v
+	}
+	return result
+}
+
+func (r *RequestDefinition) SetBodyJSON(data any) error {
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	r.bodyType = "json"
+	r.bodyContent = string(bytes)
+	return nil
+}
+
+func (r *RequestDefinition) SetBodyRaw(content, contentType string) {
+	r.bodyType = "raw"
+	r.bodyContent = content
+}
+
+func (r *RequestDefinition) SetPreScript(script string) {
+	r.preScript = script
+}
+
+func (r *RequestDefinition) SetPostScript(script string) {
+	r.postScript = script
+}
+
+func (r *RequestDefinition) SetAuth(auth AuthConfig) {
+	r.auth = &auth
+}
+
+// ToRequest converts the definition to a core.Request for execution.
+func (r *RequestDefinition) ToRequest() (*Request, error) {
+	req, err := NewRequest("http", r.method, r.url)
+	if err != nil {
+		return nil, err
+	}
+
+	for key, value := range r.headers {
+		req.SetHeader(key, value)
+	}
+
+	if r.bodyContent != "" {
+		var contentType string
+		switch r.bodyType {
+		case "json":
+			contentType = "application/json"
+		case "raw":
+			contentType = "text/plain"
+		default:
+			contentType = "text/plain"
+		}
+		req.SetBody(NewRawBody([]byte(r.bodyContent), contentType))
+	}
+
+	return req, nil
+}
+
+func (r *RequestDefinition) Clone() *RequestDefinition {
+	clone := NewRequestDefinition(r.name, r.method, r.url)
+	clone.description = r.description
+	clone.bodyType = r.bodyType
+	clone.bodyContent = r.bodyContent
+	clone.preScript = r.preScript
+	clone.postScript = r.postScript
+
+	for k, v := range r.headers {
+		clone.headers[k] = v
+	}
+
+	if r.auth != nil {
+		authCopy := *r.auth
+		clone.auth = &authCopy
+	}
+
+	return clone
+}
+
+// Auth returns the auth configuration.
+func (r *RequestDefinition) Auth() *AuthConfig {
+	return r.auth
+}
+
+// Body returns the body content.
+func (r *RequestDefinition) Body() string {
+	return r.bodyContent
+}
+
+// SetBody sets the body content.
+func (r *RequestDefinition) SetBody(content string) {
+	r.bodyContent = content
+}
+
+// RemoveHeader removes a header by key.
+func (r *RequestDefinition) RemoveHeader(key string) {
+	delete(r.headers, key)
+}
+
+// QueryParams returns query parameters (placeholder for now).
+func (r *RequestDefinition) QueryParams() map[string]string {
+	// TODO: Parse query params from URL or store separately
+	return make(map[string]string)
+}
+
+// NewCollectionWithID creates a collection with a specific ID (for loading from storage).
+func NewCollectionWithID(id, name string) *Collection {
+	now := time.Now()
+	return &Collection{
+		id:        id,
+		name:      name,
+		variables: make(map[string]string),
+		folders:   make([]*Folder, 0),
+		requests:  make([]*RequestDefinition, 0),
+		createdAt: now,
+		updatedAt: now,
+	}
+}
+
+// SetTimestamps sets created and updated timestamps (for loading from storage).
+func (c *Collection) SetTimestamps(created, updated time.Time) {
+	c.createdAt = created
+	c.updatedAt = updated
+}
+
+// AddExistingFolder adds an already-created folder to the collection.
+func (c *Collection) AddExistingFolder(f *Folder) {
+	c.folders = append(c.folders, f)
+}
+
+// NewFolderWithID creates a folder with a specific ID (for loading from storage).
+func NewFolderWithID(id, name string) *Folder {
+	return &Folder{
+		id:       id,
+		name:     name,
+		folders:  make([]*Folder, 0),
+		requests: make([]*RequestDefinition, 0),
+	}
+}
+
+// AddExistingFolder adds an already-created folder to this folder.
+func (f *Folder) AddExistingFolder(sf *Folder) {
+	f.folders = append(f.folders, sf)
+}
+
+// NewRequestDefinitionWithID creates a request definition with a specific ID.
+func NewRequestDefinitionWithID(id, name, method, url string) *RequestDefinition {
+	return &RequestDefinition{
+		id:      id,
+		name:    name,
+		method:  method,
+		url:     url,
+		headers: make(map[string]string),
+	}
+}
