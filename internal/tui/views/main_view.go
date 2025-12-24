@@ -2,6 +2,7 @@ package views
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -194,15 +195,21 @@ func (v *MainView) updatePaneSizes() {
 		return
 	}
 
-	// Calculate pane widths (30% / 35% / 35%)
+	// Calculate pane widths (25% / 37% / 38%)
 	leftWidth := v.width * 25 / 100
 	middleWidth := v.width * 37 / 100
 	rightWidth := v.width - leftWidth - middleWidth
 
+	// Reserve 1 line for status bar
+	paneHeight := v.height - 1
+	if paneHeight < 1 {
+		paneHeight = 1
+	}
+
 	// Set sizes
-	v.tree.SetSize(leftWidth, v.height)
-	v.request.SetSize(middleWidth, v.height)
-	v.response.SetSize(rightWidth, v.height)
+	v.tree.SetSize(leftWidth, paneHeight)
+	v.request.SetSize(middleWidth, paneHeight)
+	v.response.SetSize(rightWidth, paneHeight)
 }
 
 // View renders the view.
@@ -221,8 +228,69 @@ func (v *MainView) View() string {
 	middlePane := v.request.View()
 	rightPane := v.response.View()
 
-	// Join horizontally
-	return lipgloss.JoinHorizontal(lipgloss.Top, leftPane, middlePane, rightPane)
+	// Join panes horizontally
+	panes := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, middlePane, rightPane)
+
+	// Render status bar
+	statusBar := v.renderStatusBar()
+
+	// Join panes and status bar vertically
+	return lipgloss.JoinVertical(lipgloss.Left, panes, statusBar)
+}
+
+// renderStatusBar renders the bottom status bar with environment info.
+func (v *MainView) renderStatusBar() string {
+	// Build status items
+	var items []string
+
+	// Environment indicator
+	if v.environment != nil {
+		envStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color("62")).
+			Foreground(lipgloss.Color("229")).
+			Padding(0, 1).
+			Bold(true)
+		items = append(items, envStyle.Render("ENV: "+v.environment.Name()))
+	} else {
+		envStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color("240")).
+			Foreground(lipgloss.Color("250")).
+			Padding(0, 1)
+		items = append(items, envStyle.Render("No Environment"))
+	}
+
+	// Add variable count if environment exists
+	if v.environment != nil {
+		vars := v.environment.Variables()
+		secrets := v.environment.SecretNames()
+		countStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245")).
+			Padding(0, 1)
+		items = append(items, countStyle.Render(fmt.Sprintf("%d vars, %d secrets", len(vars), len(secrets))))
+	}
+
+	// Help hint on the right
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Padding(0, 1)
+	helpHint := helpStyle.Render("? help  q quit")
+
+	// Calculate spacing
+	leftContent := strings.Join(items, " ")
+	leftWidth := lipgloss.Width(leftContent)
+	rightWidth := lipgloss.Width(helpHint)
+	spacerWidth := v.width - leftWidth - rightWidth - 2
+	if spacerWidth < 0 {
+		spacerWidth = 0
+	}
+	spacer := strings.Repeat(" ", spacerWidth)
+
+	// Status bar style
+	barStyle := lipgloss.NewStyle().
+		Width(v.width).
+		Background(lipgloss.Color("236"))
+
+	return barStyle.Render(leftContent + spacer + helpHint)
 }
 
 func (v *MainView) renderHelp() string {

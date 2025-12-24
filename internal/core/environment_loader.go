@@ -183,8 +183,13 @@ func LoadMultipleEnvironments(paths []string) (*Environment, error) {
 // MergeCollectionVariables merges collection variables into an environment.
 // Collection variables have lower precedence (environment overrides them).
 func MergeCollectionVariables(env *Environment, collections []*Collection) *Environment {
+	// If no environment provided, create one with collection name
 	if env == nil {
-		env = NewEnvironment("Default")
+		name := "Collection Variables"
+		if len(collections) == 1 {
+			name = collections[0].Name() + " (vars)"
+		}
+		env = NewEnvironment(name)
 	}
 
 	// Create a new environment with collection variables first
