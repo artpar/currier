@@ -9,12 +9,14 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/importer"
+	"github.com/artpar/currier/internal/interpolate"
 	"github.com/artpar/currier/internal/tui/views"
 )
 
 // NewRootCommand creates the root command.
 func NewRootCommand(version string) *cobra.Command {
 	var importFiles []string
+	var envFiles []string
 
 	cmd := &cobra.Command{
 		Use:     "currier",
@@ -28,13 +30,30 @@ func NewRootCommand(version string) *cobra.Command {
 				return fmt.Errorf("failed to load collections: %w", err)
 			}
 
-			return runTUI(collections)
+			// Load environment from files
+			var env *core.Environment
+			if len(envFiles) > 0 {
+				env, err = core.LoadMultipleEnvironments(envFiles)
+				if err != nil {
+					return fmt.Errorf("failed to load environment: %w", err)
+				}
+				fmt.Fprintf(os.Stderr, "Loaded environment: %s\n", env.Name())
+			}
+
+			// Merge collection variables into environment
+			if len(collections) > 0 {
+				env = core.MergeCollectionVariables(env, collections)
+			}
+
+			return runTUI(collections, env)
 		},
 	}
 
 	// Add flags
 	cmd.Flags().StringArrayVarP(&importFiles, "import", "i", nil,
 		"Import collection file(s). Supports Postman, OpenAPI, cURL, HAR formats")
+	cmd.Flags().StringArrayVarP(&envFiles, "env", "e", nil,
+		"Environment file(s) for variable substitution")
 
 	// Add subcommands
 	cmd.AddCommand(NewSendCommand())
@@ -99,13 +118,20 @@ func (m tuiModel) View() string {
 	return m.view.View()
 }
 
-// runTUI starts the TUI application with optional collections.
-func runTUI(collections []*core.Collection) error {
+// runTUI starts the TUI application with optional collections and environment.
+func runTUI(collections []*core.Collection, env *core.Environment) error {
 	view := views.NewMainView()
 
 	// Load collections if provided
 	if len(collections) > 0 {
 		view.SetCollections(collections)
+	}
+
+	// Set up interpolation engine with environment
+	if env != nil {
+		engine := interpolate.NewEngine()
+		engine.SetVariables(env.ExportAll())
+		view.SetEnvironment(env, engine)
 	}
 
 	model := tuiModel{

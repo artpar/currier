@@ -1,0 +1,11 @@
+{
+  "name": "Simple Environment",
+  "variables": {
+    "api_url": "https://api.example.com",
+    "version": "v1",
+    "timeout": "30"
+  },
+  "secrets": {
+    "api_key": "sk-test-12345"
+  }
+}

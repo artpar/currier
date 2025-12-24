@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/artpar/currier/internal/interpolate"
 )
 
 // Collection represents a group of API requests.
@@ -417,6 +418,50 @@ func (r *RequestDefinition) ToRequest() (*Request, error) {
 			contentType = "text/plain"
 		}
 		req.SetBody(NewRawBody([]byte(r.bodyContent), contentType))
+	}
+
+	return req, nil
+}
+
+// ToRequestWithEnv converts the definition to a core.Request with variable interpolation.
+func (r *RequestDefinition) ToRequestWithEnv(engine *interpolate.Engine) (*Request, error) {
+	// Interpolate URL
+	interpolatedURL, err := engine.Interpolate(r.url)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := NewRequest("http", r.method, interpolatedURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Interpolate headers
+	for key, value := range r.headers {
+		interpolatedValue, err := engine.Interpolate(value)
+		if err != nil {
+			return nil, err
+		}
+		req.SetHeader(key, interpolatedValue)
+	}
+
+	// Interpolate body
+	if r.bodyContent != "" {
+		interpolatedBody, err := engine.Interpolate(r.bodyContent)
+		if err != nil {
+			return nil, err
+		}
+
+		var contentType string
+		switch r.bodyType {
+		case "json":
+			contentType = "application/json"
+		case "raw":
+			contentType = "text/plain"
+		default:
+			contentType = "text/plain"
+		}
+		req.SetBody(NewRawBody([]byte(interpolatedBody), contentType))
 	}
 
 	return req, nil

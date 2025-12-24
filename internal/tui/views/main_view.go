@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
+	"github.com/artpar/currier/internal/interpolate"
 	httpclient "github.com/artpar/currier/internal/protocol/http"
 	"github.com/artpar/currier/internal/tui"
 	"github.com/artpar/currier/internal/tui/components"
@@ -31,15 +32,18 @@ type MainView struct {
 	request      *components.RequestPanel
 	response     *components.ResponsePanel
 	showHelp     bool
+	environment  *core.Environment
+	interpolator *interpolate.Engine
 }
 
 // NewMainView creates a new main view.
 func NewMainView() *MainView {
 	view := &MainView{
-		tree:        components.NewCollectionTree(),
-		request:     components.NewRequestPanel(),
-		response:    components.NewResponsePanel(),
-		focusedPane: PaneCollections,
+		tree:         components.NewCollectionTree(),
+		request:      components.NewRequestPanel(),
+		response:     components.NewResponsePanel(),
+		focusedPane:  PaneCollections,
+		interpolator: interpolate.NewEngine(), // Default engine with builtins
 	}
 	view.tree.Focus()
 	return view
@@ -81,7 +85,7 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 	case components.SendRequestMsg:
 		v.response.SetLoading(true)
 		v.focusPane(PaneResponse)
-		return v, sendRequest(msg.Request)
+		return v, sendRequest(msg.Request, v.interpolator)
 
 	case components.ResponseReceivedMsg:
 		v.response.SetLoading(false)
@@ -320,6 +324,22 @@ func (v *MainView) SetCollections(collections []*core.Collection) {
 	v.tree.SetCollections(collections)
 }
 
+// SetEnvironment sets the environment and interpolation engine.
+func (v *MainView) SetEnvironment(env *core.Environment, engine *interpolate.Engine) {
+	v.environment = env
+	v.interpolator = engine
+}
+
+// Environment returns the current environment.
+func (v *MainView) Environment() *core.Environment {
+	return v.environment
+}
+
+// Interpolator returns the interpolation engine.
+func (v *MainView) Interpolator() *interpolate.Engine {
+	return v.interpolator
+}
+
 // ShowingHelp returns true if help is showing.
 func (v *MainView) ShowingHelp() bool {
 	return v.showHelp
@@ -336,10 +356,18 @@ func (v *MainView) HideHelp() {
 }
 
 // sendRequest creates a tea.Cmd that sends an HTTP request asynchronously.
-func sendRequest(reqDef *core.RequestDefinition) tea.Cmd {
+func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine) tea.Cmd {
 	return func() tea.Msg {
-		// Convert RequestDefinition to Request
-		req, err := reqDef.ToRequest()
+		// Convert RequestDefinition to Request (with or without interpolation)
+		var req *core.Request
+		var err error
+
+		if engine != nil {
+			req, err = reqDef.ToRequestWithEnv(engine)
+		} else {
+			req, err = reqDef.ToRequest()
+		}
+
 		if err != nil {
 			return components.RequestErrorMsg{Error: err}
 		}

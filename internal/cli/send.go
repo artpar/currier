@@ -9,16 +9,18 @@ import (
 
 	"github.com/artpar/currier/internal/app"
 	"github.com/artpar/currier/internal/core"
+	"github.com/artpar/currier/internal/interpolate"
 	httpclient "github.com/artpar/currier/internal/protocol/http"
 	"github.com/spf13/cobra"
 )
 
 // SendOptions holds options for the send command.
 type SendOptions struct {
-	Headers []string
-	Body    string
-	JSON    bool
-	Timeout time.Duration
+	Headers  []string
+	Body     string
+	JSON     bool
+	Timeout  time.Duration
+	EnvFiles []string
 }
 
 // NewSendCommand creates the send command.
@@ -41,11 +43,33 @@ func NewSendCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.Body, "body", "d", "", "Request body")
 	cmd.Flags().BoolVar(&opts.JSON, "json", false, "Output response as JSON")
 	cmd.Flags().DurationVar(&opts.Timeout, "timeout", 30*time.Second, "Request timeout")
+	cmd.Flags().StringArrayVarP(&opts.EnvFiles, "env", "e", nil, "Environment file(s) for variable substitution")
 
 	return cmd
 }
 
 func runSend(cmd *cobra.Command, method, url string, opts *SendOptions) error {
+	// Create interpolation engine
+	engine := interpolate.NewEngine()
+
+	// Load environment files if provided
+	if len(opts.EnvFiles) > 0 {
+		env, err := core.LoadMultipleEnvironments(opts.EnvFiles)
+		if err != nil {
+			return fmt.Errorf("failed to load environment: %w", err)
+		}
+		if env != nil {
+			engine.SetVariables(env.ExportAll())
+			fmt.Fprintf(cmd.ErrOrStderr(), "Loaded environment: %s\n", env.Name())
+		}
+	}
+
+	// Interpolate URL
+	interpolatedURL, err := engine.Interpolate(url)
+	if err != nil {
+		return fmt.Errorf("failed to interpolate URL: %w", err)
+	}
+
 	// Create the app with HTTP protocol
 	application := app.New(
 		app.WithProtocol("http", httpclient.NewClient(
@@ -53,25 +77,33 @@ func runSend(cmd *cobra.Command, method, url string, opts *SendOptions) error {
 		)),
 	)
 
-	// Create request
-	req, err := core.NewRequest("http", method, url)
+	// Create request with interpolated URL
+	req, err := core.NewRequest("http", method, interpolatedURL)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Add headers
+	// Add headers (with interpolation)
 	headers := parseHeaders(opts.Headers)
 	for key, value := range headers {
-		req.SetHeader(key, value)
+		interpolatedValue, err := engine.Interpolate(value)
+		if err != nil {
+			return fmt.Errorf("failed to interpolate header %s: %w", key, err)
+		}
+		req.SetHeader(key, interpolatedValue)
 	}
 
-	// Add body
+	// Add body (with interpolation)
 	if opts.Body != "" {
+		interpolatedBody, err := engine.Interpolate(opts.Body)
+		if err != nil {
+			return fmt.Errorf("failed to interpolate body: %w", err)
+		}
 		contentType := headers["Content-Type"]
 		if contentType == "" {
 			contentType = "text/plain"
 		}
-		req.SetBody(core.NewRawBody([]byte(opts.Body), contentType))
+		req.SetBody(core.NewRawBody([]byte(interpolatedBody), contentType))
 	}
 
 	// Send request
