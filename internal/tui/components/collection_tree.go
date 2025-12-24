@@ -40,17 +40,19 @@ type SelectionMsg struct {
 
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
-	title       string
-	focused     bool
-	width       int
-	height      int
-	cursor      int
-	offset      int // For scrolling
-	collections []*core.Collection
-	items       []TreeItem
-	expanded    map[string]bool
-	search      string
-	gPressed    bool // For gg sequence
+	title         string
+	focused       bool
+	width         int
+	height        int
+	cursor        int
+	offset        int // For scrolling
+	collections   []*core.Collection
+	items         []TreeItem
+	filteredItems []TreeItem // Items after search filter
+	expanded      map[string]bool
+	search        string
+	searching     bool // True when in search mode
+	gPressed      bool // For gg sequence
 }
 
 // NewCollectionTree creates a new collection tree component.
@@ -98,9 +100,28 @@ func (c *CollectionTree) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 }
 
 func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	// Handle search mode input
+	if c.searching {
+		return c.handleSearchInput(msg)
+	}
+
 	switch msg.Type {
+	case tea.KeyEsc:
+		// Clear search filter when not in search mode
+		if c.search != "" {
+			c.search = ""
+			c.filteredItems = nil
+			c.cursor = 0
+			c.offset = 0
+		}
+		return c, nil
+
 	case tea.KeyRunes:
 		switch string(msg.Runes) {
+		case "/":
+			c.searching = true
+			c.search = ""
+			return c, nil
 		case "j":
 			c.moveCursor(1)
 		case "k":
@@ -110,7 +131,7 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		case "h":
 			c.collapseCurrent()
 		case "G":
-			c.cursor = len(c.items) - 1
+			c.cursor = len(c.getDisplayItems()) - 1
 			c.gPressed = false
 		case "g":
 			if c.gPressed {
@@ -132,21 +153,58 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	return c, nil
 }
 
-func (c *CollectionTree) handleEnter() (tui.Component, tea.Cmd) {
-	if c.cursor < 0 || c.cursor >= len(c.items) {
+func (c *CollectionTree) handleSearchInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Exit search mode but keep filter
+		c.searching = false
+		return c, nil
+
+	case tea.KeyEnter:
+		// Exit search mode and keep filter
+		c.searching = false
+		return c, nil
+
+	case tea.KeyBackspace:
+		if len(c.search) > 0 {
+			c.search = c.search[:len(c.search)-1]
+			c.applyFilter()
+		}
+		return c, nil
+
+	case tea.KeyCtrlU:
+		// Clear search
+		c.search = ""
+		c.applyFilter()
+		return c, nil
+
+	case tea.KeyRunes:
+		c.search += string(msg.Runes)
+		c.applyFilter()
 		return c, nil
 	}
 
-	item := c.items[c.cursor]
+	return c, nil
+}
+
+func (c *CollectionTree) handleEnter() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
 
 	switch item.Type {
 	case ItemCollection, ItemFolder:
 		// Toggle expand/collapse
 		if item.Expanded {
-			c.Collapse(c.cursor)
+			c.expanded[item.ID] = false
 		} else {
-			c.Expand(c.cursor)
+			c.expanded[item.ID] = true
 		}
+		c.rebuildItems()
+		c.applyFilter()
 	case ItemRequest:
 		// Select request
 		return c, func() tea.Msg {
@@ -158,19 +216,20 @@ func (c *CollectionTree) handleEnter() (tui.Component, tea.Cmd) {
 }
 
 func (c *CollectionTree) moveCursor(delta int) {
+	displayItems := c.getDisplayItems()
 	c.cursor += delta
 	if c.cursor < 0 {
 		c.cursor = 0
 	}
-	if c.cursor >= len(c.items) {
-		c.cursor = len(c.items) - 1
+	if c.cursor >= len(displayItems) {
+		c.cursor = len(displayItems) - 1
 	}
 	if c.cursor < 0 {
 		c.cursor = 0
 	}
 
 	// Adjust scroll offset
-	visibleHeight := c.height - 4 // Account for borders and title
+	visibleHeight := c.contentHeight()
 	if visibleHeight < 1 {
 		visibleHeight = 1
 	}
@@ -183,20 +242,81 @@ func (c *CollectionTree) moveCursor(delta int) {
 	}
 }
 
+// getDisplayItems returns the items to display (filtered or all).
+func (c *CollectionTree) getDisplayItems() []TreeItem {
+	if c.search == "" {
+		return c.items
+	}
+	return c.filteredItems
+}
+
+// applyFilter filters items based on search query.
+func (c *CollectionTree) applyFilter() {
+	if c.search == "" {
+		c.filteredItems = nil
+		c.cursor = 0
+		c.offset = 0
+		return
+	}
+
+	search := strings.ToLower(c.search)
+	c.filteredItems = nil
+
+	// Collect matching items and their parent paths
+	matchedIDs := make(map[string]bool)
+
+	// First pass: find all matching items
+	for _, item := range c.items {
+		if strings.Contains(strings.ToLower(item.Name), search) ||
+			(item.Type == ItemRequest && strings.Contains(strings.ToLower(item.Method), search)) {
+			matchedIDs[item.ID] = true
+		}
+	}
+
+	// Add all matching items to filtered list
+	for _, item := range c.items {
+		if matchedIDs[item.ID] {
+			c.filteredItems = append(c.filteredItems, item)
+		}
+	}
+
+	// Reset cursor
+	c.cursor = 0
+	c.offset = 0
+}
+
+// contentHeight returns the height available for content.
+func (c *CollectionTree) contentHeight() int {
+	height := c.height - 4 // Title + borders
+	if c.searching || c.search != "" {
+		height-- // Search bar
+	}
+	if height < 1 {
+		height = 1
+	}
+	return height
+}
+
 func (c *CollectionTree) expandCurrent() {
-	if c.cursor >= 0 && c.cursor < len(c.items) {
-		item := c.items[c.cursor]
+	displayItems := c.getDisplayItems()
+	if c.cursor >= 0 && c.cursor < len(displayItems) {
+		item := displayItems[c.cursor]
 		if item.Expandable && !item.Expanded {
-			c.Expand(c.cursor)
+			c.expanded[item.ID] = true
+			c.rebuildItems()
+			c.applyFilter()
 		}
 	}
 }
 
 func (c *CollectionTree) collapseCurrent() {
-	if c.cursor >= 0 && c.cursor < len(c.items) {
-		item := c.items[c.cursor]
+	displayItems := c.getDisplayItems()
+	if c.cursor >= 0 && c.cursor < len(displayItems) {
+		item := displayItems[c.cursor]
 		if item.Expandable && item.Expanded {
-			c.Collapse(c.cursor)
+			c.expanded[item.ID] = false
+			c.rebuildItems()
+			c.applyFilter()
 		}
 	}
 }
@@ -225,15 +345,19 @@ func (c *CollectionTree) View() string {
 
 	title := titleStyle.Render(c.title)
 
-	// Content
-	contentHeight := c.height - 4 // Title + borders
-	if contentHeight < 1 {
-		contentHeight = 1
+	// Search bar (if searching or has active filter)
+	var searchBar string
+	if c.searching || c.search != "" {
+		searchBar = c.renderSearchBar()
 	}
 
+	// Content
+	contentHeight := c.contentHeight()
+
+	displayItems := c.getDisplayItems()
 	var lines []string
-	for i := c.offset; i < len(c.items) && len(lines) < contentHeight; i++ {
-		item := c.items[i]
+	for i := c.offset; i < len(displayItems) && len(lines) < contentHeight; i++ {
+		item := displayItems[i]
 		line := c.renderItem(item, i == c.cursor)
 		lines = append(lines, line)
 	}
@@ -244,6 +368,14 @@ func (c *CollectionTree) View() string {
 	}
 
 	content := strings.Join(lines, "\n")
+
+	// Combine all parts
+	var parts []string
+	parts = append(parts, title)
+	if searchBar != "" {
+		parts = append(parts, searchBar)
+	}
+	parts = append(parts, content)
 
 	// Border
 	borderStyle := lipgloss.NewStyle().
@@ -257,7 +389,47 @@ func (c *CollectionTree) View() string {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("240"))
 	}
 
-	return borderStyle.Render(title + "\n" + content)
+	return borderStyle.Render(strings.Join(parts, "\n"))
+}
+
+func (c *CollectionTree) renderSearchBar() string {
+	width := c.width - 4
+
+	// Search icon and input
+	searchIcon := "🔍 "
+	query := c.search
+
+	// Cursor indicator when in search mode
+	cursor := ""
+	if c.searching {
+		cursor = "▌"
+	}
+
+	// Style based on search state
+	var style lipgloss.Style
+	if c.searching {
+		style = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("214")).
+			Bold(true)
+	} else {
+		style = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245"))
+	}
+
+	// Build search bar content
+	content := searchIcon + query + cursor
+
+	// Truncate if too long
+	if len(content) > width {
+		content = content[:width-3] + "..."
+	}
+
+	// Pad to full width
+	if len(content) < width {
+		content += strings.Repeat(" ", width-len(content))
+	}
+
+	return style.Render(content)
 }
 
 func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
