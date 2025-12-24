@@ -202,17 +202,23 @@ func (p *ResponsePanel) View() string {
 	// Status line
 	statusLine := p.renderStatusLine()
 
+	// Separator line
+	separator := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("238")).
+		Width(p.width - 4).
+		Render(strings.Repeat("─", p.width-4))
+
 	// Tab bar
 	tabBar := p.renderTabBar()
 
 	// Tab content
-	contentHeight := p.height - 7 // Title + status + tabs + borders
+	contentHeight := p.height - 8 // Title + status + separator + tabs + borders
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
 	tabContent := p.renderTabContent(contentHeight)
 
-	content := statusLine + "\n" + tabBar + "\n" + tabContent
+	content := statusLine + "\n" + separator + "\n" + tabBar + "\n" + tabContent
 	return p.wrapWithBorder(title + "\n" + content)
 }
 
@@ -267,18 +273,21 @@ func (p *ResponsePanel) renderTabBar() string {
 		if ResponseTab(i) == p.activeTab {
 			if p.focused {
 				style = style.
-					Background(lipgloss.Color("62")).
-					Foreground(lipgloss.Color("229")).
-					Bold(true)
+					Foreground(lipgloss.Color("214")).
+					Bold(true).
+					Underline(true)
 			} else {
 				style = style.
-					Background(lipgloss.Color("240")).
-					Bold(true)
+					Foreground(lipgloss.Color("252")).
+					Bold(true).
+					Underline(true)
 			}
+		} else {
+			style = style.Foreground(lipgloss.Color("245"))
 		}
 		tabs = append(tabs, style.Render(name))
 	}
-	return strings.Join(tabs, " ")
+	return strings.Join(tabs, "  ")
 }
 
 func (p *ResponsePanel) renderTabContent(height int) string {
@@ -321,8 +330,15 @@ func (p *ResponsePanel) renderBodyTab() []string {
 		return []string{"(empty body)"}
 	}
 
-	// TODO: Add JSON formatting/syntax highlighting
-	return strings.Split(body.String(), "\n")
+	content := body.String()
+
+	// Apply JSON syntax highlighting if content is JSON
+	if IsJSON(content) {
+		highlighter := NewJSONHighlighter()
+		return highlighter.HighlightLines(content)
+	}
+
+	return strings.Split(content, "\n")
 }
 
 func (p *ResponsePanel) renderHeadersTab() []string {

@@ -193,22 +193,55 @@ func (p *RequestPanel) View() string {
 		return p.wrapWithBorder(title + "\n" + content)
 	}
 
-	// Method and URL line
-	methodStyle := p.methodStyle(p.request.Method())
-	urlLine := methodStyle.Render(p.request.Method()) + " " + p.request.URL()
+	// URL bar with method badge and send hint
+	urlBar := p.renderURLBar()
+
+	// Separator line
+	separator := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("238")).
+		Width(p.width - 4).
+		Render(strings.Repeat("─", p.width-4))
 
 	// Tab bar
 	tabBar := p.renderTabBar()
 
 	// Tab content
-	contentHeight := p.height - 7 // Title + URL + tabs + borders
+	contentHeight := p.height - 8 // Title + URL + separator + tabs + borders
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
 	tabContent := p.renderTabContent(contentHeight)
 
-	content := urlLine + "\n" + tabBar + "\n" + tabContent
+	content := urlBar + "\n" + separator + "\n" + tabBar + "\n" + tabContent
 	return p.wrapWithBorder(title + "\n" + content)
+}
+
+func (p *RequestPanel) renderURLBar() string {
+	if p.request == nil {
+		return ""
+	}
+
+	// Method badge (colored)
+	methodBadge := p.methodStyle(p.request.Method()).Render(p.request.Method())
+
+	// URL with styling
+	url := p.request.URL()
+	availableWidth := p.width - 20 // Account for method, send hint, padding
+	if len(url) > availableWidth && availableWidth > 3 {
+		url = url[:availableWidth-3] + "..."
+	}
+
+	urlStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	// Send hint
+	sendStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("245")).
+		Italic(true)
+	sendHint := sendStyle.Render("↵ Send")
+
+	// Compose URL bar
+	return methodBadge + " " + urlStyle.Render(url) + "  " + sendHint
 }
 
 func (p *RequestPanel) renderTabBar() string {
@@ -218,18 +251,21 @@ func (p *RequestPanel) renderTabBar() string {
 		if RequestTab(i) == p.activeTab {
 			if p.focused {
 				style = style.
-					Background(lipgloss.Color("62")).
-					Foreground(lipgloss.Color("229")).
-					Bold(true)
+					Foreground(lipgloss.Color("214")).
+					Bold(true).
+					Underline(true)
 			} else {
 				style = style.
-					Background(lipgloss.Color("240")).
-					Bold(true)
+					Foreground(lipgloss.Color("252")).
+					Bold(true).
+					Underline(true)
 			}
+		} else {
+			style = style.Foreground(lipgloss.Color("245"))
 		}
 		tabs = append(tabs, style.Render(name))
 	}
-	return strings.Join(tabs, " ")
+	return strings.Join(tabs, "  ")
 }
 
 func (p *RequestPanel) renderTabContent(height int) string {

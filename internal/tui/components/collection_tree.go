@@ -286,7 +286,7 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 	case ItemFolder:
 		icon = "📂 "
 	case ItemRequest:
-		icon = c.methodIcon(item.Method) + " "
+		icon = c.methodBadge(item.Method) + " "
 	}
 
 	// Name
@@ -314,24 +314,26 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 	return style.Render(line)
 }
 
-func (c *CollectionTree) methodIcon(method string) string {
+func (c *CollectionTree) methodBadge(method string) string {
+	style := lipgloss.NewStyle().Bold(true)
+
 	switch strings.ToUpper(method) {
 	case "GET":
-		return "GET"
+		return style.Foreground(lipgloss.Color("34")).Render("GET ")
 	case "POST":
-		return "POST"
+		return style.Foreground(lipgloss.Color("214")).Render("POST")
 	case "PUT":
-		return "PUT"
+		return style.Foreground(lipgloss.Color("33")).Render("PUT ")
 	case "PATCH":
-		return "PTCH"
+		return style.Foreground(lipgloss.Color("141")).Render("PTCH")
 	case "DELETE":
-		return "DEL"
+		return style.Foreground(lipgloss.Color("160")).Render("DEL ")
 	case "HEAD":
-		return "HEAD"
+		return style.Foreground(lipgloss.Color("245")).Render("HEAD")
 	case "OPTIONS":
-		return "OPT"
+		return style.Foreground(lipgloss.Color("245")).Render("OPT ")
 	default:
-		return method
+		return style.Foreground(lipgloss.Color("245")).Render(fmt.Sprintf("%-4s", method))
 	}
 }
 
@@ -532,7 +534,7 @@ func (c *CollectionTree) addFolderItems(folder *core.Folder, level int) {
 		for _, req := range folder.Requests() {
 			c.items = append(c.items, TreeItem{
 				ID:      req.ID(),
-				Name:    fmt.Sprintf("[%s] %s", req.Method(), req.Name()),
+				Name:    req.Name(),
 				Type:    ItemRequest,
 				Level:   level + 1,
 				Method:  req.Method(),
