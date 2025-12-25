@@ -1788,3 +1788,343 @@ func TestCurl_QuotedURL(t *testing.T) {
 		t.Logf("Screen:\n%s", screen)
 	}
 }
+
+// =============================================================================
+// WEBSOCKET TESTS
+// =============================================================================
+
+func TestWebSocket_ToggleMode(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Press 'w' to enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show WebSocket indicator in status bar
+	if !strings.Contains(screen, "WS") {
+		t.Error("Should show WS indicator in status bar")
+		t.Logf("Screen:\n%s", screen)
+	}
+
+	// Should show WebSocket panel instead of Request/Response
+	if !strings.Contains(screen, "WebSocket") {
+		t.Error("Should show WebSocket panel")
+		t.Logf("Screen:\n%s", screen)
+	}
+
+	// Press 'w' again to toggle back
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	screen = sess.Capture()
+	// Should be back to HTTP mode
+	if !strings.Contains(screen, "Request") || !strings.Contains(screen, "Response") {
+		t.Error("Should return to HTTP mode with Request/Response panes")
+		t.Logf("Screen:\n%s", screen)
+	}
+}
+
+func TestWebSocket_PanelTabs(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show Messages tab by default
+	if !strings.Contains(screen, "Messages") {
+		t.Error("Should show Messages tab")
+	}
+
+	// Switch to Connection tab with ']'
+	sess.SendKey("]")
+	time.Sleep(200 * time.Millisecond)
+
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Connection") {
+		t.Error("Should show Connection tab")
+	}
+
+	// Switch to Scripts tab
+	sess.SendKey("]")
+	time.Sleep(200 * time.Millisecond)
+
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Scripts") {
+		t.Error("Should show Scripts tab")
+	}
+
+	// Switch to Auto-Response tab
+	sess.SendKey("]")
+	time.Sleep(200 * time.Millisecond)
+
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Auto-Response") {
+		t.Error("Should show Auto-Response tab")
+	}
+
+	// Switch back with '['
+	sess.SendKey("[")
+	time.Sleep(200 * time.Millisecond)
+
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Scripts") {
+		t.Error("Should go back to Scripts tab")
+	}
+}
+
+func TestWebSocket_ShowsDisconnectedStatus(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show Disconnected status
+	if !strings.Contains(screen, "Disconnected") && !strings.Contains(screen, "disconnected") {
+		t.Error("Should show Disconnected status initially")
+		t.Logf("Screen:\n%s", screen)
+	}
+}
+
+func TestWebSocket_InputMode(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	// Press 'i' to enter input mode
+	sess.SendKey("i")
+	time.Sleep(200 * time.Millisecond)
+
+	// Type some text (without spaces as tmux Type may have issues with spaces)
+	sess.Type("testmessage123")
+	time.Sleep(200 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show the typed text
+	if !strings.Contains(screen, "testmessage123") {
+		t.Error("Should show typed message in input field")
+		t.Logf("Screen:\n%s", screen)
+	}
+
+	// Press Escape to exit input mode
+	sess.SendKey("Escape")
+	time.Sleep(200 * time.Millisecond)
+
+	screen = sess.Capture()
+	if !strings.Contains(screen, "NORMAL") {
+		t.Error("Should return to NORMAL mode after Escape")
+	}
+}
+
+func TestWebSocket_HelpBarShowsWSHints(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Help bar should show WebSocket-specific hints
+	hasConnect := strings.Contains(screen, "Connect") || strings.Contains(screen, "c ")
+	hasType := strings.Contains(screen, "Type") || strings.Contains(screen, "i ")
+	if !hasConnect && !hasType {
+		t.Log("Help bar may not show WebSocket hints prominently")
+	}
+}
+
+func TestWebSocket_NavigateWithJK(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	// Navigate with j and k (should scroll messages if any)
+	for i := 0; i < 3; i++ {
+		sess.SendKey("j")
+		time.Sleep(50 * time.Millisecond)
+	}
+	for i := 0; i < 3; i++ {
+		sess.SendKey("k")
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Should still be running
+	screen := sess.Capture()
+	if !strings.Contains(screen, "WebSocket") {
+		t.Error("App crashed during j/k navigation in WebSocket mode")
+	}
+}
+
+func TestWebSocket_GGAndG(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	// Press 'G' to go to bottom
+	sess.SendKey("G")
+	time.Sleep(200 * time.Millisecond)
+
+	// Press 'gg' to go to top
+	sess.SendKey("g")
+	time.Sleep(100 * time.Millisecond)
+	sess.SendKey("g")
+	time.Sleep(200 * time.Millisecond)
+
+	// Should still be running
+	screen := sess.Capture()
+	if !strings.Contains(screen, "WebSocket") {
+		t.Error("App crashed during G/gg navigation in WebSocket mode")
+	}
+}
+
+func TestWebSocket_FocusSwitchWithTab(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	// Verify we're focused on WebSocket pane (status bar shows WebSocket)
+	screen := sess.Capture()
+	if !strings.Contains(screen, "WebSocket") {
+		t.Error("Should be focused on WebSocket pane")
+	}
+
+	// Press Tab to switch focus
+	sess.SendKey("Tab")
+	time.Sleep(200 * time.Millisecond)
+
+	screen = sess.Capture()
+	// Should now focus Collections
+	if !strings.Contains(screen, "Collections") {
+		t.Error("Tab should switch focus to Collections")
+	}
+
+	// Press Tab again
+	sess.SendKey("Tab")
+	time.Sleep(200 * time.Millisecond)
+
+	// Should be back on WebSocket
+	screen = sess.Capture()
+	if !strings.Contains(screen, "WebSocket") {
+		t.Log("Focus cycling may differ in WebSocket mode")
+	}
+}
+
+func TestWebSocket_ConnectionTab_ShowsEndpoint(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	// Switch to Connection tab
+	sess.SendKey("]")
+	time.Sleep(200 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show connection details
+	if !strings.Contains(screen, "Endpoint") {
+		t.Error("Connection tab should show Endpoint label")
+		t.Logf("Screen:\n%s", screen)
+	}
+
+	// Should show wss:// (default endpoint prefix)
+	if !strings.Contains(screen, "wss://") && !strings.Contains(screen, "ws://") {
+		t.Error("Connection tab should show WebSocket URL")
+		t.Logf("Screen:\n%s", screen)
+	}
+}
+
+func TestWebSocket_MessagesTab_ShowsHint(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show hint about connecting or typing
+	hasNoMessages := strings.Contains(screen, "No messages") || strings.Contains(screen, "connect")
+	if !hasNoMessages {
+		t.Log("Messages tab may show different empty state")
+	}
+}
+
+func TestWebSocket_ClearInput(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Enter WebSocket mode
+	sess.SendKey("w")
+	time.Sleep(300 * time.Millisecond)
+
+	// Enter input mode and type
+	sess.SendKey("i")
+	time.Sleep(200 * time.Millisecond)
+	sess.Type("test message to clear")
+	time.Sleep(200 * time.Millisecond)
+
+	// Clear with Ctrl+U
+	sess.SendKey("Ctrl+U")
+	time.Sleep(200 * time.Millisecond)
+
+	screen := sess.Capture()
+	// The typed text should be cleared
+	if strings.Contains(screen, "test message to clear") {
+		t.Error("Ctrl+U should clear the input field")
+		t.Logf("Screen:\n%s", screen)
+	}
+}

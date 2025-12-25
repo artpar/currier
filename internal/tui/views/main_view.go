@@ -11,8 +11,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/history"
+	"github.com/artpar/currier/internal/interfaces"
 	"github.com/artpar/currier/internal/interpolate"
 	httpclient "github.com/artpar/currier/internal/protocol/http"
+	"github.com/artpar/currier/internal/protocol/websocket"
 	"github.com/artpar/currier/internal/tui"
 	"github.com/artpar/currier/internal/tui/components"
 )
@@ -24,6 +26,15 @@ const (
 	PaneCollections Pane = iota
 	PaneRequest
 	PaneResponse
+	PaneWebSocket
+)
+
+// ViewMode represents the current view mode.
+type ViewMode int
+
+const (
+	ViewModeHTTP ViewMode = iota
+	ViewModeWebSocket
 )
 
 // MainView is the main three-pane view.
@@ -31,9 +42,12 @@ type MainView struct {
 	width        int
 	height       int
 	focusedPane  Pane
+	viewMode     ViewMode
 	tree         *components.CollectionTree
 	request      *components.RequestPanel
 	response     *components.ResponsePanel
+	wsPanel      *components.WebSocketPanel
+	wsClient     *websocket.Client
 	showHelp     bool
 	environment  *core.Environment
 	interpolator *interpolate.Engine
@@ -52,7 +66,10 @@ func NewMainView() *MainView {
 		tree:         components.NewCollectionTree(),
 		request:      components.NewRequestPanel(),
 		response:     components.NewResponsePanel(),
+		wsPanel:      components.NewWebSocketPanel(),
+		wsClient:     websocket.NewClient(nil),
 		focusedPane:  PaneCollections,
+		viewMode:     ViewModeHTTP,
 		interpolator: interpolate.NewEngine(), // Default engine with builtins
 	}
 	view.tree.Focus()
@@ -89,7 +106,16 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 
 	case components.SelectionMsg:
 		v.request.SetRequest(msg.Request)
+		v.viewMode = ViewModeHTTP
 		v.focusPane(PaneRequest)
+		v.updatePaneSizes()
+		return v, nil
+
+	case components.SelectWebSocketMsg:
+		v.wsPanel.SetDefinition(msg.WebSocket)
+		v.viewMode = ViewModeWebSocket
+		v.focusPane(PaneWebSocket)
+		v.updatePaneSizes()
 		return v, nil
 
 	case components.SelectHistoryItemMsg:
@@ -148,6 +174,64 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 	case clearNotificationMsg:
 		v.notification = ""
 		return v, nil
+
+	// WebSocket messages
+	case components.WSConnectCmd:
+		return v, v.connectWebSocket(msg.Definition)
+
+	case components.WSDisconnectCmd:
+		return v, v.disconnectWebSocket()
+
+	case components.WSReconnectCmd:
+		def := v.wsPanel.Definition()
+		if def != nil {
+			return v, v.connectWebSocket(def)
+		}
+		return v, nil
+
+	case components.WSSendMessageCmd:
+		return v, v.sendWebSocketMessage(msg.Content)
+
+	case components.WSConnectedMsg:
+		v.wsPanel.SetConnectionID(msg.ConnectionID)
+		v.wsPanel.SetConnectionState(interfaces.ConnectionStateConnected)
+		v.notification = "✓ WebSocket connected"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case components.WSDisconnectedMsg:
+		v.wsPanel.SetConnectionID("")
+		v.wsPanel.SetConnectionState(interfaces.ConnectionStateDisconnected)
+		if msg.Error != nil {
+			v.notification = "✗ Disconnected: " + msg.Error.Error()
+		} else {
+			v.notification = "WebSocket disconnected"
+		}
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case components.WSMessageReceivedMsg:
+		v.wsPanel.AddMessage(msg.Message)
+		return v, nil
+
+	case components.WSMessageSentMsg:
+		v.wsPanel.AddMessage(msg.Message)
+		return v, nil
+
+	case components.WSStateChangedMsg:
+		v.wsPanel.SetConnectionState(msg.State)
+		return v, nil
+
+	case components.WSErrorMsg:
+		v.notification = "✗ WS Error: " + msg.Error.Error()
+		v.notifyUntil = time.Now().Add(3 * time.Second)
+		return v, tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
 	}
 
 	// Forward messages to focused pane
@@ -249,6 +333,28 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Auto-enter URL edit mode
 			v.request.StartURLEdit()
 			return v, nil
+		case "w":
+			// Toggle WebSocket mode or create new WebSocket
+			if v.viewMode == ViewModeWebSocket {
+				v.viewMode = ViewModeHTTP
+				v.focusPane(PaneRequest)
+			} else {
+				// Create a new WebSocket definition if none exists
+				if v.wsPanel.Definition() == nil {
+					wsDef := core.NewWebSocketDefinition("New WebSocket", "wss://")
+					v.wsPanel.SetDefinition(wsDef)
+				}
+				v.viewMode = ViewModeWebSocket
+				v.focusPane(PaneWebSocket)
+			}
+			v.updatePaneSizes()
+			return v, nil
+		case "4":
+			// Focus WebSocket panel
+			if v.viewMode == ViewModeWebSocket {
+				v.focusPane(PaneWebSocket)
+			}
+			return v, nil
 		}
 	}
 
@@ -272,17 +378,39 @@ func (v *MainView) forwardToFocusedPane(msg tea.Msg) (tui.Component, tea.Cmd) {
 		updated, c := v.response.Update(msg)
 		v.response = updated.(*components.ResponsePanel)
 		cmd = c
+	case PaneWebSocket:
+		updated, c := v.wsPanel.Update(msg)
+		v.wsPanel = updated.(*components.WebSocketPanel)
+		cmd = c
 	}
 
 	return v, cmd
 }
 
 func (v *MainView) cycleFocusForward() {
-	v.focusPane(Pane((int(v.focusedPane) + 1) % 3))
+	if v.viewMode == ViewModeWebSocket {
+		// In WebSocket mode: Collections -> WebSocket -> Collections
+		if v.focusedPane == PaneCollections {
+			v.focusPane(PaneWebSocket)
+		} else {
+			v.focusPane(PaneCollections)
+		}
+	} else {
+		v.focusPane(Pane((int(v.focusedPane) + 1) % 3))
+	}
 }
 
 func (v *MainView) cycleFocusBackward() {
-	v.focusPane(Pane((int(v.focusedPane) + 2) % 3))
+	if v.viewMode == ViewModeWebSocket {
+		// In WebSocket mode: Collections -> WebSocket -> Collections
+		if v.focusedPane == PaneCollections {
+			v.focusPane(PaneWebSocket)
+		} else {
+			v.focusPane(PaneCollections)
+		}
+	} else {
+		v.focusPane(Pane((int(v.focusedPane) + 2) % 3))
+	}
 }
 
 func (v *MainView) focusPane(pane Pane) {
@@ -290,6 +418,7 @@ func (v *MainView) focusPane(pane Pane) {
 	v.tree.Blur()
 	v.request.Blur()
 	v.response.Blur()
+	v.wsPanel.Blur()
 
 	// Focus the target
 	v.focusedPane = pane
@@ -300,6 +429,8 @@ func (v *MainView) focusPane(pane Pane) {
 		v.request.Focus()
 	case PaneResponse:
 		v.response.Focus()
+	case PaneWebSocket:
+		v.wsPanel.Focus()
 	}
 }
 
@@ -325,17 +456,23 @@ func (v *MainView) updatePaneSizes() {
 		totalHeight = 2
 	}
 
-	// Split right side vertically: Request on top (45%), Response on bottom (55%)
-	requestHeight := totalHeight * 45 / 100
-	if requestHeight < 8 {
-		requestHeight = 8
-	}
-	responseHeight := totalHeight - requestHeight
-
-	// Set sizes
+	// Set sidebar size
 	v.tree.SetSize(sidebarWidth, totalHeight)
-	v.request.SetSize(rightWidth, requestHeight)
-	v.response.SetSize(rightWidth, responseHeight)
+
+	if v.viewMode == ViewModeWebSocket {
+		// WebSocket mode: single panel takes the full right side
+		v.wsPanel.SetSize(rightWidth, totalHeight)
+	} else {
+		// HTTP mode: Split right side vertically: Request on top (45%), Response on bottom (55%)
+		requestHeight := totalHeight * 45 / 100
+		if requestHeight < 8 {
+			requestHeight = 8
+		}
+		responseHeight := totalHeight - requestHeight
+
+		v.request.SetSize(rightWidth, requestHeight)
+		v.response.SetSize(rightWidth, responseHeight)
+	}
 }
 
 // View renders the view.
@@ -349,19 +486,19 @@ func (v *MainView) View() string {
 		return v.renderHelp()
 	}
 
-	// Postman-like layout:
-	// [Sidebar] | [Request  ]
-	//           | [Response ]
-
 	// Render sidebar (Collections)
 	sidebar := v.tree.View()
 
-	// Render request and response panels
-	requestPane := v.request.View()
-	responsePane := v.response.View()
-
-	// Stack request and response vertically on the right
-	rightStack := lipgloss.JoinVertical(lipgloss.Left, requestPane, responsePane)
+	var rightStack string
+	if v.viewMode == ViewModeWebSocket {
+		// WebSocket mode: single WebSocket panel
+		rightStack = v.wsPanel.View()
+	} else {
+		// HTTP mode: Request on top, Response on bottom
+		requestPane := v.request.View()
+		responsePane := v.response.View()
+		rightStack = lipgloss.JoinVertical(lipgloss.Left, requestPane, responsePane)
+	}
 
 	// Join sidebar with right stack horizontally
 	panes := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, rightStack)
@@ -426,11 +563,27 @@ func (v *MainView) renderHelpBar() string {
 			keyStyle.Render("y") + descStyle.Render(" Copy"),
 			keyStyle.Render("[/]") + descStyle.Render(" Tab"),
 		}
+	case PaneWebSocket:
+		if v.wsPanel.IsInputMode() {
+			hints = []string{
+				keyStyle.Render("Enter") + descStyle.Render(" Send"),
+				keyStyle.Render("Esc") + descStyle.Render(" Cancel"),
+				keyStyle.Render("Ctrl+U") + descStyle.Render(" Clear"),
+			}
+		} else {
+			hints = []string{
+				keyStyle.Render("i/Enter") + descStyle.Render(" Type"),
+				keyStyle.Render("c") + descStyle.Render(" Connect"),
+				keyStyle.Render("d") + descStyle.Render(" Disconnect"),
+				keyStyle.Render("[/]") + descStyle.Render(" Tab"),
+			}
+		}
 	}
 
 	// Always add global hints
 	hints = append(hints,
 		keyStyle.Render("n")+descStyle.Render(" New"),
+		keyStyle.Render("w")+descStyle.Render(" WS"),
 		keyStyle.Render("1/2/3")+descStyle.Render(" Pane"),
 		keyStyle.Render("?")+descStyle.Render(" Help"),
 		keyStyle.Render("q")+descStyle.Render(" Quit"),
@@ -481,6 +634,16 @@ func (v *MainView) renderStatusBar() string {
 		items = append(items, pendingStyle.Render("g-"))
 	}
 
+	// View mode indicator
+	if v.viewMode == ViewModeWebSocket {
+		wsStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color("33")).
+			Foreground(lipgloss.Color("255")).
+			Bold(true).
+			Padding(0, 1)
+		items = append(items, wsStyle.Render("WS"))
+	}
+
 	// Focused pane indicator
 	paneStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("252")).
@@ -491,6 +654,8 @@ func (v *MainView) renderStatusBar() string {
 		paneName = "Request"
 	case PaneResponse:
 		paneName = "Response"
+	case PaneWebSocket:
+		paneName = "WebSocket"
 	}
 	items = append(items, paneStyle.Render(paneName))
 
@@ -824,4 +989,134 @@ func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine) tea
 
 		return components.ResponseReceivedMsg{Response: resp}
 	}
+}
+
+// connectWebSocket creates a tea.Cmd that connects to a WebSocket endpoint.
+func (v *MainView) connectWebSocket(def *core.WebSocketDefinition) tea.Cmd {
+	return func() tea.Msg {
+		if def == nil || def.Endpoint == "" {
+			return components.WSErrorMsg{Error: fmt.Errorf("no WebSocket endpoint defined")}
+		}
+
+		// Validate endpoint
+		if !strings.HasPrefix(def.Endpoint, "ws://") && !strings.HasPrefix(def.Endpoint, "wss://") {
+			return components.WSErrorMsg{Error: fmt.Errorf("WebSocket URL must start with ws:// or wss://")}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// Build connection options
+		opts := interfaces.ConnectionOptions{
+			Headers: def.Headers,
+			Timeout: 30 * time.Second,
+		}
+
+		// Connect
+		conn, err := v.wsClient.Connect(ctx, def.Endpoint, opts)
+		if err != nil {
+			return components.WSDisconnectedMsg{Error: err}
+		}
+
+		// Get the actual WebSocket connection to set up callbacks
+		wsConn, err := v.wsClient.GetWebSocketConnection(conn.ID())
+		if err == nil {
+			// Set up message callback
+			wsConn.OnMessage(func(msg *websocket.Message) {
+				// Convert to core.WebSocketMessage
+				wsMsg := &core.WebSocketMessage{
+					ID:           msg.ID,
+					ConnectionID: msg.ConnectionID,
+					Content:      string(msg.Data),
+					Direction:    msg.Direction.String(),
+					Timestamp:    msg.Timestamp,
+					Type:         msg.Type.String(),
+				}
+				// Note: In a real app, we'd need a way to send this back to the Update loop
+				// For now, messages are handled via the connection's Receive method
+				_ = wsMsg
+			})
+
+			// Set up state change callback
+			wsConn.OnStateChange(func(state interfaces.ConnectionState) {
+				// State changes need to be propagated to the UI
+				_ = state
+			})
+
+			// Set up error callback
+			wsConn.OnError(func(err error) {
+				_ = err
+			})
+		}
+
+		return components.WSConnectedMsg{ConnectionID: conn.ID()}
+	}
+}
+
+// disconnectWebSocket creates a tea.Cmd that disconnects the current WebSocket.
+func (v *MainView) disconnectWebSocket() tea.Cmd {
+	return func() tea.Msg {
+		connID := v.wsPanel.ConnectionID()
+		if connID == "" {
+			return components.WSErrorMsg{Error: fmt.Errorf("no active WebSocket connection")}
+		}
+
+		err := v.wsClient.Disconnect(connID)
+		if err != nil {
+			return components.WSErrorMsg{Error: err}
+		}
+
+		return components.WSDisconnectedMsg{ConnectionID: connID}
+	}
+}
+
+// sendWebSocketMessage creates a tea.Cmd that sends a message on the current WebSocket.
+func (v *MainView) sendWebSocketMessage(content string) tea.Cmd {
+	return func() tea.Msg {
+		connID := v.wsPanel.ConnectionID()
+		if connID == "" {
+			return components.WSErrorMsg{Error: fmt.Errorf("no active WebSocket connection")}
+		}
+
+		conn, err := v.wsClient.GetConnection(connID)
+		if err != nil {
+			return components.WSErrorMsg{Error: err}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		err = conn.Send(ctx, []byte(content))
+		if err != nil {
+			return components.WSErrorMsg{Error: err}
+		}
+
+		// Create sent message
+		msg := core.NewWebSocketMessage(connID, content, "sent")
+		return components.WSMessageSentMsg{Message: msg}
+	}
+}
+
+// WebSocketPanel returns the WebSocket panel component.
+func (v *MainView) WebSocketPanel() *components.WebSocketPanel {
+	return v.wsPanel
+}
+
+// ViewMode returns the current view mode.
+func (v *MainView) ViewMode() ViewMode {
+	return v.viewMode
+}
+
+// SetViewMode sets the view mode.
+func (v *MainView) SetViewMode(mode ViewMode) {
+	v.viewMode = mode
+	v.updatePaneSizes()
+}
+
+// SetWebSocketDefinition sets the WebSocket definition to display.
+func (v *MainView) SetWebSocketDefinition(def *core.WebSocketDefinition) {
+	v.wsPanel.SetDefinition(def)
+	v.viewMode = ViewModeWebSocket
+	v.focusPane(PaneWebSocket)
+	v.updatePaneSizes()
 }

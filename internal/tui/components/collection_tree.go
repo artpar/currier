@@ -32,6 +32,7 @@ type TreeItem struct {
 	Collection  *core.Collection
 	Folder      *core.Folder
 	Request     *core.RequestDefinition
+	WebSocket   *core.WebSocketDefinition
 	Method      string
 }
 
@@ -42,11 +43,17 @@ const (
 	ItemCollection TreeItemType = iota
 	ItemFolder
 	ItemRequest
+	ItemWebSocket
 )
 
 // SelectionMsg is sent when a request is selected.
 type SelectionMsg struct {
 	Request *core.RequestDefinition
+}
+
+// SelectWebSocketMsg is sent when a WebSocket is selected.
+type SelectWebSocketMsg struct {
+	WebSocket *core.WebSocketDefinition
 }
 
 // SelectHistoryItemMsg is sent when a history item is selected.
@@ -415,6 +422,11 @@ func (c *CollectionTree) handleEnter() (tui.Component, tea.Cmd) {
 		// Select request
 		return c, func() tea.Msg {
 			return SelectionMsg{Request: item.Request}
+		}
+	case ItemWebSocket:
+		// Select WebSocket
+		return c, func() tea.Msg {
+			return SelectWebSocketMsg{WebSocket: item.WebSocket}
 		}
 	}
 
@@ -1153,7 +1165,7 @@ func (c *CollectionTree) rebuildItems() {
 func (c *CollectionTree) addCollectionItems(coll *core.Collection, level int) {
 	id := coll.ID()
 	expanded := c.expanded[id]
-	hasChildren := len(coll.Folders()) > 0 || len(coll.Requests()) > 0
+	hasChildren := len(coll.Folders()) > 0 || len(coll.Requests()) > 0 || len(coll.WebSockets()) > 0
 
 	c.items = append(c.items, TreeItem{
 		ID:         id,
@@ -1180,6 +1192,18 @@ func (c *CollectionTree) addCollectionItems(coll *core.Collection, level int) {
 				Level:   level + 1,
 				Method:  req.Method(),
 				Request: req,
+			})
+		}
+
+		// Add WebSocket definitions
+		for _, ws := range coll.WebSockets() {
+			c.items = append(c.items, TreeItem{
+				ID:        ws.ID,
+				Name:      ws.Name,
+				Type:      ItemWebSocket,
+				Level:     level + 1,
+				Method:    "WS",
+				WebSocket: ws,
 			})
 		}
 	}

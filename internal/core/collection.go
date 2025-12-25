@@ -19,6 +19,7 @@ type Collection struct {
 	variables   map[string]string
 	folders     []*Folder
 	requests    []*RequestDefinition
+	websockets  []*WebSocketDefinition
 	auth        AuthConfig
 	preScript   string
 	postScript  string
@@ -47,13 +48,14 @@ type AuthConfig struct {
 func NewCollection(name string) *Collection {
 	now := time.Now()
 	return &Collection{
-		id:        uuid.New().String(),
-		name:      name,
-		variables: make(map[string]string),
-		folders:   make([]*Folder, 0),
-		requests:  make([]*RequestDefinition, 0),
-		createdAt: now,
-		updatedAt: now,
+		id:         uuid.New().String(),
+		name:       name,
+		variables:  make(map[string]string),
+		folders:    make([]*Folder, 0),
+		requests:   make([]*RequestDefinition, 0),
+		websockets: make([]*WebSocketDefinition, 0),
+		createdAt:  now,
+		updatedAt:  now,
 	}
 }
 
@@ -228,6 +230,48 @@ func (c *Collection) RemoveRequest(id string) {
 	}
 }
 
+// WebSockets returns all WebSocket definitions.
+func (c *Collection) WebSockets() []*WebSocketDefinition {
+	return c.websockets
+}
+
+// AddWebSocket adds a WebSocket definition to the collection.
+func (c *Collection) AddWebSocket(ws *WebSocketDefinition) {
+	c.websockets = append(c.websockets, ws)
+	c.touch()
+}
+
+// GetWebSocket returns a WebSocket definition by ID.
+func (c *Collection) GetWebSocket(id string) (*WebSocketDefinition, bool) {
+	for _, ws := range c.websockets {
+		if ws.ID == id {
+			return ws, true
+		}
+	}
+	return nil, false
+}
+
+// GetWebSocketByName returns a WebSocket definition by name.
+func (c *Collection) GetWebSocketByName(name string) (*WebSocketDefinition, bool) {
+	for _, ws := range c.websockets {
+		if ws.Name == name {
+			return ws, true
+		}
+	}
+	return nil, false
+}
+
+// RemoveWebSocket removes a WebSocket definition by ID.
+func (c *Collection) RemoveWebSocket(id string) {
+	for i, ws := range c.websockets {
+		if ws.ID == id {
+			c.websockets = append(c.websockets[:i], c.websockets[i+1:]...)
+			c.touch()
+			return
+		}
+	}
+}
+
 // Clone creates a deep copy of the collection.
 func (c *Collection) Clone() *Collection {
 	clone := NewCollection(c.name)
@@ -247,6 +291,10 @@ func (c *Collection) Clone() *Collection {
 
 	for _, r := range c.requests {
 		clone.requests = append(clone.requests, r.Clone())
+	}
+
+	for _, ws := range c.websockets {
+		clone.websockets = append(clone.websockets, ws.Clone())
 	}
 
 	return clone
@@ -690,14 +738,20 @@ func (r *RequestDefinition) RemoveQueryParam(key string) {
 func NewCollectionWithID(id, name string) *Collection {
 	now := time.Now()
 	return &Collection{
-		id:        id,
-		name:      name,
-		variables: make(map[string]string),
-		folders:   make([]*Folder, 0),
-		requests:  make([]*RequestDefinition, 0),
-		createdAt: now,
-		updatedAt: now,
+		id:         id,
+		name:       name,
+		variables:  make(map[string]string),
+		folders:    make([]*Folder, 0),
+		requests:   make([]*RequestDefinition, 0),
+		websockets: make([]*WebSocketDefinition, 0),
+		createdAt:  now,
+		updatedAt:  now,
 	}
+}
+
+// AddExistingWebSocket adds an already-created WebSocket definition to the collection.
+func (c *Collection) AddExistingWebSocket(ws *WebSocketDefinition) {
+	c.websockets = append(c.websockets, ws)
 }
 
 // SetTimestamps sets created and updated timestamps (for loading from storage).
