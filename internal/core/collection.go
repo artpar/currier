@@ -502,6 +502,16 @@ func (r *RequestDefinition) SetBody(content string) {
 	r.bodyContent = content
 }
 
+// SetURL sets the request URL.
+func (r *RequestDefinition) SetURL(url string) {
+	r.url = url
+}
+
+// SetMethod sets the HTTP method.
+func (r *RequestDefinition) SetMethod(method string) {
+	r.method = method
+}
+
 // RemoveHeader removes a header by key.
 func (r *RequestDefinition) RemoveHeader(key string) {
 	delete(r.headers, key)

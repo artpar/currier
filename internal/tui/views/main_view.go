@@ -228,9 +228,13 @@ func (v *MainView) updatePaneSizes() {
 		return
 	}
 
-	// Calculate pane widths (25% / 37% / 38%)
-	leftWidth := v.width * 25 / 100
-	middleWidth := v.width * 37 / 100
+	// Postman-like layout: narrow sidebar, wider request/response panes
+	// 20% / 40% / 40%
+	leftWidth := v.width * 20 / 100
+	if leftWidth < 20 {
+		leftWidth = 20
+	}
+	middleWidth := (v.width - leftWidth) / 2
 	rightWidth := v.width - leftWidth - middleWidth
 
 	// Reserve 1 line for status bar
@@ -353,8 +357,12 @@ func (v *MainView) renderHelp() string {
 		"│    /                  Start search                 │",
 		"│    Esc                Clear search filter          │",
 		"│                                                     │",
-		"│  Actions                                            │",
-		"│    Enter              Select / Send request        │",
+		"│  Request (Request pane)                            │",
+		"│    m                  Change HTTP method           │",
+		"│    e                  Edit URL inline              │",
+		"│    Enter              Send request                 │",
+		"│                                                     │",
+		"│  Response (Response pane)                          │",
 		"│    y                  Copy response body           │",
 		"│                                                     │",
 		"│  General                                            │",

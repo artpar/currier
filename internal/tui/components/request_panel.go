@@ -39,16 +39,24 @@ type RequestErrorMsg struct {
 	Error error
 }
 
+// HTTP methods for cycling
+var httpMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+
 // RequestPanel displays and edits request details.
 type RequestPanel struct {
-	title     string
-	focused   bool
-	width     int
-	height    int
-	request   *core.RequestDefinition
-	activeTab RequestTab
-	cursor    int
-	offset    int
+	title         string
+	focused       bool
+	width         int
+	height        int
+	request       *core.RequestDefinition
+	activeTab     RequestTab
+	cursor        int
+	offset        int
+	editingURL    bool   // True when editing URL inline
+	urlInput      string // Current URL input while editing
+	urlCursor     int    // Cursor position in URL input
+	editingMethod bool   // True when editing HTTP method
+	methodIndex   int    // Current index in httpMethods
 }
 
 // NewRequestPanel creates a new request panel.
@@ -96,6 +104,16 @@ func (p *RequestPanel) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 }
 
 func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	// Handle URL editing mode
+	if p.editingURL {
+		return p.handleURLEditInput(msg)
+	}
+
+	// Handle method editing mode
+	if p.editingMethod {
+		return p.handleMethodEditInput(msg)
+	}
+
 	switch msg.Type {
 	case tea.KeyTab:
 		p.nextTab()
@@ -109,11 +127,153 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		}
 	case tea.KeyRunes:
 		switch string(msg.Runes) {
+		case "e":
+			// Enter URL edit mode
+			if p.activeTab == TabURL && p.request != nil {
+				p.editingURL = true
+				p.urlInput = p.request.URL()
+				p.urlCursor = len(p.urlInput)
+				return p, nil
+			}
+		case "m":
+			// Enter method edit mode
+			if p.activeTab == TabURL && p.request != nil {
+				p.editingMethod = true
+				// Find current method index
+				currentMethod := strings.ToUpper(p.request.Method())
+				p.methodIndex = 0
+				for i, m := range httpMethods {
+					if m == currentMethod {
+						p.methodIndex = i
+						break
+					}
+				}
+				return p, nil
+			}
 		case "j":
 			p.moveCursor(1)
 		case "k":
 			p.moveCursor(-1)
 		}
+	}
+
+	return p, nil
+}
+
+func (p *RequestPanel) handleURLEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Cancel editing, discard changes
+		p.editingURL = false
+		p.urlInput = ""
+		return p, nil
+
+	case tea.KeyEnter:
+		// Save URL and exit edit mode
+		if p.request != nil && p.urlInput != "" {
+			p.request.SetURL(p.urlInput)
+		}
+		p.editingURL = false
+		p.urlInput = ""
+		return p, nil
+
+	case tea.KeyBackspace:
+		if p.urlCursor > 0 {
+			p.urlInput = p.urlInput[:p.urlCursor-1] + p.urlInput[p.urlCursor:]
+			p.urlCursor--
+		}
+		return p, nil
+
+	case tea.KeyDelete:
+		if p.urlCursor < len(p.urlInput) {
+			p.urlInput = p.urlInput[:p.urlCursor] + p.urlInput[p.urlCursor+1:]
+		}
+		return p, nil
+
+	case tea.KeyLeft:
+		if p.urlCursor > 0 {
+			p.urlCursor--
+		}
+		return p, nil
+
+	case tea.KeyRight:
+		if p.urlCursor < len(p.urlInput) {
+			p.urlCursor++
+		}
+		return p, nil
+
+	case tea.KeyHome, tea.KeyCtrlA:
+		p.urlCursor = 0
+		return p, nil
+
+	case tea.KeyEnd, tea.KeyCtrlE:
+		p.urlCursor = len(p.urlInput)
+		return p, nil
+
+	case tea.KeyCtrlU:
+		// Clear input
+		p.urlInput = ""
+		p.urlCursor = 0
+		return p, nil
+
+	case tea.KeyRunes:
+		// Insert characters at cursor position
+		char := string(msg.Runes)
+		p.urlInput = p.urlInput[:p.urlCursor] + char + p.urlInput[p.urlCursor:]
+		p.urlCursor += len(char)
+		return p, nil
+	}
+
+	return p, nil
+}
+
+func (p *RequestPanel) handleMethodEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Cancel editing
+		p.editingMethod = false
+		return p, nil
+
+	case tea.KeyEnter:
+		// Save method and exit edit mode
+		if p.request != nil {
+			p.request.SetMethod(httpMethods[p.methodIndex])
+		}
+		p.editingMethod = false
+		return p, nil
+
+	case tea.KeyUp, tea.KeyLeft:
+		// Previous method
+		p.methodIndex--
+		if p.methodIndex < 0 {
+			p.methodIndex = len(httpMethods) - 1
+		}
+		return p, nil
+
+	case tea.KeyDown, tea.KeyRight:
+		// Next method
+		p.methodIndex++
+		if p.methodIndex >= len(httpMethods) {
+			p.methodIndex = 0
+		}
+		return p, nil
+
+	case tea.KeyRunes:
+		switch string(msg.Runes) {
+		case "j", "l":
+			// Next method
+			p.methodIndex++
+			if p.methodIndex >= len(httpMethods) {
+				p.methodIndex = 0
+			}
+		case "k", "h":
+			// Previous method
+			p.methodIndex--
+			if p.methodIndex < 0 {
+				p.methodIndex = len(httpMethods) - 1
+			}
+		}
+		return p, nil
 	}
 
 	return p, nil
@@ -163,9 +323,19 @@ func (p *RequestPanel) View() string {
 		return ""
 	}
 
+	// Account for borders
+	innerWidth := p.width - 2
+	innerHeight := p.height - 2
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+
 	// Title bar
 	titleStyle := lipgloss.NewStyle().
-		Width(p.width - 2).
+		Width(innerWidth).
 		Align(lipgloss.Center).
 		Bold(true)
 
@@ -183,9 +353,13 @@ func (p *RequestPanel) View() string {
 
 	// Empty state
 	if p.request == nil {
+		emptyHeight := innerHeight - 1 // minus title
+		if emptyHeight < 1 {
+			emptyHeight = 1
+		}
 		emptyStyle := lipgloss.NewStyle().
-			Width(p.width - 4).
-			Height(p.height - 4).
+			Width(innerWidth).
+			Height(emptyHeight).
 			Align(lipgloss.Center, lipgloss.Center).
 			Foreground(lipgloss.Color("240"))
 
@@ -199,14 +373,13 @@ func (p *RequestPanel) View() string {
 	// Separator line
 	separator := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("238")).
-		Width(p.width - 4).
-		Render(strings.Repeat("─", p.width-4))
+		Render(strings.Repeat("─", innerWidth))
 
-	// Tab bar
+	// Tab bar (now 2 lines: tabs + indicator)
 	tabBar := p.renderTabBar()
 
-	// Tab content
-	contentHeight := p.height - 8 // Title + URL + separator + tabs + borders
+	// Tab content: innerHeight - title(1) - urlBar(1) - separator(1) - tabBar(2)
+	contentHeight := innerHeight - 5
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
@@ -221,51 +394,195 @@ func (p *RequestPanel) renderURLBar() string {
 		return ""
 	}
 
-	// Method badge (colored)
-	methodBadge := p.methodStyle(p.request.Method()).Render(p.request.Method())
+	innerWidth := p.width - 2
 
-	// URL with styling
-	url := p.request.URL()
-	availableWidth := p.width - 20 // Account for method, send hint, padding
-	if len(url) > availableWidth && availableWidth > 3 {
-		url = url[:availableWidth-3] + "..."
+	// Check if in method edit mode
+	if p.editingMethod {
+		return p.renderMethodSelector()
 	}
 
-	urlStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252"))
+	// Method button style (Postman-like dropdown look)
+	method := p.request.Method()
+	methodStyle := p.methodStyle(method)
+	methodBtn := methodStyle.Render(method + " ▾")
 
-	// Send hint
+	// Send button
 	sendStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("214")).
+		Foreground(lipgloss.Color("0")).
+		Bold(true).
+		Padding(0, 1)
+	sendBtn := sendStyle.Render("Send")
+
+	// Calculate URL field width (method + spacing + url + spacing + send)
+	sendBtnWidth := lipgloss.Width(sendBtn)
+	methodWidth := lipgloss.Width(methodBtn)
+	urlFieldWidth := innerWidth - methodWidth - sendBtnWidth - 4
+	if urlFieldWidth < 10 {
+		urlFieldWidth = 10
+	}
+
+	// URL content
+	var urlContent string
+	if p.editingURL {
+		// Show editable URL with cursor
+		url := p.urlInput
+		cursor := p.urlCursor
+
+		if cursor >= len(url) {
+			urlContent = url + "▌"
+		} else {
+			urlContent = url[:cursor] + "▌" + url[cursor:]
+		}
+
+		// Truncate keeping cursor visible
+		if len(urlContent) > urlFieldWidth {
+			start := 0
+			if cursor > urlFieldWidth-5 {
+				start = cursor - urlFieldWidth + 5
+			}
+			end := start + urlFieldWidth
+			if end > len(urlContent) {
+				end = len(urlContent)
+			}
+			if start > 0 {
+				urlContent = "…" + urlContent[start:end]
+			} else {
+				urlContent = urlContent[:end]
+			}
+		}
+	} else {
+		urlContent = p.request.URL()
+		if len(urlContent) > urlFieldWidth {
+			urlContent = urlContent[:urlFieldWidth-3] + "..."
+		}
+	}
+
+	// Pad URL to fill field
+	for len(urlContent) < urlFieldWidth {
+		urlContent += " "
+	}
+
+	// URL field style - simple background highlight instead of border
+	urlFieldStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("237")).
+		Foreground(lipgloss.Color("252")).
+		Padding(0, 1)
+
+	if p.editingURL {
+		urlFieldStyle = urlFieldStyle.
+			Background(lipgloss.Color("238")).
+			Foreground(lipgloss.Color("214"))
+	}
+
+	urlField := urlFieldStyle.Render(urlContent)
+
+	// Compose URL bar with proper spacing
+	return methodBtn + " " + urlField + " " + sendBtn
+}
+
+func (p *RequestPanel) renderMethodSelector() string {
+	innerWidth := p.width - 2
+
+	// Build dropdown-style method selector
+	var methods []string
+
+	for i, m := range httpMethods {
+		if i == p.methodIndex {
+			// Selected method - colored badge with arrow
+			style := p.methodStyle(m)
+			methods = append(methods, style.Render("▸ "+m))
+		} else {
+			// Other methods - muted
+			style := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("245")).
+				Padding(0, 1)
+			methods = append(methods, style.Render("  "+m))
+		}
+	}
+
+	// Dropdown box styling
+	dropdownStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("214")).
+		Padding(0, 1)
+
+	methodList := strings.Join(methods, "\n")
+	dropdown := dropdownStyle.Render(methodList)
+
+	// Hints below dropdown
+	hintStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("245")).
 		Italic(true)
-	sendHint := sendStyle.Render("↵ Send")
+	hints := hintStyle.Render("↑/↓ j/k Select   Enter Save   Esc Cancel")
 
-	// Compose URL bar
-	return methodBadge + " " + urlStyle.Render(url) + "  " + sendHint
+	// Pad to fill width
+	lines := strings.Split(dropdown, "\n")
+	for i, line := range lines {
+		if len(line) < innerWidth {
+			lines[i] = line + strings.Repeat(" ", innerWidth-lipgloss.Width(line))
+		}
+	}
+
+	return strings.Join(lines, "\n") + "\n" + hints
 }
 
 func (p *RequestPanel) renderTabBar() string {
+	innerWidth := p.width - 2
 	var tabs []string
+
 	for i, name := range tabNames {
-		style := lipgloss.NewStyle().Padding(0, 1)
 		if RequestTab(i) == p.activeTab {
-			if p.focused {
-				style = style.
-					Foreground(lipgloss.Color("214")).
-					Bold(true).
-					Underline(true)
-			} else {
-				style = style.
-					Foreground(lipgloss.Color("252")).
-					Bold(true).
-					Underline(true)
-			}
+			// Active tab - colored indicator
+			activeStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("214")).
+				Bold(true).
+				Padding(0, 1)
+			indicator := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("214")).
+				Render("━")
+			tabs = append(tabs, activeStyle.Render(name)+"\n"+indicator+strings.Repeat("━", len(name)))
 		} else {
-			style = style.Foreground(lipgloss.Color("245"))
+			// Inactive tab
+			inactiveStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("245")).
+				Padding(0, 1)
+			tabs = append(tabs, inactiveStyle.Render(name)+"\n"+strings.Repeat(" ", len(name)+2))
 		}
-		tabs = append(tabs, style.Render(name))
 	}
-	return strings.Join(tabs, "  ")
+
+	// Build two-line tab bar
+	var topLine, bottomLine []string
+	for i, name := range tabNames {
+		if RequestTab(i) == p.activeTab {
+			activeStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("214")).
+				Bold(true).
+				Padding(0, 1)
+			topLine = append(topLine, activeStyle.Render(name))
+			bottomLine = append(bottomLine, lipgloss.NewStyle().
+				Foreground(lipgloss.Color("214")).
+				Render(strings.Repeat("━", len(name)+2)))
+		} else {
+			inactiveStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("245")).
+				Padding(0, 1)
+			topLine = append(topLine, inactiveStyle.Render(name))
+			bottomLine = append(bottomLine, strings.Repeat(" ", len(name)+2))
+		}
+	}
+
+	// Fill remaining width with separator line
+	topRow := strings.Join(topLine, " ")
+	bottomRow := strings.Join(bottomLine, " ")
+	remainingWidth := innerWidth - lipgloss.Width(bottomRow)
+	if remainingWidth > 0 {
+		bottomRow += lipgloss.NewStyle().
+			Foreground(lipgloss.Color("238")).
+			Render(strings.Repeat("─", remainingWidth))
+	}
+
+	return topRow + "\n" + bottomRow
 }
 
 func (p *RequestPanel) renderTabContent(height int) string {
@@ -306,6 +623,8 @@ func (p *RequestPanel) renderURLTab() []string {
 		fmt.Sprintf("URL: %s", p.request.URL()),
 		fmt.Sprintf("Method: %s", p.request.Method()),
 		"",
+		"Press m to change method",
+		"Press e to edit URL",
 		"Press Enter to send request",
 	}
 }
@@ -409,8 +728,6 @@ func (p *RequestPanel) methodStyle(method string) lipgloss.Style {
 
 func (p *RequestPanel) wrapWithBorder(content string) string {
 	borderStyle := lipgloss.NewStyle().
-		Width(p.width).
-		Height(p.height).
 		BorderStyle(lipgloss.RoundedBorder())
 
 	if p.focused {

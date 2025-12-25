@@ -145,9 +145,19 @@ func (p *ResponsePanel) View() string {
 		return ""
 	}
 
+	// Account for borders
+	innerWidth := p.width - 2
+	innerHeight := p.height - 2
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+
 	// Title bar
 	titleStyle := lipgloss.NewStyle().
-		Width(p.width - 2).
+		Width(innerWidth).
 		Align(lipgloss.Center).
 		Bold(true)
 
@@ -165,9 +175,13 @@ func (p *ResponsePanel) View() string {
 
 	// Loading state
 	if p.loading {
+		emptyHeight := innerHeight - 1
+		if emptyHeight < 1 {
+			emptyHeight = 1
+		}
 		loadingStyle := lipgloss.NewStyle().
-			Width(p.width - 4).
-			Height(p.height - 4).
+			Width(innerWidth).
+			Height(emptyHeight).
 			Align(lipgloss.Center, lipgloss.Center).
 			Foreground(lipgloss.Color("214"))
 
@@ -177,9 +191,13 @@ func (p *ResponsePanel) View() string {
 
 	// Error state
 	if p.err != nil {
+		emptyHeight := innerHeight - 1
+		if emptyHeight < 1 {
+			emptyHeight = 1
+		}
 		errorStyle := lipgloss.NewStyle().
-			Width(p.width - 4).
-			Height(p.height - 4).
+			Width(innerWidth).
+			Height(emptyHeight).
 			Align(lipgloss.Center, lipgloss.Center).
 			Foreground(lipgloss.Color("196"))
 
@@ -189,9 +207,13 @@ func (p *ResponsePanel) View() string {
 
 	// Empty state
 	if p.response == nil {
+		emptyHeight := innerHeight - 1
+		if emptyHeight < 1 {
+			emptyHeight = 1
+		}
 		emptyStyle := lipgloss.NewStyle().
-			Width(p.width - 4).
-			Height(p.height - 4).
+			Width(innerWidth).
+			Height(emptyHeight).
 			Align(lipgloss.Center, lipgloss.Center).
 			Foreground(lipgloss.Color("240"))
 
@@ -205,14 +227,13 @@ func (p *ResponsePanel) View() string {
 	// Separator line
 	separator := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("238")).
-		Width(p.width - 4).
-		Render(strings.Repeat("─", p.width-4))
+		Render(strings.Repeat("─", innerWidth))
 
-	// Tab bar
+	// Tab bar (now 2 lines: tabs + indicator)
 	tabBar := p.renderTabBar()
 
-	// Tab content
-	contentHeight := p.height - 8 // Title + status + separator + tabs + borders
+	// Tab content: innerHeight - title(1) - status(1) - separator(1) - tabBar(2)
+	contentHeight := innerHeight - 5
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
@@ -267,27 +288,44 @@ func (p *ResponsePanel) formatSize(bytes int64) string {
 }
 
 func (p *ResponsePanel) renderTabBar() string {
-	var tabs []string
+	innerWidth := p.width - 2
+
+	// Build two-line tab bar with underline indicator
+	var topLine, bottomLine []string
 	for i, name := range responseTabNames {
-		style := lipgloss.NewStyle().Padding(0, 1)
 		if ResponseTab(i) == p.activeTab {
-			if p.focused {
-				style = style.
-					Foreground(lipgloss.Color("214")).
-					Bold(true).
-					Underline(true)
-			} else {
-				style = style.
-					Foreground(lipgloss.Color("252")).
-					Bold(true).
-					Underline(true)
+			activeColor := "214" // Orange
+			if !p.focused {
+				activeColor = "252" // White when not focused
 			}
+			activeStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color(activeColor)).
+				Bold(true).
+				Padding(0, 1)
+			topLine = append(topLine, activeStyle.Render(name))
+			bottomLine = append(bottomLine, lipgloss.NewStyle().
+				Foreground(lipgloss.Color(activeColor)).
+				Render(strings.Repeat("━", len(name)+2)))
 		} else {
-			style = style.Foreground(lipgloss.Color("245"))
+			inactiveStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("245")).
+				Padding(0, 1)
+			topLine = append(topLine, inactiveStyle.Render(name))
+			bottomLine = append(bottomLine, strings.Repeat(" ", len(name)+2))
 		}
-		tabs = append(tabs, style.Render(name))
 	}
-	return strings.Join(tabs, "  ")
+
+	// Fill remaining width with separator line
+	topRow := strings.Join(topLine, " ")
+	bottomRow := strings.Join(bottomLine, " ")
+	remainingWidth := innerWidth - lipgloss.Width(bottomRow)
+	if remainingWidth > 0 {
+		bottomRow += lipgloss.NewStyle().
+			Foreground(lipgloss.Color("238")).
+			Render(strings.Repeat("─", remainingWidth))
+	}
+
+	return topRow + "\n" + bottomRow
 }
 
 func (p *ResponsePanel) renderTabContent(height int) string {
@@ -385,8 +423,6 @@ func (p *ResponsePanel) renderTimingTab() []string {
 
 func (p *ResponsePanel) wrapWithBorder(content string) string {
 	borderStyle := lipgloss.NewStyle().
-		Width(p.width).
-		Height(p.height).
 		BorderStyle(lipgloss.RoundedBorder())
 
 	if p.focused {

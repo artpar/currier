@@ -287,7 +287,8 @@ func (c *CollectionTree) applyFilter() {
 
 // contentHeight returns the height available for content.
 func (c *CollectionTree) contentHeight() int {
-	height := c.height - 4 // Title + borders
+	// height - 2 (borders) - 1 (title) - search bar if present
+	height := c.height - 3
 	if c.searching || c.search != "" {
 		height-- // Search bar
 	}
@@ -327,9 +328,19 @@ func (c *CollectionTree) View() string {
 		return ""
 	}
 
-	// Title
+	// Account for borders (2 chars width, 2 lines height)
+	innerWidth := c.width - 2
+	innerHeight := c.height - 2
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+
+	// Title takes 1 line
 	titleStyle := lipgloss.NewStyle().
-		Width(c.width - 2).
+		Width(innerWidth).
 		Align(lipgloss.Center).
 		Bold(true)
 
@@ -345,14 +356,19 @@ func (c *CollectionTree) View() string {
 
 	title := titleStyle.Render(c.title)
 
-	// Search bar (if searching or has active filter)
+	// Search bar (if searching or has active filter) - takes 1 line
 	var searchBar string
+	searchLines := 0
 	if c.searching || c.search != "" {
 		searchBar = c.renderSearchBar()
+		searchLines = 1
 	}
 
-	// Content
-	contentHeight := c.contentHeight()
+	// Content height = inner height - title (1) - search bar (0 or 1)
+	contentHeight := innerHeight - 1 - searchLines
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
 
 	displayItems := c.getDisplayItems()
 	var lines []string
@@ -363,8 +379,9 @@ func (c *CollectionTree) View() string {
 	}
 
 	// Pad with empty lines if needed
+	emptyLine := strings.Repeat(" ", innerWidth)
 	for len(lines) < contentHeight {
-		lines = append(lines, strings.Repeat(" ", c.width-2))
+		lines = append(lines, emptyLine)
 	}
 
 	content := strings.Join(lines, "\n")
@@ -377,10 +394,8 @@ func (c *CollectionTree) View() string {
 	}
 	parts = append(parts, content)
 
-	// Border
+	// Border style without explicit dimensions
 	borderStyle := lipgloss.NewStyle().
-		Width(c.width).
-		Height(c.height).
 		BorderStyle(lipgloss.RoundedBorder())
 
 	if c.focused {
@@ -393,7 +408,7 @@ func (c *CollectionTree) View() string {
 }
 
 func (c *CollectionTree) renderSearchBar() string {
-	width := c.width - 4
+	width := c.width - 2 // Account for borders only
 
 	// Search icon and input
 	searchIcon := "🔍 "
@@ -433,7 +448,7 @@ func (c *CollectionTree) renderSearchBar() string {
 }
 
 func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
-	width := c.width - 4 // Account for borders and padding
+	width := c.width - 2 // Account for borders only
 
 	// Indentation
 	indent := strings.Repeat("  ", item.Level)
@@ -487,25 +502,50 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 }
 
 func (c *CollectionTree) methodBadge(method string) string {
+	// Compact colored method badges
 	style := lipgloss.NewStyle().Bold(true)
 
 	switch strings.ToUpper(method) {
 	case "GET":
-		return style.Foreground(lipgloss.Color("34")).Render("GET ")
+		return style.
+			Background(lipgloss.Color("34")).
+			Foreground(lipgloss.Color("255")).
+			Render(" GET ")
 	case "POST":
-		return style.Foreground(lipgloss.Color("214")).Render("POST")
+		return style.
+			Background(lipgloss.Color("214")).
+			Foreground(lipgloss.Color("0")).
+			Render(" POST")
 	case "PUT":
-		return style.Foreground(lipgloss.Color("33")).Render("PUT ")
+		return style.
+			Background(lipgloss.Color("33")).
+			Foreground(lipgloss.Color("255")).
+			Render(" PUT ")
 	case "PATCH":
-		return style.Foreground(lipgloss.Color("141")).Render("PTCH")
+		return style.
+			Background(lipgloss.Color("141")).
+			Foreground(lipgloss.Color("255")).
+			Render(" PTCH")
 	case "DELETE":
-		return style.Foreground(lipgloss.Color("160")).Render("DEL ")
+		return style.
+			Background(lipgloss.Color("160")).
+			Foreground(lipgloss.Color("255")).
+			Render(" DEL ")
 	case "HEAD":
-		return style.Foreground(lipgloss.Color("245")).Render("HEAD")
+		return style.
+			Background(lipgloss.Color("240")).
+			Foreground(lipgloss.Color("255")).
+			Render(" HEAD")
 	case "OPTIONS":
-		return style.Foreground(lipgloss.Color("245")).Render("OPT ")
+		return style.
+			Background(lipgloss.Color("240")).
+			Foreground(lipgloss.Color("255")).
+			Render(" OPT ")
 	default:
-		return style.Foreground(lipgloss.Color("245")).Render(fmt.Sprintf("%-4s", method))
+		return style.
+			Background(lipgloss.Color("240")).
+			Foreground(lipgloss.Color("255")).
+			Render(fmt.Sprintf(" %-4s", method))
 	}
 }
 
