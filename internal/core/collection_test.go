@@ -397,3 +397,228 @@ func TestCollection_Clone(t *testing.T) {
 		assert.Equal(t, "Original description", original.Description())
 	})
 }
+
+func TestCollection_Scripts(t *testing.T) {
+	t.Run("sets and gets pre-script", func(t *testing.T) {
+		c := NewCollection("My API")
+		script := "console.log('pre-request');"
+		c.SetPreScript(script)
+		assert.Equal(t, script, c.PreScript())
+	})
+
+	t.Run("sets and gets post-script", func(t *testing.T) {
+		c := NewCollection("My API")
+		script := "console.log('post-request');"
+		c.SetPostScript(script)
+		assert.Equal(t, script, c.PostScript())
+	})
+}
+
+func TestRequestDefinition_URLAndMethod(t *testing.T) {
+	t.Run("sets URL", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "https://old.example.com")
+		req.SetURL("https://new.example.com")
+		assert.Equal(t, "https://new.example.com", req.URL())
+	})
+
+	t.Run("sets method", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetMethod("POST")
+		assert.Equal(t, "POST", req.Method())
+	})
+
+	t.Run("removes header", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetHeader("X-Custom", "value")
+		req.RemoveHeader("X-Custom")
+		assert.Equal(t, "", req.GetHeader("X-Custom"))
+	})
+
+	t.Run("sets body directly", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "POST", "https://example.com")
+		req.SetBody(`{"key":"value"}`)
+		assert.Equal(t, `{"key":"value"}`, req.Body())
+	})
+
+	t.Run("returns empty query params", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "https://example.com")
+		assert.Empty(t, req.QueryParams())
+	})
+}
+
+func TestRequestDefinition_Auth(t *testing.T) {
+	t.Run("sets and gets auth", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetAuth(AuthConfig{
+			Type:  "bearer",
+			Token: "my-token",
+		})
+		auth := req.Auth()
+		require.NotNil(t, auth)
+		assert.Equal(t, "bearer", auth.Type)
+		assert.Equal(t, "my-token", auth.Token)
+	})
+
+	t.Run("returns nil when no auth", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "https://example.com")
+		assert.Nil(t, req.Auth())
+	})
+}
+
+func TestRequestDefinition_BodyRaw(t *testing.T) {
+	t.Run("sets raw body", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "POST", "https://example.com")
+		req.SetBodyRaw("plain text content", "text/plain")
+		assert.Equal(t, "raw", req.BodyType())
+		assert.Equal(t, "plain text content", req.BodyContent())
+	})
+}
+
+func TestRequestDefinition_Clone(t *testing.T) {
+	t.Run("clones request definition", func(t *testing.T) {
+		original := NewRequestDefinition("Test", "POST", "https://example.com")
+		original.SetDescription("Test description")
+		original.SetHeader("X-Custom", "value")
+		original.SetBody(`{"key":"value"}`)
+		original.SetAuth(AuthConfig{Type: "bearer", Token: "token"})
+		original.SetPreScript("pre")
+		original.SetPostScript("post")
+
+		clone := original.Clone()
+
+		assert.NotEqual(t, original.ID(), clone.ID())
+		assert.Equal(t, original.Name(), clone.Name())
+		assert.Equal(t, original.Description(), clone.Description())
+		assert.Equal(t, original.Method(), clone.Method())
+		assert.Equal(t, original.URL(), clone.URL())
+		assert.Equal(t, original.GetHeader("X-Custom"), clone.GetHeader("X-Custom"))
+		assert.Equal(t, original.Body(), clone.Body())
+		assert.Equal(t, original.PreScript(), clone.PreScript())
+		assert.Equal(t, original.PostScript(), clone.PostScript())
+
+		// Verify modifications don't affect original
+		clone.SetDescription("Modified")
+		assert.Equal(t, "Test description", original.Description())
+	})
+}
+
+func TestFolder_Clone(t *testing.T) {
+	t.Run("clones folder", func(t *testing.T) {
+		original := NewFolder("Original")
+		original.SetDescription("Folder description")
+		nested := original.AddFolder("Nested")
+		nested.AddRequest(NewRequestDefinition("Test", "GET", "/test"))
+
+		clone := original.Clone()
+
+		assert.NotEqual(t, original.ID(), clone.ID())
+		assert.Equal(t, original.Name(), clone.Name())
+		assert.Equal(t, original.Description(), clone.Description())
+		assert.Len(t, clone.Folders(), 1)
+	})
+}
+
+func TestFolder_GetRequest(t *testing.T) {
+	t.Run("gets request by ID", func(t *testing.T) {
+		f := NewFolder("Test")
+		req := NewRequestDefinition("Test Request", "GET", "/test")
+		f.AddRequest(req)
+
+		found, ok := f.GetRequest(req.ID())
+		assert.True(t, ok)
+		assert.Equal(t, "Test Request", found.Name())
+	})
+
+	t.Run("returns false for non-existent request", func(t *testing.T) {
+		f := NewFolder("Test")
+		_, ok := f.GetRequest("non-existent")
+		assert.False(t, ok)
+	})
+}
+
+func TestFolder_RemoveRequest(t *testing.T) {
+	t.Run("removes request by ID", func(t *testing.T) {
+		f := NewFolder("Test")
+		req := NewRequestDefinition("Test Request", "GET", "/test")
+		f.AddRequest(req)
+		f.RemoveRequest(req.ID())
+		assert.Empty(t, f.Requests())
+	})
+}
+
+func TestNewCollectionWithID(t *testing.T) {
+	t.Run("creates collection with specific ID", func(t *testing.T) {
+		c := NewCollectionWithID("custom-id-123", "Test Collection")
+		assert.Equal(t, "custom-id-123", c.ID())
+		assert.Equal(t, "Test Collection", c.Name())
+	})
+}
+
+func TestCollection_SetTimestamps(t *testing.T) {
+	t.Run("sets timestamps", func(t *testing.T) {
+		c := NewCollection("Test")
+		created := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		updated := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+
+		c.SetTimestamps(created, updated)
+
+		assert.Equal(t, created, c.CreatedAt())
+		assert.Equal(t, updated, c.UpdatedAt())
+	})
+}
+
+func TestCollection_AddExistingFolder(t *testing.T) {
+	t.Run("adds existing folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		f := NewFolder("Existing")
+		c.AddExistingFolder(f)
+		assert.Len(t, c.Folders(), 1)
+	})
+}
+
+func TestNewFolderWithID(t *testing.T) {
+	t.Run("creates folder with specific ID", func(t *testing.T) {
+		f := NewFolderWithID("folder-123", "Test Folder")
+		assert.Equal(t, "folder-123", f.ID())
+		assert.Equal(t, "Test Folder", f.Name())
+	})
+}
+
+func TestFolder_AddExistingFolder(t *testing.T) {
+	t.Run("adds existing folder to folder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		child := NewFolder("Child")
+		parent.AddExistingFolder(child)
+		assert.Len(t, parent.Folders(), 1)
+	})
+}
+
+func TestNewRequestDefinitionWithID(t *testing.T) {
+	t.Run("creates request definition with specific ID", func(t *testing.T) {
+		req := NewRequestDefinitionWithID("req-123", "Test Request", "GET", "/test")
+		assert.Equal(t, "req-123", req.ID())
+		assert.Equal(t, "Test Request", req.Name())
+		assert.Equal(t, "GET", req.Method())
+		assert.Equal(t, "/test", req.URL())
+	})
+}
+
+func TestRequestDefinition_ToRequestWithBody(t *testing.T) {
+	t.Run("converts request with JSON body", func(t *testing.T) {
+		def := NewRequestDefinition("Create User", "POST", "https://example.com/users")
+		def.SetBodyJSON(map[string]any{"name": "test"})
+
+		req, err := def.ToRequest()
+		require.NoError(t, err)
+		assert.NotNil(t, req.Body())
+	})
+
+	t.Run("converts request with raw body", func(t *testing.T) {
+		def := NewRequestDefinition("Send Data", "POST", "https://example.com/data")
+		def.SetBodyRaw("plain text", "text/plain")
+
+		req, err := def.ToRequest()
+		require.NoError(t, err)
+		assert.NotNil(t, req.Body())
+	})
+}

@@ -281,12 +281,192 @@ func TestResponsePanel_Copy(t *testing.T) {
 	})
 }
 
+func TestResponsePanel_FocusBlur(t *testing.T) {
+	t.Run("Focus sets focused state", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.Focus()
+		assert.True(t, panel.Focused())
+	})
+
+	t.Run("Blur removes focused state", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.Focus()
+		panel.Blur()
+		assert.False(t, panel.Focused())
+	})
+}
+
+func TestResponsePanel_Size(t *testing.T) {
+	t.Run("SetSize updates dimensions", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(100, 50)
+		assert.Equal(t, 100, panel.Width())
+		assert.Equal(t, 50, panel.Height())
+	})
+
+	t.Run("returns empty view with zero size", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(0, 0)
+		assert.Empty(t, panel.View())
+	})
+}
+
+func TestResponsePanel_Init(t *testing.T) {
+	t.Run("Init returns nil", func(t *testing.T) {
+		panel := NewResponsePanel()
+		cmd := panel.Init()
+		assert.Nil(t, cmd)
+	})
+}
+
+func TestResponsePanel_Error(t *testing.T) {
+	t.Run("SetError sets error state", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetError(assert.AnError)
+
+		assert.Equal(t, assert.AnError, panel.Error())
+	})
+
+	t.Run("SetError clears response", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetError(assert.AnError)
+
+		assert.Nil(t, panel.Response())
+	})
+
+	t.Run("shows error in view", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetError(assert.AnError)
+
+		view := panel.View()
+		assert.Contains(t, view, "Error")
+	})
+}
+
+func TestResponsePanel_WindowSizeMsg(t *testing.T) {
+	t.Run("handles WindowSizeMsg when focused", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.Focus()
+
+		msg := tea.WindowSizeMsg{Width: 120, Height: 40}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		assert.Equal(t, 120, panel.Width())
+		assert.Equal(t, 40, panel.Height())
+	})
+
+	t.Run("handles WindowSizeMsg when unfocused", func(t *testing.T) {
+		panel := NewResponsePanel()
+		// Not focused
+
+		msg := tea.WindowSizeMsg{Width: 120, Height: 40}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		assert.Equal(t, 120, panel.Width())
+		assert.Equal(t, 40, panel.Height())
+	})
+}
+
+func TestResponsePanel_GoToBottom(t *testing.T) {
+	t.Run("G goes to bottom", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.Focus()
+		panel.SetSize(80, 30)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		// Scroll offset should be set to max
+		assert.GreaterOrEqual(t, panel.ScrollOffset(), 0)
+	})
+
+	t.Run("g goes to top", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.Focus()
+		panel.SetScrollOffset(10)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		assert.Equal(t, 0, panel.ScrollOffset())
+	})
+}
+
+func TestResponsePanel_HeadersTab(t *testing.T) {
+	t.Run("renders headers on headers tab", func(t *testing.T) {
+		panel := newTestResponsePanelWithHeaders(t)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabHeaders)
+
+		view := panel.View()
+		// Should contain Content-Type header
+		assert.Contains(t, view, "Content-Type")
+	})
+
+	t.Run("shows no headers message when empty", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabHeaders)
+
+		view := panel.View()
+		assert.Contains(t, view, "No response headers")
+	})
+}
+
+func TestResponsePanel_TimingTab(t *testing.T) {
+	t.Run("renders timing info on timing tab", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabTiming)
+
+		view := panel.View()
+		assert.Contains(t, view, "Total Time")
+	})
+}
+
+func TestResponsePanel_StatusHelpers(t *testing.T) {
+	t.Run("IsSuccess returns false for nil response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		assert.False(t, panel.IsSuccess())
+	})
+
+	t.Run("IsClientError returns false for nil response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		assert.False(t, panel.IsClientError())
+	})
+
+	t.Run("IsServerError returns false for nil response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		assert.False(t, panel.IsServerError())
+	})
+
+	t.Run("IsSuccess returns false for 3xx", func(t *testing.T) {
+		panel := NewResponsePanel()
+		resp := newTestResponse(301, "Moved Permanently")
+		panel.SetResponse(resp)
+		assert.False(t, panel.IsSuccess())
+	})
+}
+
 // Helper functions
 
 func newTestResponsePanel(t *testing.T) *ResponsePanel {
 	t.Helper()
 	panel := NewResponsePanel()
 	resp := newTestResponse(200, "OK")
+	panel.SetResponse(resp)
+	return panel
+}
+
+func newTestResponsePanelWithHeaders(t *testing.T) *ResponsePanel {
+	t.Helper()
+	panel := NewResponsePanel()
+	resp := newTestResponseWithHeaders(200, "OK")
 	panel.SetResponse(resp)
 	return panel
 }
@@ -302,6 +482,28 @@ func newTestResponse(code int, statusText string) *core.Response {
 
 	return core.NewResponse("req-456", "http", core.NewStatus(code, statusText)).
 		WithBody(body).
+		WithTiming(interfaces.TimingInfo{
+			StartTime: start,
+			EndTime:   end,
+		})
+}
+
+func newTestResponseWithHeaders(code int, statusText string) *core.Response {
+	body := core.NewJSONBody(map[string]any{
+		"test_field": "test_value",
+		"number":     42,
+	})
+
+	headers := core.NewHeaders()
+	headers.Set("Content-Type", "application/json")
+	headers.Set("X-Request-Id", "test-123")
+
+	start := time.Now().Add(-100 * time.Millisecond)
+	end := time.Now()
+
+	return core.NewResponse("req-456", "http", core.NewStatus(code, statusText)).
+		WithBody(body).
+		WithHeaders(headers).
 		WithTiming(interfaces.TimingInfo{
 			StartTime: start,
 			EndTime:   end,

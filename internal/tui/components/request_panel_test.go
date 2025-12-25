@@ -293,6 +293,197 @@ func TestRequestPanel_SendRequest(t *testing.T) {
 	})
 }
 
+func TestRequestPanel_URLEditing(t *testing.T) {
+	t.Run("e key enters URL edit mode", func(t *testing.T) {
+		panel := newTestRequestPanel(t)
+		panel.Focus()
+		panel.SetActiveTab(TabURL)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}}
+		panel.Update(msg)
+
+		// Should be in editing mode - check view shows cursor
+		panel.SetSize(80, 30)
+		view := panel.View()
+		assert.Contains(t, view, "▌") // Cursor indicator
+	})
+
+	t.Run("Escape cancels URL editing", func(t *testing.T) {
+		panel := newTestRequestPanel(t)
+		panel.Focus()
+		panel.SetActiveTab(TabURL)
+
+		// Enter edit mode
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}}
+		panel.Update(msg)
+
+		// Press Escape
+		msg = tea.KeyMsg{Type: tea.KeyEsc}
+		panel.Update(msg)
+
+		// Should exit edit mode
+		panel.SetSize(80, 30)
+		view := panel.View()
+		assert.NotContains(t, view, "▌")
+	})
+
+	t.Run("Enter saves URL edit", func(t *testing.T) {
+		panel := newTestRequestPanel(t)
+		panel.Focus()
+		panel.SetActiveTab(TabURL)
+
+		// Enter edit mode
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		// Type new URL
+		for _, r := range "https://newurl.com" {
+			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+			updated, _ = panel.Update(msg)
+			panel = updated.(*RequestPanel)
+		}
+
+		// Press Enter
+		msg = tea.KeyMsg{Type: tea.KeyEnter}
+		panel.Update(msg)
+
+		// URL should be updated
+		assert.Contains(t, panel.Request().URL(), "newurl")
+	})
+}
+
+func TestRequestPanel_MethodEditing(t *testing.T) {
+	t.Run("m key enters method edit mode", func(t *testing.T) {
+		panel := newTestRequestPanel(t)
+		panel.Focus()
+		panel.SetActiveTab(TabURL)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		panel.SetSize(80, 30)
+		view := panel.View()
+		// Should show method selector with multiple methods
+		assert.Contains(t, view, "POST")
+		assert.Contains(t, view, "PUT")
+	})
+
+	t.Run("arrow keys cycle through methods", func(t *testing.T) {
+		panel := newTestRequestPanel(t)
+		panel.Focus()
+		panel.SetActiveTab(TabURL)
+
+		// Enter method edit mode
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		// Press down arrow
+		msg = tea.KeyMsg{Type: tea.KeyDown}
+		updated, _ = panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		// Press Enter to save
+		msg = tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ = panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		// Method should have changed
+		assert.NotEqual(t, "GET", panel.Request().Method())
+	})
+
+	t.Run("Escape cancels method edit", func(t *testing.T) {
+		panel := newTestRequestPanel(t)
+		panel.Focus()
+		panel.SetActiveTab(TabURL)
+		originalMethod := panel.Request().Method()
+
+		// Enter method edit mode
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		// Change method
+		msg = tea.KeyMsg{Type: tea.KeyDown}
+		updated, _ = panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		// Cancel with Escape
+		msg = tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ = panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		// Method should be unchanged
+		assert.Equal(t, originalMethod, panel.Request().Method())
+	})
+}
+
+func TestRequestPanel_FocusBlur(t *testing.T) {
+	t.Run("Focus sets focused state", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.Focus()
+		assert.True(t, panel.Focused())
+	})
+
+	t.Run("Blur removes focused state", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.Focus()
+		panel.Blur()
+		assert.False(t, panel.Focused())
+	})
+}
+
+func TestRequestPanel_Size(t *testing.T) {
+	t.Run("SetSize updates dimensions", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(100, 50)
+		assert.Equal(t, 100, panel.Width())
+		assert.Equal(t, 50, panel.Height())
+	})
+
+	t.Run("returns empty view with zero size", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(0, 0)
+		assert.Empty(t, panel.View())
+	})
+}
+
+func TestRequestPanel_Init(t *testing.T) {
+	t.Run("Init returns nil", func(t *testing.T) {
+		panel := NewRequestPanel()
+		cmd := panel.Init()
+		assert.Nil(t, cmd)
+	})
+}
+
+func TestRequestPanel_WindowSizeMsg(t *testing.T) {
+	t.Run("handles WindowSizeMsg when focused", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.Focus()
+
+		msg := tea.WindowSizeMsg{Width: 120, Height: 40}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		assert.Equal(t, 120, panel.Width())
+		assert.Equal(t, 40, panel.Height())
+	})
+
+	t.Run("handles WindowSizeMsg when unfocused", func(t *testing.T) {
+		panel := NewRequestPanel()
+		// Not focused
+
+		msg := tea.WindowSizeMsg{Width: 120, Height: 40}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		assert.Equal(t, 120, panel.Width())
+		assert.Equal(t, 40, panel.Height())
+	})
+}
+
 // Helper functions
 
 func newTestRequestPanel(t *testing.T) *RequestPanel {

@@ -83,9 +83,9 @@ func TestTUI_HelpOverlay(t *testing.T) {
 		output := session.Output()
 		assert := harness.NewAssertions(t)
 
-		// Check for action instructions
+		// Check for action instructions (Request/Response sections)
 		assert.OutputContains(output,
-			"Actions",
+			"Request",
 			"Enter",
 		)
 	})

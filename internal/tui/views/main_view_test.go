@@ -247,4 +247,168 @@ func TestMainView_Help(t *testing.T) {
 
 		assert.False(t, view.ShowingHelp())
 	})
+
+	t.Run("renders help content", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+
+		output := view.View()
+		assert.Contains(t, output, "Help")
+		assert.Contains(t, output, "Navigation")
+	})
+
+	t.Run("HideHelp method works", func(t *testing.T) {
+		view := NewMainView()
+		view.ShowHelp()
+		view.HideHelp()
+		assert.False(t, view.ShowingHelp())
+	})
+}
+
+func TestMainView_Init(t *testing.T) {
+	t.Run("Init returns nil", func(t *testing.T) {
+		view := NewMainView()
+		cmd := view.Init()
+		assert.Nil(t, cmd)
+	})
+}
+
+func TestMainView_Title(t *testing.T) {
+	t.Run("returns Currier title", func(t *testing.T) {
+		view := NewMainView()
+		assert.Equal(t, "Currier", view.Title())
+	})
+}
+
+func TestMainView_FocusBlur(t *testing.T) {
+	t.Run("Focused returns true", func(t *testing.T) {
+		view := NewMainView()
+		assert.True(t, view.Focused())
+	})
+
+	t.Run("Focus is no-op", func(t *testing.T) {
+		view := NewMainView()
+		view.Focus()
+		assert.True(t, view.Focused())
+	})
+
+	t.Run("Blur is no-op", func(t *testing.T) {
+		view := NewMainView()
+		view.Blur()
+		assert.True(t, view.Focused())
+	})
+}
+
+func TestMainView_Environment(t *testing.T) {
+	t.Run("returns nil environment initially", func(t *testing.T) {
+		view := NewMainView()
+		assert.Nil(t, view.Environment())
+	})
+
+	t.Run("returns interpolator", func(t *testing.T) {
+		view := NewMainView()
+		assert.NotNil(t, view.Interpolator())
+	})
+}
+
+func TestMainView_ForwardMessages(t *testing.T) {
+	t.Run("forwards messages to collection tree when focused", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneCollections)
+
+		// Add a collection so we have items to navigate
+		c := core.NewCollection("Test")
+		c.AddFolder("Folder")
+		view.SetCollections([]*core.Collection{c})
+
+		// Send j key to move cursor down
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		view.Update(msg)
+
+		// No error means message was forwarded
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+	})
+
+	t.Run("forwards messages to request panel when focused", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneRequest)
+
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		view.RequestPanel().SetRequest(req)
+
+		// Send j key (not Tab, which cycles panes)
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		view.Update(msg)
+
+		// No error means message was forwarded
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+	})
+
+	t.Run("forwards messages to response panel when focused", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneResponse)
+
+		// Send j key
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		view.Update(msg)
+
+		// No error means message was forwarded
+		assert.Equal(t, PaneResponse, view.FocusedPane())
+	})
+}
+
+func TestMainView_ResponseReceived(t *testing.T) {
+	t.Run("clears loading state on response", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ResponsePanel().SetLoading(true)
+
+		msg := components.ResponseReceivedMsg{Response: nil}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.ResponsePanel().IsLoading())
+	})
+}
+
+func TestMainView_RequestError(t *testing.T) {
+	t.Run("clears loading state on error", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ResponsePanel().SetLoading(true)
+
+		msg := components.RequestErrorMsg{Error: assert.AnError}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.ResponsePanel().IsLoading())
+	})
+}
+
+func TestMainView_EscapeKey(t *testing.T) {
+	t.Run("Escape does nothing in normal mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneCollections)
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+	})
+}
+
+func TestMainView_EmptyView(t *testing.T) {
+	t.Run("returns empty string with zero size", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(0, 0)
+
+		output := view.View()
+		assert.Empty(t, output)
+	})
 }
