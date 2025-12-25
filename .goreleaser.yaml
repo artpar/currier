@@ -22,19 +22,9 @@ builds:
       - linux
       - darwin
       - windows
-      - freebsd
-      - openbsd
-      - netbsd
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: freebsd
-        goarch: arm64
-      - goos: openbsd
-        goarch: arm64
-      - goos: netbsd
-        goarch: arm64
 
 archives:
   - id: default
