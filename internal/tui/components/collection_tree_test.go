@@ -399,7 +399,7 @@ func TestCollectionTree_ViewWithSearch(t *testing.T) {
 }
 
 func TestCollectionTree_MethodBadges(t *testing.T) {
-	t.Run("renders method badges for requests", func(t *testing.T) {
+	t.Run("renders GET method badge", func(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.SetSize(60, 20)
 
@@ -412,6 +412,97 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 
 		view := tree.View()
 		assert.Contains(t, view, "GET")
+	})
+
+	t.Run("renders POST method badge", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(60, 20)
+
+		c := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Create User", "POST", "/users")
+		c.AddRequest(req)
+
+		tree.SetCollections([]*core.Collection{c})
+		tree.Expand(0)
+
+		view := tree.View()
+		assert.Contains(t, view, "POST")
+	})
+
+	t.Run("renders PUT method badge", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(60, 20)
+
+		c := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Update User", "PUT", "/users")
+		c.AddRequest(req)
+
+		tree.SetCollections([]*core.Collection{c})
+		tree.Expand(0)
+
+		view := tree.View()
+		assert.Contains(t, view, "PUT")
+	})
+
+	t.Run("renders DELETE method badge", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(60, 20)
+
+		c := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Delete User", "DELETE", "/users/1")
+		c.AddRequest(req)
+
+		tree.SetCollections([]*core.Collection{c})
+		tree.Expand(0)
+
+		view := tree.View()
+		assert.Contains(t, view, "DEL")
+	})
+
+	t.Run("renders PATCH method badge", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(60, 20)
+
+		c := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Patch User", "PATCH", "/users/1")
+		c.AddRequest(req)
+
+		tree.SetCollections([]*core.Collection{c})
+		tree.Expand(0)
+
+		view := tree.View()
+		assert.Contains(t, view, "PTCH")
+	})
+}
+
+func TestCollectionTree_FolderItems(t *testing.T) {
+	t.Run("expands nested folders", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		c := core.NewCollection("API")
+		folder := c.AddFolder("Users")
+		folder.AddRequest(core.NewRequestDefinition("Get", "GET", "/users"))
+
+		tree.SetCollections([]*core.Collection{c})
+
+		// Expand collection
+		tree.Expand(0)
+
+		assert.Greater(t, tree.VisibleItemCount(), 1)
+	})
+}
+
+func TestCollectionTree_WindowSizeMessage(t *testing.T) {
+	t.Run("handles window size message", func(t *testing.T) {
+		tree := NewCollectionTree()
+
+		msg := tea.WindowSizeMsg{Width: 100, Height: 50}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, 100, tree.Width())
+		assert.Equal(t, 50, tree.Height())
 	})
 }
 

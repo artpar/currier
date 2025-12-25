@@ -155,3 +155,29 @@ func TestJSONHighlighter_ComplexJSON(t *testing.T) {
 		assert.NotEmpty(t, result)
 	})
 }
+
+func TestIsJSON(t *testing.T) {
+	t.Run("detects valid JSON object", func(t *testing.T) {
+		assert.True(t, IsJSON(`{"key": "value"}`))
+	})
+
+	t.Run("detects valid JSON array", func(t *testing.T) {
+		assert.True(t, IsJSON(`[1, 2, 3]`))
+	})
+
+	t.Run("detects empty JSON object", func(t *testing.T) {
+		assert.True(t, IsJSON(`{}`))
+	})
+
+	t.Run("rejects invalid JSON", func(t *testing.T) {
+		assert.False(t, IsJSON(`not json`))
+	})
+
+	t.Run("rejects HTML", func(t *testing.T) {
+		assert.False(t, IsJSON(`<html><body>test</body></html>`))
+	})
+
+	t.Run("handles whitespace", func(t *testing.T) {
+		assert.True(t, IsJSON(`  { "key": "value" }  `))
+	})
+}
