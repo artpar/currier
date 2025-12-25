@@ -169,6 +169,14 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		case "3":
 			v.focusPane(PaneResponse)
 			return v, nil
+		case "n":
+			// Create a new request and start editing URL immediately
+			newReq := core.NewRequestDefinition("New Request", "GET", "")
+			v.request.SetRequest(newReq)
+			v.focusPane(PaneRequest)
+			// Auto-enter URL edit mode
+			v.request.StartURLEdit()
+			return v, nil
 		}
 	}
 
@@ -331,6 +339,7 @@ func (v *MainView) renderHelpBar() string {
 
 	// Always add global hints
 	hints = append(hints,
+		keyStyle.Render("n")+descStyle.Render(" New"),
 		keyStyle.Render("1/2/3")+descStyle.Render(" Pane"),
 		keyStyle.Render("?")+descStyle.Render(" Help"),
 		keyStyle.Render("q")+descStyle.Render(" Quit"),
@@ -546,9 +555,19 @@ func (v *MainView) ResponsePanel() *components.ResponsePanel {
 	return v.response
 }
 
-// SetCollections sets the collections to display.
+// SetCollections sets the collections to display and auto-selects the first request.
 func (v *MainView) SetCollections(collections []*core.Collection) {
 	v.tree.SetCollections(collections)
+
+	// Auto-select the first request from the first collection
+	if len(collections) > 0 {
+		for _, col := range collections {
+			if req := col.FirstRequest(); req != nil {
+				v.request.SetRequest(req)
+				break
+			}
+		}
+	}
 }
 
 // SetEnvironment sets the environment and interpolation engine.

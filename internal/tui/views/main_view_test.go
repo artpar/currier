@@ -671,3 +671,78 @@ func TestMainView_ModeIndicator(t *testing.T) {
 		assert.Contains(t, output, "Response")
 	})
 }
+
+func TestMainView_NewRequest(t *testing.T) {
+	t.Run("n key creates new request and enters URL edit mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Initially no request
+		assert.Nil(t, view.RequestPanel().Request())
+
+		// Press 'n' to create new request
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should have a new request
+		assert.NotNil(t, view.RequestPanel().Request())
+
+		// Should be in edit mode
+		assert.True(t, view.RequestPanel().IsEditing())
+
+		// Should focus request pane
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+	})
+}
+
+func TestMainView_AutoSelectFirstRequest(t *testing.T) {
+	t.Run("auto-selects first request when collections are loaded", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Initially no request
+		assert.Nil(t, view.RequestPanel().Request())
+
+		// Create collection with a request
+		col := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com/users")
+		col.AddRequest(req)
+
+		// Set collections
+		view.SetCollections([]*core.Collection{col})
+
+		// Should auto-select the first request
+		assert.NotNil(t, view.RequestPanel().Request())
+		assert.Equal(t, "Get Users", view.RequestPanel().Request().Name())
+	})
+
+	t.Run("auto-selects first request in folder if no root requests", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Create collection with request in folder
+		col := core.NewCollection("Test API")
+		folder := col.AddFolder("Users")
+		req := core.NewRequestDefinition("List Users", "GET", "https://api.example.com/users")
+		folder.AddRequest(req)
+
+		// Set collections
+		view.SetCollections([]*core.Collection{col})
+
+		// Should auto-select the first request from folder
+		assert.NotNil(t, view.RequestPanel().Request())
+		assert.Equal(t, "List Users", view.RequestPanel().Request().Name())
+	})
+}
+
+func TestMainView_HelpBarShowsNewHint(t *testing.T) {
+	t.Run("help bar shows n for New", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		output := view.View()
+		assert.Contains(t, output, "n")
+		assert.Contains(t, output, "New")
+	})
+}

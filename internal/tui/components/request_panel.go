@@ -269,6 +269,17 @@ func (p *RequestPanel) syncHeaderKeys() {
 	p.headerKeys = newKeys
 }
 
+// StartURLEdit enters URL edit mode externally.
+func (p *RequestPanel) StartURLEdit() {
+	if p.request == nil {
+		return
+	}
+	p.editingURL = true
+	p.urlInput = p.request.URL()
+	p.urlCursor = len(p.urlInput)
+	p.activeTab = TabURL
+}
+
 // handleHeaderEditInput handles keyboard input while editing a header.
 func (p *RequestPanel) handleHeaderEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
@@ -646,7 +657,7 @@ func (p *RequestPanel) View() string {
 			Align(lipgloss.Center, lipgloss.Center).
 			Foreground(lipgloss.Color("240"))
 
-		content := emptyStyle.Render("No request selected")
+		content := emptyStyle.Render("Press n to create a new request\nor select from Collections (press 1)")
 		return p.wrapWithBorder(title + "\n" + content)
 	}
 
@@ -682,7 +693,7 @@ func (p *RequestPanel) renderURLBar() string {
 			Foreground(lipgloss.Color("243")).
 			Align(lipgloss.Center).
 			Italic(true)
-		return emptyStyle.Render("Select a request from Collections (press 1)")
+		return emptyStyle.Render("Press n to create a new request, or select from Collections (1)")
 	}
 
 	// Check if in method edit mode

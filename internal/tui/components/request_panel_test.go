@@ -213,7 +213,7 @@ func TestRequestPanel_View(t *testing.T) {
 
 		view := panel.View()
 
-		assert.Contains(t, view, "No request selected")
+		assert.Contains(t, view, "Press n")
 	})
 
 	t.Run("highlights active tab", func(t *testing.T) {
@@ -1402,7 +1402,7 @@ func TestRequestPanel_URLBar(t *testing.T) {
 		panel.Focus()
 
 		view := panel.View()
-		assert.Contains(t, view, "No request selected")
+		assert.Contains(t, view, "Press n")
 	})
 
 	t.Run("shows hint when focused on URL tab", func(t *testing.T) {
@@ -1543,6 +1543,44 @@ func TestRequestPanel_SyncHeaderKeys(t *testing.T) {
 
 		// Header keys should be synced after rendering
 		assert.GreaterOrEqual(t, len(panel.headerKeys), 2)
+	})
+}
+
+func TestRequestPanel_StartURLEdit(t *testing.T) {
+	t.Run("enters URL edit mode externally", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com/api")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+
+		assert.False(t, panel.editingURL)
+
+		panel.StartURLEdit()
+
+		assert.True(t, panel.editingURL)
+		assert.Equal(t, "https://example.com/api", panel.urlInput)
+		assert.Equal(t, len("https://example.com/api"), panel.urlCursor)
+		assert.Equal(t, TabURL, panel.activeTab)
+	})
+
+	t.Run("does nothing if no request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(80, 30)
+
+		panel.StartURLEdit()
+
+		assert.False(t, panel.editingURL)
+	})
+}
+
+func TestRequestPanel_EmptyStateMessage(t *testing.T) {
+	t.Run("shows new request hint", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(80, 30)
+		panel.Focus()
+
+		view := panel.View()
+		assert.Contains(t, view, "Press n")
 	})
 }
 

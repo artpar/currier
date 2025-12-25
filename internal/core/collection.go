@@ -163,6 +163,21 @@ func (c *Collection) Requests() []*RequestDefinition {
 	return c.requests
 }
 
+// FirstRequest returns the first request in the collection (root or in folders).
+func (c *Collection) FirstRequest() *RequestDefinition {
+	// Check root-level requests first
+	if len(c.requests) > 0 {
+		return c.requests[0]
+	}
+	// Check folders recursively
+	for _, f := range c.folders {
+		if req := f.FirstRequest(); req != nil {
+			return req
+		}
+	}
+	return nil
+}
+
 // AddRequest adds a request to the collection root.
 func (c *Collection) AddRequest(req *RequestDefinition) {
 	c.requests = append(c.requests, req)
@@ -253,6 +268,19 @@ func (f *Folder) Name() string        { return f.name }
 func (f *Folder) Description() string { return f.description }
 func (f *Folder) Folders() []*Folder  { return f.folders }
 func (f *Folder) Requests() []*RequestDefinition { return f.requests }
+
+// FirstRequest returns the first request in the folder or its subfolders.
+func (f *Folder) FirstRequest() *RequestDefinition {
+	if len(f.requests) > 0 {
+		return f.requests[0]
+	}
+	for _, folder := range f.folders {
+		if req := folder.FirstRequest(); req != nil {
+			return req
+		}
+	}
+	return nil
+}
 
 func (f *Folder) SetDescription(desc string) {
 	f.description = desc
