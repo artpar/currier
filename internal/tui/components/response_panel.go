@@ -63,13 +63,16 @@ type ResponsePanel struct {
 	gPressed        bool // For gg sequence
 	testResults     []script.TestResult
 	testSummary     script.TestSummary
+	prettyPrint     bool   // Toggle for pretty print (default: true)
+	detectedType    string // "json", "xml", "html", "text"
 }
 
 // NewResponsePanel creates a new response panel.
 func NewResponsePanel() *ResponsePanel {
 	return &ResponsePanel{
-		title:     "Response",
-		activeTab: ResponseTabBody,
+		title:       "Response",
+		activeTab:   ResponseTabBody,
+		prettyPrint: true, // Pretty print enabled by default
 	}
 }
 
@@ -165,6 +168,16 @@ func (p *ResponsePanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			}
 			return p, func() tea.Msg {
 				return CopyMsg{Content: p.response.Body().String()}
+			}
+		case "p":
+			// Toggle pretty print
+			p.prettyPrint = !p.prettyPrint
+			status := "OFF"
+			if p.prettyPrint {
+				status = "ON"
+			}
+			return p, func() tea.Msg {
+				return FeedbackMsg{Message: "Pretty print: " + status, IsError: false}
 			}
 		case "G":
 			// Go to bottom
@@ -341,6 +354,22 @@ func (p *ResponsePanel) renderStatusLine() string {
 	// Size
 	sizeStr := p.formatSize(p.response.Body().Size())
 
+	// Format indicator and pretty print status
+	formatBadge := ""
+	if p.detectedType != "" {
+		formatStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // Purple
+		formatBadge = formatStyle.Render("  " + strings.ToUpper(p.detectedType))
+
+		// Pretty print indicator
+		if p.prettyPrint {
+			ppStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")) // Green
+			formatBadge += ppStyle.Render(" [P]")
+		} else {
+			ppStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")) // Gray
+			formatBadge += ppStyle.Render(" [ ]")
+		}
+	}
+
 	// Test badge (if tests were run)
 	testBadge := ""
 	if len(p.testResults) > 0 {
@@ -353,7 +382,7 @@ func (p *ResponsePanel) renderStatusLine() string {
 		}
 	}
 
-	return fmt.Sprintf("%s  %s  %s%s", statusStr, timeStr, sizeStr, testBadge)
+	return fmt.Sprintf("%s  %s  %s%s%s", statusStr, timeStr, sizeStr, formatBadge, testBadge)
 }
 
 func (p *ResponsePanel) statusStyle(code int) lipgloss.Style {
@@ -469,13 +498,31 @@ func (p *ResponsePanel) renderBodyTab() []string {
 
 	content := body.String()
 
-	// Apply JSON syntax highlighting if content is JSON
-	if IsJSON(content) {
-		highlighter := NewJSONHighlighter()
-		return highlighter.HighlightLines(content)
+	// Detect content format (cache the result)
+	if p.detectedType == "" {
+		contentType := p.response.Headers().Get("Content-Type")
+		p.detectedType = string(DetectContentFormat(contentType, content))
 	}
 
-	return strings.Split(content, "\n")
+	// If pretty print is off, return raw content
+	if !p.prettyPrint {
+		return strings.Split(content, "\n")
+	}
+
+	// Format based on detected type
+	switch p.detectedType {
+	case "json":
+		highlighter := NewJSONHighlighter()
+		return highlighter.HighlightLines(content)
+	case "xml":
+		formatter := NewXMLFormatter()
+		return formatter.FormatLines(content)
+	case "html":
+		formatter := NewHTMLFormatter()
+		return formatter.FormatLines(content)
+	default:
+		return strings.Split(content, "\n")
+	}
 }
 
 func (p *ResponsePanel) renderHeadersTab() []string {
@@ -778,6 +825,7 @@ func (p *ResponsePanel) SetResponse(resp *core.Response) {
 	p.consoleMessages = nil // Clear console for new response
 	p.testResults = nil     // Clear test results for new response
 	p.testSummary = script.TestSummary{}
+	p.detectedType = "" // Clear cached content type for new response
 }
 
 // SetTestResults sets the test results to display.
@@ -957,4 +1005,19 @@ func (p *ResponsePanel) ErrorString() string {
 // GPressed returns true if waiting for second 'g' in gg sequence.
 func (p *ResponsePanel) GPressed() bool {
 	return p.gPressed
+}
+
+// IsPrettyPrint returns true if pretty print is enabled.
+func (p *ResponsePanel) IsPrettyPrint() bool {
+	return p.prettyPrint
+}
+
+// SetPrettyPrint sets the pretty print state.
+func (p *ResponsePanel) SetPrettyPrint(enabled bool) {
+	p.prettyPrint = enabled
+}
+
+// DetectedType returns the detected content type of the response body.
+func (p *ResponsePanel) DetectedType() string {
+	return p.detectedType
 }
