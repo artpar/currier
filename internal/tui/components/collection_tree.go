@@ -192,11 +192,14 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
-		// Clear search filter
+		// If searching, clear search filter first
 		if c.historySearch != "" {
 			c.historySearch = ""
 			c.loadHistory()
+			return c, nil
 		}
+		// Otherwise, exit History view and return to Collections
+		c.viewMode = ViewCollections
 		return c, nil
 
 	case tea.KeyRunes:
@@ -209,9 +212,12 @@ func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea
 			c.moveHistoryCursor(1)
 		case "k":
 			c.moveHistoryCursor(-1)
-		case "C":
-			// Switch back to Collections view
+		case "C", "H":
+			// Switch back to Collections view (H toggles, C explicit)
 			c.viewMode = ViewCollections
+			return c, nil
+		case "h", "l":
+			// No-op in history view (no expand/collapse) but handle gracefully
 			return c, nil
 		case "G":
 			if len(c.historyEntries) > 0 {
@@ -248,11 +254,12 @@ func (c *CollectionTree) moveHistoryCursor(delta int) {
 	if c.historyCursor < 0 {
 		c.historyCursor = 0
 	}
-	if c.historyCursor >= len(c.historyEntries) {
-		c.historyCursor = len(c.historyEntries) - 1
+	maxCursor := len(c.historyEntries) - 1
+	if maxCursor < 0 {
+		maxCursor = 0
 	}
-	if c.historyCursor < 0 {
-		c.historyCursor = 0
+	if c.historyCursor > maxCursor {
+		c.historyCursor = maxCursor
 	}
 
 	// Adjust scroll offset
@@ -611,7 +618,8 @@ func (c *CollectionTree) View() string {
 	if c.focused {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
 	} else {
-		borderStyle = borderStyle.BorderForeground(lipgloss.Color("240"))
+		// Use brighter color (244 instead of 240) for better visibility
+		borderStyle = borderStyle.BorderForeground(lipgloss.Color("244"))
 	}
 
 	return borderStyle.Render(strings.Join(parts, "\n"))

@@ -395,29 +395,28 @@ func TestRequestPanel_MethodEditing(t *testing.T) {
 		assert.NotEqual(t, "GET", panel.Request().Method())
 	})
 
-	t.Run("Escape cancels method edit", func(t *testing.T) {
+	t.Run("Escape saves method edit (vim-like)", func(t *testing.T) {
 		panel := newTestRequestPanel(t)
 		panel.Focus()
 		panel.SetActiveTab(TabURL)
-		originalMethod := panel.Request().Method()
 
 		// Enter method edit mode
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
 		updated, _ := panel.Update(msg)
 		panel = updated.(*RequestPanel)
 
-		// Change method
+		// Change method (Down selects next: POST)
 		msg = tea.KeyMsg{Type: tea.KeyDown}
 		updated, _ = panel.Update(msg)
 		panel = updated.(*RequestPanel)
 
-		// Cancel with Escape
+		// Save with Escape (vim-like: Esc saves and exits edit mode)
 		msg = tea.KeyMsg{Type: tea.KeyEsc}
 		updated, _ = panel.Update(msg)
 		panel = updated.(*RequestPanel)
 
-		// Method should be unchanged
-		assert.Equal(t, originalMethod, panel.Request().Method())
+		// Method should be changed to POST (Escape now saves)
+		assert.Equal(t, "POST", panel.Request().Method())
 	})
 }
 
@@ -1443,6 +1442,362 @@ func TestRequestPanel_QueryTab(t *testing.T) {
 		view := panel.View()
 		assert.NotEmpty(t, view)
 	})
+
+	t.Run("adds new query param with 'a' key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+
+		assert.True(t, panel.editingQuery)
+		assert.True(t, panel.queryIsNew)
+	})
+
+	t.Run("types key and value in query edit", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		// Add new param
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+
+		// Type key
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+		assert.Equal(t, "foo", panel.queryKeyInput)
+
+		// Tab to value
+		panel.Update(tea.KeyMsg{Type: tea.KeyTab})
+		assert.Equal(t, "value", panel.queryEditMode)
+
+		// Type value
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+		assert.Equal(t, "bar", panel.queryValueInput)
+	})
+
+	t.Run("saves query param with Enter", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		// Add new param
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+
+		// Type key
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+		// Tab to value
+		panel.Update(tea.KeyMsg{Type: tea.KeyTab})
+
+		// Type value
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+
+		// Save
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		assert.False(t, panel.editingQuery)
+		assert.Equal(t, "val", req.GetQueryParam("key"))
+	})
+
+	t.Run("saves query param with Esc", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		// Add new param
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+
+		// Type key
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+
+		// Save with Esc
+		panel.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+		assert.False(t, panel.editingQuery)
+	})
+
+	t.Run("deletes query param with 'd' key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetQueryParam("foo", "bar")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+		panel.SetCursor(0)
+
+		// Delete
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+
+		assert.Equal(t, "", req.GetQueryParam("foo"))
+	})
+
+	t.Run("edits existing query param with 'e' key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetQueryParam("foo", "bar")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+		panel.SetCursor(0)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		assert.True(t, panel.editingQuery)
+		assert.False(t, panel.queryIsNew)
+	})
+
+	t.Run("handles backspace in query key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+		assert.Equal(t, "ab", panel.queryKeyInput)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		assert.Equal(t, "a", panel.queryKeyInput)
+	})
+
+	t.Run("handles backspace in query value", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyTab})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+		assert.Equal(t, "xy", panel.queryValueInput)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		assert.Equal(t, "x", panel.queryValueInput)
+	})
+
+	t.Run("cursor movement in query key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyLeft})
+		assert.Equal(t, 2, panel.queryKeyCursor)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRight})
+		assert.Equal(t, 3, panel.queryKeyCursor)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyHome})
+		assert.Equal(t, 0, panel.queryKeyCursor)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnd})
+		assert.Equal(t, 3, panel.queryKeyCursor)
+	})
+
+	t.Run("cursor movement in query value", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyTab})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyLeft})
+		assert.Equal(t, 2, panel.queryValueCursor)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRight})
+		assert.Equal(t, 3, panel.queryValueCursor)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyHome})
+		assert.Equal(t, 0, panel.queryValueCursor)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnd})
+		assert.Equal(t, 3, panel.queryValueCursor)
+	})
+
+	t.Run("Ctrl+U clears query key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+		assert.Equal(t, "", panel.queryKeyInput)
+	})
+
+	t.Run("Ctrl+U clears query value", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyTab})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+		assert.Equal(t, "", panel.queryValueInput)
+	})
+
+	t.Run("Delete key in query key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyHome})
+		panel.Update(tea.KeyMsg{Type: tea.KeyDelete})
+
+		assert.Equal(t, "b", panel.queryKeyInput)
+	})
+
+	t.Run("Delete key in query value", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyTab})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyHome})
+		panel.Update(tea.KeyMsg{Type: tea.KeyDelete})
+
+		assert.Equal(t, "y", panel.queryValueInput)
+	})
+
+	t.Run("Space in query key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeySpace})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+
+		assert.Equal(t, "a b", panel.queryKeyInput)
+	})
+
+	t.Run("Space in query value", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyTab})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeySpace})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+		assert.Equal(t, "x y", panel.queryValueInput)
+	})
+
+	t.Run("Ctrl+A and Ctrl+E in query edit", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+		assert.Equal(t, 0, panel.queryKeyCursor)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+		assert.Equal(t, 3, panel.queryKeyCursor)
+	})
+
+	t.Run("renders query edit row", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabQuery)
+
+		// Add new param
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+
+		view := panel.View()
+		assert.Contains(t, view, "k")
+	})
 }
 
 func TestRequestPanel_AuthTab(t *testing.T) {
@@ -1581,6 +1936,937 @@ func TestRequestPanel_EmptyStateMessage(t *testing.T) {
 
 		view := panel.View()
 		assert.Contains(t, view, "Press n")
+	})
+}
+
+func TestRequestPanel_AuthEditing(t *testing.T) {
+	t.Run("enters auth edit mode with 'e' key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Press 'e' to enter auth edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		assert.True(t, panel.editingAuth)
+		assert.True(t, panel.IsEditing())
+	})
+
+	t.Run("starts on auth type field (index 0)", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		assert.Equal(t, 0, panel.authFieldIndex)
+	})
+
+	t.Run("cycles auth type forward with 'l' key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		initialIndex := panel.authTypeIndex
+
+		// Press 'l' to cycle forward
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+
+		assert.Equal(t, initialIndex+1, panel.authTypeIndex)
+	})
+
+	t.Run("cycles auth type backward with 'h' key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		// Press 'l' to move to second type
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+		currentIndex := panel.authTypeIndex
+
+		// Press 'h' to cycle backward
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+
+		assert.Equal(t, currentIndex-1, panel.authTypeIndex)
+	})
+
+	t.Run("cycles auth type with arrow keys", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		initialIndex := panel.authTypeIndex
+
+		// Right arrow cycles forward
+		panel.Update(tea.KeyMsg{Type: tea.KeyRight})
+		assert.Equal(t, initialIndex+1, panel.authTypeIndex)
+
+		// Left arrow cycles backward
+		panel.Update(tea.KeyMsg{Type: tea.KeyLeft})
+		assert.Equal(t, initialIndex, panel.authTypeIndex)
+	})
+
+	t.Run("navigates between fields with j/k keys", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		// Select Basic Auth (has Username, Password fields)
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // To Basic Auth
+		assert.Equal(t, 0, panel.authFieldIndex) // Still on type
+
+		// Press 'j' to move to first field
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		assert.Equal(t, 1, panel.authFieldIndex)
+
+		// Press 'j' again to move to second field
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		assert.Equal(t, 2, panel.authFieldIndex)
+
+		// Press 'k' to move back
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+		assert.Equal(t, 1, panel.authFieldIndex)
+	})
+
+	t.Run("navigates with up/down arrows", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		// Select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+
+		// Down arrow moves to next field
+		panel.Update(tea.KeyMsg{Type: tea.KeyDown})
+		assert.Equal(t, 1, panel.authFieldIndex)
+
+		// Up arrow moves back
+		panel.Update(tea.KeyMsg{Type: tea.KeyUp})
+		assert.Equal(t, 0, panel.authFieldIndex)
+	})
+
+	t.Run("Enter on type field cycles auth type", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		initialIndex := panel.authTypeIndex
+
+		// Press Enter to cycle type
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		assert.Equal(t, initialIndex+1, panel.authTypeIndex)
+	})
+
+	t.Run("Enter on field enters field edit mode", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		assert.Equal(t, 1, panel.authFieldIndex)
+
+		// Press Enter to edit
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		assert.True(t, panel.authEditingField)
+	})
+
+	t.Run("types characters in field edit mode", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field and enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		// Type username
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+
+		assert.Equal(t, "user", panel.authFieldInput)
+	})
+
+	t.Run("saves field with Enter", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field and enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		// Type username
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+
+		// Press Enter to save
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		assert.False(t, panel.authEditingField)
+		// Verify saved
+		auth := req.Auth()
+		assert.NotNil(t, auth)
+		assert.Equal(t, "john", auth.Username)
+	})
+
+	t.Run("saves field with Esc", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field and enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		// Type
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+
+		// Press Esc to save
+		panel.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+		assert.False(t, panel.authEditingField)
+		auth := req.Auth()
+		assert.NotNil(t, auth)
+		assert.Equal(t, "test", auth.Username)
+	})
+
+	t.Run("Tab moves to next field and saves current", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field and enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		// Type username
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+
+		// Press Tab to move to next field
+		panel.Update(tea.KeyMsg{Type: tea.KeyTab})
+
+		assert.False(t, panel.authEditingField)
+		assert.Equal(t, 2, panel.authFieldIndex) // Moved to password
+	})
+
+	t.Run("exits auth edit mode with Esc from navigation", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		assert.True(t, panel.editingAuth)
+
+		// Press Esc to exit
+		panel.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+		assert.False(t, panel.editingAuth)
+	})
+
+	t.Run("e key on field enters edit mode", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+
+		// Press 'e' to edit
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		assert.True(t, panel.authEditingField)
+	})
+
+	t.Run("handles backspace in field edit", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field and enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		// Type then backspace
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+		assert.Equal(t, "ab", panel.authFieldInput)
+
+		panel.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		assert.Equal(t, "a", panel.authFieldInput)
+	})
+
+	t.Run("handles cursor movement in field edit", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field and enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		// Type text
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+		assert.Equal(t, 3, panel.authFieldCursor)
+
+		// Left arrow
+		panel.Update(tea.KeyMsg{Type: tea.KeyLeft})
+		assert.Equal(t, 2, panel.authFieldCursor)
+
+		// Right arrow
+		panel.Update(tea.KeyMsg{Type: tea.KeyRight})
+		assert.Equal(t, 3, panel.authFieldCursor)
+
+		// Home
+		panel.Update(tea.KeyMsg{Type: tea.KeyHome})
+		assert.Equal(t, 0, panel.authFieldCursor)
+
+		// End
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnd})
+		assert.Equal(t, 3, panel.authFieldCursor)
+	})
+
+	t.Run("Ctrl+U clears field input", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field and enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		// Type text
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+
+		// Ctrl+U to clear
+		panel.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+
+		assert.Equal(t, "", panel.authFieldInput)
+		assert.Equal(t, 0, panel.authFieldCursor)
+	})
+
+	t.Run("renders auth tab with type selector", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		view := panel.View()
+		assert.Contains(t, view, "Auth Type")
+		assert.Contains(t, view, "No Auth")
+	})
+
+	t.Run("renders auth fields for Basic Auth", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		view := panel.View()
+		assert.Contains(t, view, "Username")
+		assert.Contains(t, view, "Password")
+	})
+
+	t.Run("renders auth fields for Bearer Token", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Bearer (index 2)
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRight})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRight}) // Bearer Token
+
+		view := panel.View()
+		assert.Contains(t, view, "Token")
+	})
+
+	t.Run("renders auth fields for API Key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select API Key (index 3)
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.authTypeIndex = 3 // API Key
+		panel.applyAuthType(core.AuthTypeAPIKey)
+
+		view := panel.View()
+		assert.Contains(t, view, "Key Name")
+		assert.Contains(t, view, "Key Value")
+	})
+
+	t.Run("masks password field when not editing", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		// Set up auth with password
+		auth := core.NewBasicAuth("user", "secret123")
+		req.SetAuth(auth)
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		view := panel.View()
+		assert.Contains(t, view, "•") // Password is masked
+		assert.NotContains(t, view, "secret123")
+	})
+
+	t.Run("Tab is captured during auth editing", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		// Tab should not switch panes
+		panel.Update(tea.KeyMsg{Type: tea.KeyTab})
+
+		assert.True(t, panel.editingAuth) // Still in auth edit mode
+	})
+
+	t.Run("handles space in field edit", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field and enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		// Type with space
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeySpace})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+
+		assert.Equal(t, "a b", panel.authFieldInput)
+	})
+
+	t.Run("Ctrl+A moves cursor to start", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field and enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		// Type text
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+
+		// Ctrl+A
+		panel.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+		assert.Equal(t, 0, panel.authFieldCursor)
+	})
+
+	t.Run("Ctrl+E moves cursor to end", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabAuth)
+
+		// Enter auth edit mode and select Basic Auth
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // Basic Auth
+
+		// Move to username field and enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		// Type text
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+
+		// Move to start then Ctrl+E
+		panel.Update(tea.KeyMsg{Type: tea.KeyHome})
+		panel.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+		assert.Equal(t, 3, panel.authFieldCursor)
+	})
+}
+
+func TestRequestPanel_AuthFieldHelpers(t *testing.T) {
+	t.Run("getAuthFieldsForType returns correct fields", func(t *testing.T) {
+		fields := getAuthFieldsForType(core.AuthTypeBasic)
+		assert.Contains(t, fields, "Username")
+		assert.Contains(t, fields, "Password")
+
+		fields = getAuthFieldsForType(core.AuthTypeBearer)
+		assert.Contains(t, fields, "Token")
+
+		fields = getAuthFieldsForType(core.AuthTypeAPIKey)
+		assert.Contains(t, fields, "Key Name")
+		assert.Contains(t, fields, "Key Value")
+		assert.Contains(t, fields, "Add to")
+
+		fields = getAuthFieldsForType(core.AuthTypeNone)
+		assert.Empty(t, fields)
+	})
+
+	t.Run("getAuthFieldValue returns correct values for Basic Auth", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		auth := core.NewBasicAuth("testuser", "testpass")
+		req.SetAuth(auth)
+		panel.SetRequest(req)
+
+		assert.Equal(t, "testuser", panel.getAuthFieldValue(1))
+		assert.Equal(t, "testpass", panel.getAuthFieldValue(2))
+	})
+
+	t.Run("getAuthFieldValue returns correct values for Bearer", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		auth := core.NewBearerAuth("mytoken123")
+		req.SetAuth(auth)
+		panel.SetRequest(req)
+
+		assert.Equal(t, "mytoken123", panel.getAuthFieldValue(1))
+	})
+
+	t.Run("getAuthFieldValue returns correct values for API Key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		auth := core.NewAPIKeyAuth("X-API-Key", "secret", core.APIKeyInHeader)
+		req.SetAuth(auth)
+		panel.SetRequest(req)
+
+		assert.Equal(t, "X-API-Key", panel.getAuthFieldValue(1))
+		assert.Equal(t, "secret", panel.getAuthFieldValue(2))
+		assert.Equal(t, "header", panel.getAuthFieldValue(3))
+	})
+
+	t.Run("setAuthFieldValue sets Basic Auth fields", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		auth := core.NewBasicAuth("", "")
+		req.SetAuth(auth)
+		panel.SetRequest(req)
+
+		panel.setAuthFieldValue(1, "newuser")
+		panel.setAuthFieldValue(2, "newpass")
+
+		assert.Equal(t, "newuser", req.Auth().Username)
+		assert.Equal(t, "newpass", req.Auth().Password)
+	})
+
+	t.Run("setAuthFieldValue sets Bearer Token", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		auth := core.NewBearerAuth("")
+		req.SetAuth(auth)
+		panel.SetRequest(req)
+
+		panel.setAuthFieldValue(1, "newtoken")
+
+		assert.Equal(t, "newtoken", req.Auth().Token)
+	})
+
+	t.Run("setAuthFieldValue sets API Key fields", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		auth := core.NewAPIKeyAuth("", "", core.APIKeyInHeader)
+		req.SetAuth(auth)
+		panel.SetRequest(req)
+
+		panel.setAuthFieldValue(1, "X-Key")
+		panel.setAuthFieldValue(2, "value123")
+		panel.setAuthFieldValue(3, "query")
+
+		assert.Equal(t, "X-Key", req.Auth().Key)
+		assert.Equal(t, "value123", req.Auth().Value)
+		assert.Equal(t, "query", req.Auth().In)
+	})
+
+	t.Run("applyAuthType creates new auth config", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+
+		panel.applyAuthType(core.AuthTypeBasic)
+
+		auth := req.Auth()
+		assert.NotNil(t, auth)
+		assert.Equal(t, core.AuthTypeBasic, auth.GetAuthType())
+	})
+
+	t.Run("applyAuthType initializes OAuth2 config", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+
+		panel.applyAuthType(core.AuthTypeOAuth2)
+
+		auth := req.Auth()
+		assert.NotNil(t, auth)
+		assert.NotNil(t, auth.OAuth2)
+		assert.Equal(t, "Bearer", auth.OAuth2.HeaderPrefix)
+	})
+}
+
+func TestRequestPanel_Accessors(t *testing.T) {
+	t.Run("HasRequest returns false when no request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		assert.False(t, panel.HasRequest())
+	})
+
+	t.Run("HasRequest returns true when request set", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		assert.True(t, panel.HasRequest())
+	})
+
+	t.Run("URL returns empty when no request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		assert.Equal(t, "", panel.URL())
+	})
+
+	t.Run("URL returns request URL", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com/api")
+		panel.SetRequest(req)
+		assert.Equal(t, "https://example.com/api", panel.URL())
+	})
+
+	t.Run("Method returns empty when no request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		assert.Equal(t, "", panel.Method())
+	})
+
+	t.Run("Method returns request method", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		assert.Equal(t, "POST", panel.Method())
+	})
+
+	t.Run("HeadersMap returns nil when no request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		assert.Nil(t, panel.HeadersMap())
+	})
+
+	t.Run("HeadersMap returns request headers", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetHeader("X-Custom", "value")
+		panel.SetRequest(req)
+		headers := panel.HeadersMap()
+		assert.Equal(t, "value", headers["X-Custom"])
+	})
+
+	t.Run("QueryParamsMap returns nil when no request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		assert.Nil(t, panel.QueryParamsMap())
+	})
+
+	t.Run("QueryParamsMap returns request query params", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetQueryParam("foo", "bar")
+		panel.SetRequest(req)
+		params := panel.QueryParamsMap()
+		assert.Equal(t, "bar", params["foo"])
+	})
+
+	t.Run("ActiveTabName returns correct tab names", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetActiveTab(TabURL)
+		assert.Equal(t, "URL", panel.ActiveTabName())
+
+		panel.SetActiveTab(TabHeaders)
+		assert.Equal(t, "Headers", panel.ActiveTabName())
+
+		panel.SetActiveTab(TabQuery)
+		assert.Equal(t, "Query", panel.ActiveTabName())
+
+		panel.SetActiveTab(TabBody)
+		assert.Equal(t, "Body", panel.ActiveTabName())
+
+		panel.SetActiveTab(TabAuth)
+		assert.Equal(t, "Auth", panel.ActiveTabName())
+
+		panel.SetActiveTab(TabTests)
+		assert.Equal(t, "Tests", panel.ActiveTabName())
+	})
+
+	t.Run("IsEditingMethod returns correct state", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabURL)
+
+		assert.False(t, panel.IsEditingMethod())
+
+		// Enter method edit mode with 'm'
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+		assert.True(t, panel.IsEditingMethod())
+	})
+
+	t.Run("EditingField returns correct field name", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+
+		// Not editing anything
+		assert.Equal(t, "", panel.EditingField())
+
+		// Enter URL edit mode
+		panel.SetActiveTab(TabURL)
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		assert.Equal(t, "url", panel.EditingField())
+
+		// Exit URL edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+		// Enter method edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+		assert.Equal(t, "method", panel.EditingField())
+	})
+
+	t.Run("CursorPosition returns correct position", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabURL)
+
+		// Enter URL edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		pos := panel.CursorPosition()
+		// Cursor should be at end of URL
+		assert.Equal(t, len("https://example.com"), pos)
+	})
+
+	t.Run("CursorPosition returns 0 when not editing", func(t *testing.T) {
+		panel := NewRequestPanel()
+		pos := panel.CursorPosition()
+		assert.Equal(t, 0, pos)
+	})
+}
+
+func TestRequestPanel_BodyRendering(t *testing.T) {
+	t.Run("renders body tab with JSON content", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		req.SetBody(`{"name": "test", "value": 123}`)
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabBody)
+
+		view := panel.View()
+		assert.Contains(t, view, "name")
+	})
+
+	t.Run("renders body tab with empty body", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabBody)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renders body edit mode", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		req.SetBody("test body")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabBody)
+
+		// Enter edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+		assert.True(t, panel.editingBody)
+	})
+}
+
+func TestRequestPanel_SearchBarRendering(t *testing.T) {
+	t.Run("renders URL bar correctly", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://api.example.com/users")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+
+		view := panel.View()
+		assert.Contains(t, view, "GET")
+		assert.Contains(t, view, "api.example.com")
 	})
 }
 

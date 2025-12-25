@@ -586,6 +586,7 @@ func TestRequestTabs_URLTab(t *testing.T) {
 	sess.WaitFor("INSERT", 2*time.Second)
 	sess.Type("https://example.com/test")
 	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second) // Wait for mode transition
 
 	// Should see URL tab info
 	screen := sess.Capture()

@@ -142,6 +142,9 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 	case components.CopyMsg:
 		return v.handleCopy(msg.Content)
 
+	case components.FeedbackMsg:
+		return v.handleFeedback(msg)
+
 	case clearNotificationMsg:
 		v.notification = ""
 		return v, nil
@@ -162,6 +165,20 @@ func (v *MainView) handleCopy(content string) (tui.Component, tea.Cmd) {
 		} else {
 			v.notification = fmt.Sprintf("✓ Copied %dB", size)
 		}
+	}
+	v.notifyUntil = time.Now().Add(2 * time.Second)
+
+	// Schedule clearing the notification
+	return v, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return clearNotificationMsg{}
+	})
+}
+
+func (v *MainView) handleFeedback(msg components.FeedbackMsg) (tui.Component, tea.Cmd) {
+	if msg.IsError {
+		v.notification = "✗ " + msg.Message
+	} else {
+		v.notification = "💡 " + msg.Message
 	}
 	v.notifyUntil = time.Now().Add(2 * time.Second)
 
@@ -391,8 +408,8 @@ func (v *MainView) renderHelpBar() string {
 	case PaneRequest:
 		if v.request.IsEditing() {
 			hints = []string{
-				keyStyle.Render("Enter") + descStyle.Render(" Save"),
-				keyStyle.Render("Esc") + descStyle.Render(" Cancel"),
+				keyStyle.Render("Enter/Esc") + descStyle.Render(" Save"),
+				keyStyle.Render("Ctrl+U") + descStyle.Render(" Clear"),
 			}
 		} else {
 			hints = []string{
@@ -405,8 +422,9 @@ func (v *MainView) renderHelpBar() string {
 	case PaneResponse:
 		hints = []string{
 			keyStyle.Render("j/k") + descStyle.Render(" Scroll"),
-			keyStyle.Render("y") + descStyle.Render(" Copy body"),
-			keyStyle.Render("[/]") + descStyle.Render(" Switch tab"),
+			keyStyle.Render("G/gg") + descStyle.Render(" Top/Bottom"),
+			keyStyle.Render("y") + descStyle.Render(" Copy"),
+			keyStyle.Render("[/]") + descStyle.Render(" Tab"),
 		}
 	}
 
@@ -528,38 +546,56 @@ func (v *MainView) renderStatusBar() string {
 
 func (v *MainView) renderHelp() string {
 	helpContent := []string{
-		"╭─────────────────── Currier Help ───────────────────╮",
-		"│                                                     │",
-		"│  Navigation                                         │",
-		"│    Tab / Shift+Tab    Cycle between panes          │",
-		"│    [ / ]              Switch tabs within pane      │",
-		"│    1 / 2 / 3          Jump to pane                 │",
-		"│    j / k              Move down/up                 │",
-		"│    h / l              Collapse/Expand              │",
-		"│    gg / G             Go to top/bottom             │",
-		"│                                                     │",
-		"│  Collections Pane                                   │",
-		"│    /                  Start search                 │",
-		"│    H                  Switch to History view       │",
-		"│    C                  Switch to Collections view   │",
-		"│    Esc                Clear search filter          │",
-		"│                                                     │",
-		"│  Request Pane                                       │",
-		"│    m                  Change HTTP method           │",
-		"│    e                  Edit URL/header/body         │",
-		"│    a                  Add header/query param       │",
-		"│    d                  Delete header/query param    │",
-		"│    Enter              Send request                 │",
-		"│                                                     │",
-		"│  Response Pane                                      │",
-		"│    y                  Copy response body           │",
-		"│                                                     │",
-		"│  General                                            │",
-		"│    ?                  Toggle this help             │",
-		"│    q / Ctrl+C         Quit                         │",
-		"│                                                     │",
-		"│           Press ? or Esc to close                  │",
-		"╰─────────────────────────────────────────────────────╯",
+		"╭────────────────────── Currier Help ──────────────────────╮",
+		"│                                                          │",
+		"│  Navigation                                              │",
+		"│    Tab / Shift+Tab    Cycle between panes               │",
+		"│    1 / 2 / 3          Jump to pane                      │",
+		"│    j / k              Navigate / Scroll                 │",
+		"│    gg / G             Go to top/bottom                  │",
+		"│                                                          │",
+		"│  Collections Pane                                        │",
+		"│    h / l              Collapse/Expand collection        │",
+		"│    Enter              Select request                    │",
+		"│    /                  Start search                      │",
+		"│    H                  Switch to History view            │",
+		"│    Esc                Clear search (or exit History)    │",
+		"│                                                          │",
+		"│  History View (in Collections pane)                      │",
+		"│    j / k              Navigate history entries          │",
+		"│    Enter              Load history request              │",
+		"│    r                  Refresh history                   │",
+		"│    C / H              Return to Collections view        │",
+		"│    Esc                Return to Collections view        │",
+		"│                                                          │",
+		"│  Request Pane                                            │",
+		"│    [ / ]              Switch tabs (URL/Headers/etc)     │",
+		"│    m                  Change HTTP method (URL tab)      │",
+		"│    e                  Edit URL/header/body              │",
+		"│    a                  Add header/query param            │",
+		"│    d                  Delete header/query param         │",
+		"│    Enter              Send request                      │",
+		"│                                                          │",
+		"│  Response Pane                                           │",
+		"│    [ / ]              Switch tabs (Body/Headers/etc)    │",
+		"│    j / k              Scroll response                   │",
+		"│    Ctrl+U / Ctrl+D    Page up / Page down               │",
+		"│    gg / G             Scroll to top/bottom              │",
+		"│    y                  Copy response body                │",
+		"│                                                          │",
+		"│  Edit Mode (vim-like)                                    │",
+		"│    Enter / Esc        Save and exit                     │",
+		"│    Tab                Switch key/value (Headers/Query)  │",
+		"│    Ctrl+U             Clear current field               │",
+		"│    Ctrl+A / Ctrl+E    Jump to start/end                 │",
+		"│                                                          │",
+		"│  General                                                 │",
+		"│    n                  Create new request                │",
+		"│    ?                  Toggle this help                  │",
+		"│    q / Ctrl+C         Quit                              │",
+		"│                                                          │",
+		"│              Press ? or Esc to close                     │",
+		"╰──────────────────────────────────────────────────────────╯",
 	}
 
 	helpStyle := lipgloss.NewStyle().

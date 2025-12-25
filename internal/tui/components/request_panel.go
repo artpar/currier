@@ -85,6 +85,14 @@ type RequestPanel struct {
 	queryIsNew       bool     // True if adding new param
 	queryOrigKey     string   // Original key when editing (for replacement)
 	queryKeys        []string // Ordered list of param keys for stable navigation
+
+	// Auth editing state
+	editingAuth      bool   // True when editing authentication
+	authTypeIndex    int    // Index in auth types list
+	authFieldIndex   int    // Which field is selected (0=type, 1=first field, etc.)
+	authEditingField bool   // True when actively editing a field value
+	authFieldInput   string // Current input for the active field
+	authFieldCursor  int    // Cursor position in field input
 }
 
 // NewRequestPanel creates a new request panel.
@@ -157,6 +165,11 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return p.handleBodyEditInput(msg)
 	}
 
+	// Handle auth editing mode
+	if p.editingAuth {
+		return p.handleAuthEditInput(msg)
+	}
+
 	switch msg.Type {
 	case tea.KeyEnter:
 		// Send request from any tab when not in edit mode
@@ -221,6 +234,31 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 				p.editingBody = true
 				return p, nil
 			}
+			// Enter auth edit mode
+			if p.activeTab == TabAuth && p.request != nil {
+				p.editingAuth = true
+				p.authFieldIndex = 0 // Start at auth type
+				p.authEditingField = false
+				// Initialize auth type index based on current auth
+				auth := p.request.Auth()
+				if auth == nil || auth.Type == "" {
+					p.authTypeIndex = 0 // No Auth
+				} else {
+					authTypes := core.CommonAuthTypes()
+					for i, at := range authTypes {
+						if string(at) == auth.Type {
+							p.authTypeIndex = i
+							break
+						}
+					}
+				}
+				return p, nil
+			}
+			if p.activeTab == TabTests {
+				return p, func() tea.Msg {
+					return FeedbackMsg{Message: "Tests tab coming soon", IsError: false}
+				}
+			}
 		case "a":
 			// Add new header
 			if p.activeTab == TabHeaders && p.request != nil {
@@ -275,19 +313,25 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			}
 		case "m":
 			// Enter method edit mode
-			if p.activeTab == TabURL && p.request != nil {
-				p.editingMethod = true
-				// Find current method index
-				currentMethod := strings.ToUpper(p.request.Method())
-				p.methodIndex = 0
-				for i, m := range httpMethods {
-					if m == currentMethod {
-						p.methodIndex = i
-						break
-					}
-				}
+			if p.request == nil {
 				return p, nil
 			}
+			if p.activeTab != TabURL {
+				return p, func() tea.Msg {
+					return FeedbackMsg{Message: "Switch to URL tab to change method (press [)", IsError: false}
+				}
+			}
+			p.editingMethod = true
+			// Find current method index
+			currentMethod := strings.ToUpper(p.request.Method())
+			p.methodIndex = 0
+			for i, m := range httpMethods {
+				if m == currentMethod {
+					p.methodIndex = i
+					break
+				}
+			}
+			return p, nil
 		case "[":
 			// Switch to previous tab
 			p.prevTab()
@@ -373,7 +417,15 @@ func (p *RequestPanel) StartURLEdit() {
 func (p *RequestPanel) handleHeaderEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
-		// Cancel editing
+		// Save and exit (vim-like behavior)
+		if p.headerKeyInput != "" {
+			if !p.headerIsNew && p.headerOrigKey != p.headerKeyInput {
+				// Key was renamed - remove old key
+				p.request.RemoveHeader(p.headerOrigKey)
+			}
+			p.request.SetHeader(p.headerKeyInput, p.headerValueInput)
+			p.syncHeaderKeys()
+		}
 		p.editingHeader = false
 		return p, nil
 
@@ -504,7 +556,15 @@ func (p *RequestPanel) handleHeaderEditInput(msg tea.KeyMsg) (tui.Component, tea
 func (p *RequestPanel) handleQueryEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
-		// Cancel editing
+		// Save and exit (vim-like behavior)
+		if p.queryKeyInput != "" {
+			if !p.queryIsNew && p.queryOrigKey != p.queryKeyInput {
+				// Key was renamed - remove old key
+				p.request.RemoveQueryParam(p.queryOrigKey)
+			}
+			p.request.SetQueryParam(p.queryKeyInput, p.queryValueInput)
+			p.syncQueryKeys()
+		}
 		p.editingQuery = false
 		return p, nil
 
@@ -634,6 +694,13 @@ func (p *RequestPanel) handleQueryEditInput(msg tea.KeyMsg) (tui.Component, tea.
 // handleBodyEditInput handles keyboard input while editing the body.
 func (p *RequestPanel) handleBodyEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
+	case tea.KeyTab:
+		// Insert tab character (useful for JSON/code formatting)
+		line := p.bodyLines[p.bodyCursorLine]
+		p.bodyLines[p.bodyCursorLine] = line[:p.bodyCursorCol] + "\t" + line[p.bodyCursorCol:]
+		p.bodyCursorCol++
+		return p, nil
+
 	case tea.KeyEsc:
 		// Save and exit (vim-like: Esc returns to normal mode with changes saved)
 		body := strings.Join(p.bodyLines, "\n")
@@ -754,10 +821,314 @@ func (p *RequestPanel) handleBodyEditInput(msg tea.KeyMsg) (tui.Component, tea.C
 	return p, nil
 }
 
+// getAuthFieldsForType returns the field labels for the given auth type.
+func getAuthFieldsForType(authType core.AuthType) []string {
+	switch authType {
+	case core.AuthTypeBasic:
+		return []string{"Username", "Password"}
+	case core.AuthTypeBearer:
+		return []string{"Token"}
+	case core.AuthTypeAPIKey:
+		return []string{"Key Name", "Key Value", "Add to"}
+	case core.AuthTypeOAuth2:
+		return []string{"Access Token", "Token Type"}
+	default:
+		return []string{}
+	}
+}
+
+// getAuthFieldValue gets the current value for a field index.
+func (p *RequestPanel) getAuthFieldValue(fieldIdx int) string {
+	auth := p.request.Auth()
+	if auth == nil {
+		return ""
+	}
+	authType := auth.GetAuthType()
+	switch authType {
+	case core.AuthTypeBasic:
+		switch fieldIdx {
+		case 1:
+			return auth.Username
+		case 2:
+			return auth.Password
+		}
+	case core.AuthTypeBearer:
+		if fieldIdx == 1 {
+			return auth.Token
+		}
+	case core.AuthTypeAPIKey:
+		switch fieldIdx {
+		case 1:
+			return auth.Key
+		case 2:
+			return auth.Value
+		case 3:
+			if auth.In == "" {
+				return "header"
+			}
+			return auth.In
+		}
+	case core.AuthTypeOAuth2:
+		if auth.OAuth2 != nil {
+			switch fieldIdx {
+			case 1:
+				return auth.OAuth2.AccessToken
+			case 2:
+				prefix := auth.OAuth2.HeaderPrefix
+				if prefix == "" {
+					return "Bearer"
+				}
+				return prefix
+			}
+		}
+	}
+	return ""
+}
+
+// setAuthFieldValue sets the value for a field index.
+func (p *RequestPanel) setAuthFieldValue(fieldIdx int, value string) {
+	auth := p.request.Auth()
+	if auth == nil {
+		return
+	}
+	authType := auth.GetAuthType()
+	switch authType {
+	case core.AuthTypeBasic:
+		switch fieldIdx {
+		case 1:
+			auth.Username = value
+		case 2:
+			auth.Password = value
+		}
+	case core.AuthTypeBearer:
+		if fieldIdx == 1 {
+			auth.Token = value
+		}
+	case core.AuthTypeAPIKey:
+		switch fieldIdx {
+		case 1:
+			auth.Key = value
+		case 2:
+			auth.Value = value
+		case 3:
+			auth.In = value
+		}
+	case core.AuthTypeOAuth2:
+		if auth.OAuth2 == nil {
+			auth.OAuth2 = &core.OAuth2Config{}
+		}
+		switch fieldIdx {
+		case 1:
+			auth.OAuth2.AccessToken = value
+		case 2:
+			auth.OAuth2.HeaderPrefix = value
+		}
+	}
+}
+
+// handleAuthEditInput handles keyboard input while editing authentication.
+func (p *RequestPanel) handleAuthEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	authTypes := core.CommonAuthTypes()
+	currentAuthType := authTypes[p.authTypeIndex]
+	fields := getAuthFieldsForType(currentAuthType)
+	maxField := len(fields) // 0 = type, 1..n = fields
+
+	// If editing a field value
+	if p.authEditingField {
+		switch msg.Type {
+		case tea.KeyEsc, tea.KeyEnter:
+			// Save field and exit field edit
+			p.setAuthFieldValue(p.authFieldIndex, p.authFieldInput)
+			p.authEditingField = false
+			return p, nil
+
+		case tea.KeyTab:
+			// Save and move to next field
+			p.setAuthFieldValue(p.authFieldIndex, p.authFieldInput)
+			p.authEditingField = false
+			p.authFieldIndex++
+			if p.authFieldIndex > maxField {
+				p.authFieldIndex = 0
+			}
+			return p, nil
+
+		case tea.KeyBackspace:
+			if p.authFieldCursor > 0 {
+				p.authFieldInput = p.authFieldInput[:p.authFieldCursor-1] + p.authFieldInput[p.authFieldCursor:]
+				p.authFieldCursor--
+			}
+			return p, nil
+
+		case tea.KeyLeft:
+			if p.authFieldCursor > 0 {
+				p.authFieldCursor--
+			}
+			return p, nil
+
+		case tea.KeyRight:
+			if p.authFieldCursor < len(p.authFieldInput) {
+				p.authFieldCursor++
+			}
+			return p, nil
+
+		case tea.KeyHome, tea.KeyCtrlA:
+			p.authFieldCursor = 0
+			return p, nil
+
+		case tea.KeyEnd, tea.KeyCtrlE:
+			p.authFieldCursor = len(p.authFieldInput)
+			return p, nil
+
+		case tea.KeyCtrlU:
+			p.authFieldInput = ""
+			p.authFieldCursor = 0
+			return p, nil
+
+		case tea.KeySpace:
+			p.authFieldInput = p.authFieldInput[:p.authFieldCursor] + " " + p.authFieldInput[p.authFieldCursor:]
+			p.authFieldCursor++
+			return p, nil
+
+		case tea.KeyRunes:
+			char := string(msg.Runes)
+			p.authFieldInput = p.authFieldInput[:p.authFieldCursor] + char + p.authFieldInput[p.authFieldCursor:]
+			p.authFieldCursor += len(char)
+			return p, nil
+		}
+		return p, nil
+	}
+
+	// Navigation mode (not editing a field value)
+	switch msg.Type {
+	case tea.KeyTab:
+		// Capture Tab to prevent pane switching
+		return p, nil
+
+	case tea.KeyEsc:
+		// Exit auth edit mode
+		p.editingAuth = false
+		return p, nil
+
+	case tea.KeyEnter:
+		if p.authFieldIndex == 0 {
+			// On type field - cycle through types
+			p.authTypeIndex = (p.authTypeIndex + 1) % len(authTypes)
+			newType := authTypes[p.authTypeIndex]
+			p.applyAuthType(newType)
+		} else {
+			// On a field - enter edit mode
+			p.authEditingField = true
+			p.authFieldInput = p.getAuthFieldValue(p.authFieldIndex)
+			p.authFieldCursor = len(p.authFieldInput)
+		}
+		return p, nil
+
+	case tea.KeyUp:
+		p.authFieldIndex--
+		if p.authFieldIndex < 0 {
+			p.authFieldIndex = maxField
+		}
+		return p, nil
+
+	case tea.KeyDown:
+		p.authFieldIndex++
+		if p.authFieldIndex > maxField {
+			p.authFieldIndex = 0
+		}
+		return p, nil
+
+	case tea.KeyLeft:
+		if p.authFieldIndex == 0 {
+			// Cycle auth type backward
+			p.authTypeIndex--
+			if p.authTypeIndex < 0 {
+				p.authTypeIndex = len(authTypes) - 1
+			}
+			p.applyAuthType(authTypes[p.authTypeIndex])
+		}
+		return p, nil
+
+	case tea.KeyRight:
+		if p.authFieldIndex == 0 {
+			// Cycle auth type forward
+			p.authTypeIndex = (p.authTypeIndex + 1) % len(authTypes)
+			p.applyAuthType(authTypes[p.authTypeIndex])
+		}
+		return p, nil
+
+	case tea.KeyRunes:
+		switch string(msg.Runes) {
+		case "j":
+			p.authFieldIndex++
+			if p.authFieldIndex > maxField {
+				p.authFieldIndex = 0
+			}
+		case "k":
+			p.authFieldIndex--
+			if p.authFieldIndex < 0 {
+				p.authFieldIndex = maxField
+			}
+		case "h":
+			if p.authFieldIndex == 0 {
+				p.authTypeIndex--
+				if p.authTypeIndex < 0 {
+					p.authTypeIndex = len(authTypes) - 1
+				}
+				p.applyAuthType(authTypes[p.authTypeIndex])
+			}
+		case "l":
+			if p.authFieldIndex == 0 {
+				p.authTypeIndex = (p.authTypeIndex + 1) % len(authTypes)
+				p.applyAuthType(authTypes[p.authTypeIndex])
+			}
+		case "e":
+			// Enter field edit mode (if on a field, not type)
+			if p.authFieldIndex > 0 {
+				p.authEditingField = true
+				p.authFieldInput = p.getAuthFieldValue(p.authFieldIndex)
+				p.authFieldCursor = len(p.authFieldInput)
+			}
+		}
+		return p, nil
+	}
+
+	return p, nil
+}
+
+// applyAuthType sets the auth type on the request.
+func (p *RequestPanel) applyAuthType(authType core.AuthType) {
+	auth := p.request.Auth()
+	if auth == nil {
+		newAuth := core.AuthConfig{}
+		newAuth.SetAuthType(authType)
+		// Initialize OAuth2 config if needed
+		if authType == core.AuthTypeOAuth2 {
+			newAuth.OAuth2 = &core.OAuth2Config{
+				HeaderPrefix: "Bearer",
+			}
+		}
+		p.request.SetAuth(newAuth)
+		return
+	}
+	auth.SetAuthType(authType)
+
+	// Initialize OAuth2 config if needed
+	if authType == core.AuthTypeOAuth2 && auth.OAuth2 == nil {
+		auth.OAuth2 = &core.OAuth2Config{
+			HeaderPrefix: "Bearer",
+		}
+	}
+}
+
 func (p *RequestPanel) handleURLEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
+	case tea.KeyTab:
+		// Capture Tab to prevent pane switching during URL edit
+		// Tab does nothing in URL edit mode
+		return p, nil
+
 	case tea.KeyEsc:
-		// Save URL and exit edit mode (Postman-like behavior)
+		// Save URL and exit edit mode (vim-like behavior)
 		if p.request != nil && p.urlInput != "" {
 			p.request.SetURL(p.urlInput)
 			p.syncQueryKeys()
@@ -835,8 +1206,15 @@ func (p *RequestPanel) handleURLEditInput(msg tea.KeyMsg) (tui.Component, tea.Cm
 
 func (p *RequestPanel) handleMethodEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
+	case tea.KeyTab:
+		// Capture Tab to prevent pane switching during method selection
+		return p, nil
+
 	case tea.KeyEsc:
-		// Cancel editing
+		// Save method and exit edit mode (vim-like behavior)
+		if p.request != nil {
+			p.request.SetMethod(httpMethods[p.methodIndex])
+		}
 		p.editingMethod = false
 		return p, nil
 
@@ -1155,7 +1533,7 @@ func (p *RequestPanel) renderMethodSelector() string {
 	hintStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("245")).
 		Italic(true)
-	hints := hintStyle.Render("↑/↓ j/k Select   Enter Save   Esc Cancel")
+	hints := hintStyle.Render("↑/↓ j/k Select   Enter/Esc: save & exit")
 
 	// Pad to fill width
 	lines := strings.Split(dropdown, "\n")
@@ -1344,7 +1722,7 @@ func (p *RequestPanel) renderHeadersTab() []string {
 	if p.editingHeader {
 		lines = append(lines, "")
 		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-		lines = append(lines, hintStyle.Render("  Tab: switch field │ Enter: save │ Esc: cancel"))
+		lines = append(lines, hintStyle.Render("  Tab: switch field │ Enter/Esc: save & exit"))
 	} else if p.focused {
 		lines = append(lines, "")
 		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
@@ -1433,7 +1811,7 @@ func (p *RequestPanel) renderQueryTab() []string {
 		// Add hints
 		lines = append(lines, "")
 		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-		lines = append(lines, hintStyle.Render("  Tab: key/value │ Enter: save │ Esc: cancel"))
+		lines = append(lines, hintStyle.Render("  Tab: key/value │ Enter/Esc: save & exit"))
 	} else {
 		if len(p.queryKeys) == 0 {
 			lines = []string{"  No query parameters defined"}
@@ -1559,18 +1937,142 @@ func (p *RequestPanel) renderAuthTab() []string {
 		return []string{"No auth"}
 	}
 
-	auth := p.request.Auth()
-	if auth == nil {
-		return []string{"No authentication configured"}
+	innerWidth := p.width - 4
+	labelWidth := 15
+	valueWidth := innerWidth - labelWidth - 6
+	if valueWidth < 10 {
+		valueWidth = 10
 	}
 
-	return []string{
-		fmt.Sprintf("Type: %s", auth.Type),
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	editingStyle := lipgloss.NewStyle().Background(lipgloss.Color("238")).Foreground(lipgloss.Color("229"))
+
+	var lines []string
+
+	// Get auth types and current selection
+	authTypes := core.CommonAuthTypes()
+	currentAuthType := authTypes[p.authTypeIndex]
+	fields := getAuthFieldsForType(currentAuthType)
+
+	// Auth Type selector (field 0)
+	typePrefix := "  "
+	if p.editingAuth && p.authFieldIndex == 0 {
+		typePrefix = "> "
 	}
+	typeName := core.AuthTypeNames[currentAuthType]
+	if p.editingAuth && p.authFieldIndex == 0 {
+		// Show as dropdown-style selector
+		lines = append(lines, selectedStyle.Render(fmt.Sprintf("%s%-*s: ◀ %s ▶", typePrefix, labelWidth, "Auth Type", typeName)))
+	} else {
+		lines = append(lines, fmt.Sprintf("%s%-*s: %s", typePrefix, labelWidth, labelStyle.Render("Auth Type"), valueStyle.Render(typeName)))
+	}
+
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render(strings.Repeat("─", innerWidth)))
+
+	// Render fields based on auth type
+	if currentAuthType == core.AuthTypeNone {
+		lines = append(lines, "")
+		lines = append(lines, hintStyle.Render("  No authentication will be applied to this request."))
+	} else {
+		for i, fieldLabel := range fields {
+			fieldIdx := i + 1 // Field indices start at 1 (0 is type)
+			prefix := "  "
+			if p.editingAuth && p.authFieldIndex == fieldIdx {
+				prefix = "> "
+			}
+
+			// Get current value for this field
+			value := p.getAuthFieldValue(fieldIdx)
+
+			// Special handling for password fields - mask them
+			displayValue := value
+			if fieldLabel == "Password" && !p.authEditingField {
+				if len(value) > 0 {
+					displayValue = strings.Repeat("•", len(value))
+				}
+			}
+
+			// Special handling for "Add to" field (API Key location)
+			if fieldLabel == "Add to" {
+				if value == "" {
+					value = "header"
+					displayValue = "header"
+				}
+				if p.editingAuth && p.authFieldIndex == fieldIdx {
+					// Show as selector
+					lines = append(lines, selectedStyle.Render(fmt.Sprintf("%s%-*s: ◀ %s ▶", prefix, labelWidth, fieldLabel, displayValue)))
+					continue
+				}
+			}
+
+			// Check if actively editing this field
+			if p.editingAuth && p.authEditingField && p.authFieldIndex == fieldIdx {
+				// Show with cursor
+				editContent := p.authFieldInput
+				if p.authFieldCursor >= len(editContent) {
+					editContent += "▌"
+				} else {
+					editContent = editContent[:p.authFieldCursor] + "▌" + editContent[p.authFieldCursor:]
+				}
+				if len(editContent) > valueWidth {
+					editContent = editContent[:valueWidth-1] + "…"
+				}
+				// Pad to valueWidth
+				for len(editContent) < valueWidth {
+					editContent += " "
+				}
+				lines = append(lines, fmt.Sprintf("%s%-*s: %s", prefix, labelWidth, selectedStyle.Render(fieldLabel), editingStyle.Render(editContent)))
+			} else if p.editingAuth && p.authFieldIndex == fieldIdx {
+				// Selected but not editing - highlight
+				if displayValue == "" {
+					displayValue = "(empty)"
+				}
+				lines = append(lines, selectedStyle.Render(fmt.Sprintf("%s%-*s: %s", prefix, labelWidth, fieldLabel, displayValue)))
+			} else {
+				// Normal display
+				if displayValue == "" {
+					displayValue = hintStyle.Render("(not set)")
+				}
+				lines = append(lines, fmt.Sprintf("%s%-*s: %s", prefix, labelWidth, labelStyle.Render(fieldLabel), displayValue))
+			}
+		}
+	}
+
+	// Add hints
+	lines = append(lines, "")
+	if p.editingAuth {
+		if p.authEditingField {
+			lines = append(lines, hintStyle.Render("  Type to edit │ Tab: next field │ Enter/Esc: save"))
+		} else if p.authFieldIndex == 0 {
+			lines = append(lines, hintStyle.Render("  ←/→ h/l: change type │ j/k: next field │ Esc: done"))
+		} else {
+			lines = append(lines, hintStyle.Render("  Enter/e: edit │ j/k: navigate │ Esc: done"))
+		}
+	} else if p.focused {
+		lines = append(lines, hintStyle.Render("  Press 'e' to configure authentication"))
+	}
+
+	return lines
 }
 
 func (p *RequestPanel) renderTestsTab() []string {
-	return []string{"Tests not yet implemented"}
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+	comingSoonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+
+	var lines []string
+	lines = append(lines, comingSoonStyle.Render("  🚧 Tests (Coming Soon)"))
+	lines = append(lines, "")
+	lines = append(lines, hintStyle.Render("  Test scripts will allow you to:"))
+	lines = append(lines, hintStyle.Render("  - Validate response status codes"))
+	lines = append(lines, hintStyle.Render("  - Check response body content"))
+	lines = append(lines, hintStyle.Render("  - Extract and reuse values"))
+	lines = append(lines, "")
+	lines = append(lines, hintStyle.Render("  This feature is planned for a future release."))
+
+	return lines
 }
 
 func (p *RequestPanel) methodStyle(method string) lipgloss.Style {
@@ -1599,7 +2101,8 @@ func (p *RequestPanel) wrapWithBorder(content string) string {
 	if p.focused {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
 	} else {
-		borderStyle = borderStyle.BorderForeground(lipgloss.Color("240"))
+		// Use brighter color (244 instead of 240) for better visibility
+		borderStyle = borderStyle.BorderForeground(lipgloss.Color("244"))
 	}
 
 	return borderStyle.Render(content)
@@ -1630,7 +2133,7 @@ func (p *RequestPanel) Blur() {
 
 // IsEditing returns true if the panel is in any editing mode.
 func (p *RequestPanel) IsEditing() bool {
-	return p.editingURL || p.editingMethod || p.editingHeader || p.editingQuery || p.editingBody
+	return p.editingURL || p.editingMethod || p.editingHeader || p.editingQuery || p.editingBody || p.editingAuth
 }
 
 // SetSize sets dimensions.

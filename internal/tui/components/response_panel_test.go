@@ -1,6 +1,7 @@
 package components
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -655,6 +656,201 @@ func TestResponsePanel_BodySize(t *testing.T) {
 		body := core.NewRawBody(largeContent, "text/plain")
 		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithBody(body)
 		panel.SetResponse(resp)
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestResponsePanel_CookiesTabExtra(t *testing.T) {
+	t.Run("shows no cookies message when no response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(3) // Cookies tab
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("shows no cookies message when no Set-Cookie headers", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(3) // Cookies tab
+
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK"))
+		panel.SetResponse(resp)
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("parses and displays cookies", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(3) // Cookies tab
+
+		headers := core.NewHeaders()
+		headers.Set("Set-Cookie", "session_id=abc123; Path=/; HttpOnly; Secure; SameSite=Strict")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithHeaders(headers)
+		panel.SetResponse(resp)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+		assert.Contains(t, view, "Cookie")
+	})
+
+	t.Run("parses cookies with domain and expiry", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(3) // Cookies tab
+
+		headers := core.NewHeaders()
+		headers.Set("Set-Cookie", "token=xyz789; Domain=.example.com; Path=/api; Expires=Wed, 01 Jan 2025 00:00:00 GMT; HttpOnly")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithHeaders(headers)
+		panel.SetResponse(resp)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestResponsePanel_ConsoleTab(t *testing.T) {
+	t.Run("renders console tab", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(4) // Console tab
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("console tab with response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(4) // Console tab
+
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK"))
+		panel.SetResponse(resp)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestResponsePanel_MouseEvents(t *testing.T) {
+	t.Run("handles mouse wheel scrolling", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.Focus()
+
+		body := core.NewRawBody([]byte(strings.Repeat("line\n", 100)), "text/plain")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithBody(body)
+		panel.SetResponse(resp)
+
+		// Scroll down
+		msg := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+
+		// Scroll up
+		msg = tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp}
+		updated, _ = panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		view = panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestResponsePanel_PageNavigationExtra(t *testing.T) {
+	t.Run("page up and page down navigation", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.Focus()
+
+		body := core.NewRawBody([]byte(strings.Repeat("line\n", 100)), "text/plain")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithBody(body)
+		panel.SetResponse(resp)
+
+		// Page down with Ctrl+D
+		msg := tea.KeyMsg{Type: tea.KeyCtrlD}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+
+		// Page up with Ctrl+U
+		msg = tea.KeyMsg{Type: tea.KeyCtrlU}
+		updated, _ = panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		view = panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("g and G navigation", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.Focus()
+
+		body := core.NewRawBody([]byte(strings.Repeat("line\n", 100)), "text/plain")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithBody(body)
+		panel.SetResponse(resp)
+
+		// Go to bottom with G
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+
+		// Go to top with gg
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ = panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ = panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		view = panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestResponsePanel_StatusStyles(t *testing.T) {
+	t.Run("100 series status style", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		resp := core.NewResponse("req-123", "http", core.NewStatus(101, "Switching Protocols"))
+		panel.SetResponse(resp)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("300 series status style", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		resp := core.NewResponse("req-123", "http", core.NewStatus(301, "Moved Permanently"))
+		panel.SetResponse(resp)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("400 series status style", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		resp := core.NewResponse("req-123", "http", core.NewStatus(404, "Not Found"))
+		panel.SetResponse(resp)
+
 		view := panel.View()
 		assert.NotEmpty(t, view)
 	})

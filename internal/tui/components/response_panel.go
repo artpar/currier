@@ -28,6 +28,12 @@ type CopyMsg struct {
 	Content string
 }
 
+// FeedbackMsg is sent to display a feedback notification to the user.
+type FeedbackMsg struct {
+	Message string
+	IsError bool
+}
+
 // ConsoleOutputMsg is sent when console output is available from scripts.
 type ConsoleOutputMsg struct {
 	Messages []ConsoleMessage
@@ -48,6 +54,7 @@ type ResponsePanel struct {
 	response        *core.Response
 	activeTab       ResponseTab
 	scrollOffset    int
+	tabScrollOffset [5]int // Store scroll offset per tab
 	loading         bool
 	err             error
 	consoleMessages []ConsoleMessage
@@ -98,7 +105,30 @@ func (p *ResponsePanel) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 }
 
 func (p *ResponsePanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	// Calculate page size for Page Up/Down
+	pageSize := p.height - 8
+	if pageSize < 1 {
+		pageSize = 5
+	}
+
 	switch msg.Type {
+	case tea.KeyPgUp, tea.KeyCtrlU:
+		// Page up - scroll up by page size
+		p.scrollOffset -= pageSize
+		if p.scrollOffset < 0 {
+			p.scrollOffset = 0
+		}
+		return p, nil
+
+	case tea.KeyPgDown, tea.KeyCtrlD:
+		// Page down - scroll down by page size
+		p.scrollOffset += pageSize
+		maxOffset := p.maxScrollOffset()
+		if p.scrollOffset > maxOffset {
+			p.scrollOffset = maxOffset
+		}
+		return p, nil
+
 	case tea.KeyRunes:
 		switch string(msg.Runes) {
 		case "[":
@@ -116,10 +146,18 @@ func (p *ResponsePanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 				p.scrollOffset--
 			}
 		case "y":
-			if p.response != nil && p.activeTab == ResponseTabBody {
+			if p.response == nil {
 				return p, func() tea.Msg {
-					return CopyMsg{Content: p.response.Body().String()}
+					return FeedbackMsg{Message: "No response to copy", IsError: true}
 				}
+			}
+			if p.activeTab != ResponseTabBody {
+				return p, func() tea.Msg {
+					return FeedbackMsg{Message: "Switch to Body tab to copy (press ])", IsError: false}
+				}
+			}
+			return p, func() tea.Msg {
+				return CopyMsg{Content: p.response.Body().String()}
 			}
 		case "G":
 			// Go to bottom
@@ -134,13 +172,21 @@ func (p *ResponsePanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 }
 
 func (p *ResponsePanel) nextTab() {
+	// Save current scroll offset
+	p.tabScrollOffset[p.activeTab] = p.scrollOffset
+	// Switch tab
 	p.activeTab = ResponseTab((int(p.activeTab) + 1) % len(responseTabNames))
-	p.scrollOffset = 0
+	// Restore scroll offset for new tab
+	p.scrollOffset = p.tabScrollOffset[p.activeTab]
 }
 
 func (p *ResponsePanel) prevTab() {
+	// Save current scroll offset
+	p.tabScrollOffset[p.activeTab] = p.scrollOffset
+	// Switch tab
 	p.activeTab = ResponseTab((int(p.activeTab) - 1 + len(responseTabNames)) % len(responseTabNames))
-	p.scrollOffset = 0
+	// Restore scroll offset for new tab
+	p.scrollOffset = p.tabScrollOffset[p.activeTab]
 }
 
 func (p *ResponsePanel) maxScrollOffset() int {
@@ -598,7 +644,8 @@ func (p *ResponsePanel) wrapWithBorder(content string) string {
 	if p.focused {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
 	} else {
-		borderStyle = borderStyle.BorderForeground(lipgloss.Color("240"))
+		// Use brighter color (244 instead of 240) for better visibility
+		borderStyle = borderStyle.BorderForeground(lipgloss.Color("244"))
 	}
 
 	return borderStyle.Render(content)
@@ -653,6 +700,7 @@ func (p *ResponsePanel) Response() *core.Response {
 func (p *ResponsePanel) SetResponse(resp *core.Response) {
 	p.response = resp
 	p.scrollOffset = 0
+	p.tabScrollOffset = [5]int{} // Reset all tab scroll offsets
 	p.loading = false
 	p.err = nil
 	p.consoleMessages = nil // Clear console for new response

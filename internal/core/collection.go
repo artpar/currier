@@ -35,6 +35,12 @@ type AuthConfig struct {
 	Key      string `json:"key,omitempty" yaml:"key,omitempty"`
 	Value    string `json:"value,omitempty" yaml:"value,omitempty"`
 	In       string `json:"in,omitempty" yaml:"in,omitempty"` // header, query
+
+	// OAuth 2.0 configuration
+	OAuth2 *OAuth2Config `json:"oauth2,omitempty" yaml:"oauth2,omitempty"`
+
+	// AWS Signature v4 configuration
+	AWS *AWSAuthConfig `json:"aws,omitempty" yaml:"aws,omitempty"`
 }
 
 // NewCollection creates a new collection with the given name.
@@ -447,12 +453,38 @@ func (r *RequestDefinition) SetAuth(auth AuthConfig) {
 
 // ToRequest converts the definition to a core.Request for execution.
 func (r *RequestDefinition) ToRequest() (*Request, error) {
-	req, err := NewRequest("http", r.method, r.url)
+	// Start with the base URL
+	finalURL := r.url
+
+	// Collect auth headers
+	var authHeaders map[string]string
+
+	// Apply authentication - may modify URL for query params
+	if r.auth != nil && r.auth.IsConfigured() {
+		authHeaders = make(map[string]string)
+		authQueryParams := r.auth.ApplyToHeaders(authHeaders)
+
+		// Add auth query params to URL if any
+		if len(authQueryParams) > 0 {
+			newURL, err := r.auth.ApplyToURL(finalURL)
+			if err == nil {
+				finalURL = newURL
+			}
+		}
+	}
+
+	req, err := NewRequest("http", r.method, finalURL)
 	if err != nil {
 		return nil, err
 	}
 
+	// Apply regular headers
 	for key, value := range r.headers {
+		req.SetHeader(key, value)
+	}
+
+	// Apply auth headers
+	for key, value := range authHeaders {
 		req.SetHeader(key, value)
 	}
 
@@ -475,23 +507,60 @@ func (r *RequestDefinition) ToRequest() (*Request, error) {
 // ToRequestWithEnv converts the definition to a core.Request with variable interpolation.
 func (r *RequestDefinition) ToRequestWithEnv(engine *interpolate.Engine) (*Request, error) {
 	// Interpolate URL
-	interpolatedURL, err := engine.Interpolate(r.url)
+	finalURL, err := engine.Interpolate(r.url)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := NewRequest("http", r.method, interpolatedURL)
+	// Collect auth headers
+	var authHeaders map[string]string
+
+	// Apply authentication (with interpolation for tokens/credentials)
+	if r.auth != nil && r.auth.IsConfigured() {
+		// Clone auth to interpolate values
+		authCopy := *r.auth
+		if authCopy.Token != "" {
+			authCopy.Token, _ = engine.Interpolate(authCopy.Token)
+		}
+		if authCopy.Username != "" {
+			authCopy.Username, _ = engine.Interpolate(authCopy.Username)
+		}
+		if authCopy.Password != "" {
+			authCopy.Password, _ = engine.Interpolate(authCopy.Password)
+		}
+		if authCopy.Value != "" {
+			authCopy.Value, _ = engine.Interpolate(authCopy.Value)
+		}
+
+		authHeaders = make(map[string]string)
+		authQueryParams := authCopy.ApplyToHeaders(authHeaders)
+
+		// Add auth query params to URL if any
+		if len(authQueryParams) > 0 {
+			newURL, err := authCopy.ApplyToURL(finalURL)
+			if err == nil {
+				finalURL = newURL
+			}
+		}
+	}
+
+	req, err := NewRequest("http", r.method, finalURL)
 	if err != nil {
 		return nil, err
 	}
 
-	// Interpolate headers
+	// Interpolate and apply regular headers
 	for key, value := range r.headers {
 		interpolatedValue, err := engine.Interpolate(value)
 		if err != nil {
 			return nil, err
 		}
 		req.SetHeader(key, interpolatedValue)
+	}
+
+	// Apply auth headers
+	for key, value := range authHeaders {
+		req.SetHeader(key, value)
 	}
 
 	// Interpolate body

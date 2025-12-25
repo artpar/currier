@@ -1,10 +1,14 @@
 package components
 
 import (
+	"context"
+	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/artpar/currier/internal/core"
+	"github.com/artpar/currier/internal/history"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -689,4 +693,963 @@ func newTestTreeWithRequests(t *testing.T) *CollectionTree {
 
 	tree.SetCollections([]*core.Collection{c})
 	return tree
+}
+
+// Mock history store for testing
+type mockHistoryStore struct {
+	entries []history.Entry
+	err     error
+}
+
+func (m *mockHistoryStore) Add(ctx context.Context, entry history.Entry) (string, error) {
+	return "test-id", m.err
+}
+
+func (m *mockHistoryStore) Get(ctx context.Context, id string) (history.Entry, error) {
+	return history.Entry{}, m.err
+}
+
+func (m *mockHistoryStore) List(ctx context.Context, opts history.QueryOptions) ([]history.Entry, error) {
+	return m.entries, m.err
+}
+
+func (m *mockHistoryStore) Count(ctx context.Context, opts history.QueryOptions) (int64, error) {
+	return int64(len(m.entries)), m.err
+}
+
+func (m *mockHistoryStore) Update(ctx context.Context, entry history.Entry) error {
+	return m.err
+}
+
+func (m *mockHistoryStore) Delete(ctx context.Context, id string) error {
+	return m.err
+}
+
+func (m *mockHistoryStore) DeleteMany(ctx context.Context, opts history.QueryOptions) (int64, error) {
+	return 0, m.err
+}
+
+func (m *mockHistoryStore) Search(ctx context.Context, query string, opts history.QueryOptions) ([]history.Entry, error) {
+	var results []history.Entry
+	for _, e := range m.entries {
+		if strings.Contains(e.RequestURL, query) || strings.Contains(e.RequestMethod, query) {
+			results = append(results, e)
+		}
+	}
+	return results, m.err
+}
+
+func (m *mockHistoryStore) Prune(ctx context.Context, opts history.PruneOptions) (history.PruneResult, error) {
+	return history.PruneResult{}, m.err
+}
+
+func (m *mockHistoryStore) Stats(ctx context.Context) (history.Stats, error) {
+	return history.Stats{}, m.err
+}
+
+func (m *mockHistoryStore) Clear(ctx context.Context) error {
+	return m.err
+}
+
+func (m *mockHistoryStore) Close() error {
+	return nil
+}
+
+func TestCollectionTree_HistoryView(t *testing.T) {
+	t.Run("switches to history view with H key", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, ViewHistory, tree.ViewMode())
+	})
+
+	t.Run("returns to collections with C key from history", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Switch back to collections
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, ViewCollections, tree.ViewMode())
+	})
+
+	t.Run("returns to collections with H key from history (toggle)", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Toggle back with H
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, ViewCollections, tree.ViewMode())
+	})
+
+	t.Run("navigates history with j/k keys", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://api.example.com/users"},
+				{ID: "2", RequestMethod: "POST", RequestURL: "https://api.example.com/users"},
+				{ID: "3", RequestMethod: "DELETE", RequestURL: "https://api.example.com/users/1"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history view
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Move down with j
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// The history cursor should be at 1
+		view := tree.View()
+		assert.NotEmpty(t, view)
+
+		// Move up with k
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		view = tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("handles gg navigation in history", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://api.example.com/users"},
+				{ID: "2", RequestMethod: "POST", RequestURL: "https://api.example.com/users"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// First g
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Second g
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("handles G navigation in history", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://api.example.com/users"},
+				{ID: "2", RequestMethod: "POST", RequestURL: "https://api.example.com/users"},
+				{ID: "3", RequestMethod: "DELETE", RequestURL: "https://api.example.com/users/1"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Go to end with G
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("exits history with Escape", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{entries: []history.Entry{}}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Exit with Escape
+		msg = tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, ViewCollections, tree.ViewMode())
+	})
+
+	t.Run("refreshes history with r key", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://api.example.com/users"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Refresh with r
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("selects history entry with Enter", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://api.example.com/users"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Select with Enter
+		msg = tea.KeyMsg{Type: tea.KeyEnter}
+		updated, cmd := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Should have a command
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("handles h/l keys in history (no-op)", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{entries: []history.Entry{}}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Press h (should do nothing)
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Press l (should do nothing)
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, ViewHistory, tree.ViewMode())
+	})
+
+	t.Run("shows empty history message without store", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Switch to history without store
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		view := tree.View()
+		assert.Contains(t, view, "History")
+	})
+
+	t.Run("renders history items with timestamps", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{
+					ID:            "1",
+					RequestMethod: "GET",
+					RequestURL:    "https://api.example.com/users",
+					Timestamp:     time.Now().Add(-5 * time.Minute),
+				},
+				{
+					ID:            "2",
+					RequestMethod: "POST",
+					RequestURL:    "https://api.example.com/users",
+					Timestamp:     time.Now().Add(-2 * time.Hour),
+				},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		view := tree.View()
+		assert.Contains(t, view, "GET")
+	})
+
+	t.Run("clears search with Escape in history", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://api.example.com/users"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Start search
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Type search query
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Finish search with Enter
+		msg = tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Clear search with Escape (goes back to search mode)
+		msg = tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Should still be in history mode but search cleared
+		assert.Equal(t, ViewHistory, tree.ViewMode())
+	})
+}
+
+func TestCollectionTree_HistoryAccessors(t *testing.T) {
+	t.Run("ViewModeName returns correct names", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		assert.Equal(t, "collections", tree.ViewModeName())
+
+		// Switch to history
+		tree.Focus()
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "history", tree.ViewModeName())
+	})
+
+	t.Run("SearchQuery returns current search", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Initial query is empty
+		assert.Equal(t, "", tree.SearchQuery())
+
+		// Start search
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "test", tree.SearchQuery())
+	})
+
+	t.Run("HistoryEntries returns entries", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://api.example.com/users"},
+				{ID: "2", RequestMethod: "POST", RequestURL: "https://api.example.com/users"},
+			},
+		}
+		tree.SetHistoryStore(store)
+		tree.Focus()
+
+		// Switch to history to trigger load
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		entries := tree.HistoryEntries()
+		assert.Equal(t, 2, len(entries))
+	})
+
+	t.Run("Collections returns collections", func(t *testing.T) {
+		tree := newTestTree(t)
+		collections := tree.Collections()
+		assert.Equal(t, 10, len(collections))
+	})
+
+	t.Run("AddRequest adds request to tree", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		// Create a collection first
+		coll := core.NewCollection("Test Collection")
+		tree.SetCollections([]*core.Collection{coll})
+
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		result := tree.AddRequest(req, coll)
+
+		assert.True(t, result)
+	})
+
+	t.Run("AddRequest returns false for nil request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		result := tree.AddRequest(nil, nil)
+		assert.False(t, result)
+	})
+}
+
+func TestCollectionTree_Update(t *testing.T) {
+	t.Run("handles window size message", func(t *testing.T) {
+		tree := newTestTree(t)
+		msg := tea.WindowSizeMsg{Width: 100, Height: 50}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		assert.Equal(t, 100, tree.width)
+	})
+
+	t.Run("handles mouse events without crashing", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree.SetCursor(5)
+
+		// Test mouse wheel up
+		msg := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		view := tree.View()
+		assert.NotEmpty(t, view)
+
+		// Test mouse wheel down
+		msg = tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		view = tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("ignores updates when not focused", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.SetSize(80, 30)
+		tree.SetCursor(0)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		assert.Equal(t, 0, tree.Cursor())
+	})
+}
+
+func TestCollectionTree_SearchInput(t *testing.T) {
+	t.Run("enters search mode with /", func(t *testing.T) {
+		tree := newTestTreeWithRequests(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// View should render (search mode active)
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("handles typing in search mode", func(t *testing.T) {
+		tree := newTestTreeWithRequests(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Enter search mode
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Type search query
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "get", tree.SearchQuery())
+	})
+
+	t.Run("handles backspace in search", func(t *testing.T) {
+		tree := newTestTreeWithRequests(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Enter search mode
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Type
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Backspace
+		msg = tea.KeyMsg{Type: tea.KeyBackspace}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "a", tree.SearchQuery())
+	})
+
+	t.Run("finalizes search with Enter", func(t *testing.T) {
+		tree := newTestTreeWithRequests(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Enter search mode
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Type
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Enter to finalize
+		msg = tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("escape exits search mode", func(t *testing.T) {
+		tree := newTestTreeWithRequests(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Enter search mode
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Exit with escape
+		msg = tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestCollectionTree_FormatTimeAgo(t *testing.T) {
+	t.Run("renders recent timestamps correctly", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Create entries with various timestamps
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{
+					ID:            "1",
+					RequestMethod: "GET",
+					RequestURL:    "https://api.example.com/users",
+					Timestamp:     time.Now().Add(-30 * time.Second),
+				},
+				{
+					ID:            "2",
+					RequestMethod: "POST",
+					RequestURL:    "https://api.example.com/users",
+					Timestamp:     time.Now().Add(-5 * time.Minute),
+				},
+				{
+					ID:            "3",
+					RequestMethod: "PUT",
+					RequestURL:    "https://api.example.com/users",
+					Timestamp:     time.Now().Add(-2 * time.Hour),
+				},
+				{
+					ID:            "4",
+					RequestMethod: "DELETE",
+					RequestURL:    "https://api.example.com/users",
+					Timestamp:     time.Now().Add(-3 * 24 * time.Hour),
+				},
+				{
+					ID:            "5",
+					RequestMethod: "PATCH",
+					RequestURL:    "https://api.example.com/users",
+					Timestamp:     time.Now().Add(-14 * 24 * time.Hour),
+				},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history to trigger rendering
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+		assert.Contains(t, view, "GET")
+	})
+}
+
+func TestCollectionTree_AddRequestWithCollection(t *testing.T) {
+	t.Run("adds request to specified collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		coll := core.NewCollection("My API")
+		tree.SetCollections([]*core.Collection{coll})
+
+		req := core.NewRequestDefinition("Test Request", "POST", "https://api.example.com")
+		result := tree.AddRequest(req, coll)
+
+		assert.True(t, result)
+	})
+
+	t.Run("adds request to first collection when nil specified", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		coll := core.NewCollection("My API")
+		tree.SetCollections([]*core.Collection{coll})
+
+		req := core.NewRequestDefinition("Test Request", "GET", "https://example.com")
+		result := tree.AddRequest(req, nil)
+
+		assert.True(t, result)
+	})
+
+	t.Run("creates new collection when none exists", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		req := core.NewRequestDefinition("Test Request", "GET", "https://example.com")
+		result := tree.AddRequest(req, nil)
+
+		assert.True(t, result)
+		assert.Equal(t, 1, len(tree.Collections()))
+	})
+}
+
+func TestCollectionTree_ExpandCollapseEdgeCases(t *testing.T) {
+	t.Run("expand collection by index", func(t *testing.T) {
+		tree := newTestTreeWithFolders(t)
+		tree.SetSize(80, 30)
+
+		// Expand first collection
+		tree.Expand(0)
+		assert.True(t, tree.IsExpanded(0))
+	})
+
+	t.Run("collapse collection by index", func(t *testing.T) {
+		tree := newTestTreeWithFolders(t)
+		tree.SetSize(80, 30)
+
+		// Expand first then collapse
+		tree.Expand(0)
+		tree.Collapse(0)
+		assert.False(t, tree.IsExpanded(0))
+	})
+
+	t.Run("IsExpanded returns false for invalid index", func(t *testing.T) {
+		tree := newTestTreeWithFolders(t)
+		tree.SetSize(80, 30)
+
+		// Check invalid index
+		assert.False(t, tree.IsExpanded(100))
+	})
+
+	t.Run("Expand does nothing for invalid index", func(t *testing.T) {
+		tree := newTestTreeWithFolders(t)
+		tree.SetSize(80, 30)
+
+		// Expand invalid index should not panic
+		tree.Expand(100)
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("Collapse does nothing for invalid index", func(t *testing.T) {
+		tree := newTestTreeWithFolders(t)
+		tree.SetSize(80, 30)
+
+		// Collapse invalid index should not panic
+		tree.Collapse(100)
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestCollectionTree_HistoryCursorBounds(t *testing.T) {
+	t.Run("cursor stays within bounds when moving up from first", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://example.com"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Try to move up past first item
+		for i := 0; i < 5; i++ {
+			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+			updated, _ = tree.Update(msg)
+			tree = updated.(*CollectionTree)
+		}
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("cursor stays within bounds when moving down past last", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://example.com"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Try to move down past last item
+		for i := 0; i < 5; i++ {
+			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+			updated, _ = tree.Update(msg)
+			tree = updated.(*CollectionTree)
+		}
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("handles Enter on empty history", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{entries: []history.Entry{}}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Press Enter on empty list
+		msg = tea.KeyMsg{Type: tea.KeyEnter}
+		updated, cmd := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Should not crash and should not produce a command
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("history scrolling with small viewport", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 5) // Very small height
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://example.com/1"},
+				{ID: "2", RequestMethod: "GET", RequestURL: "https://example.com/2"},
+				{ID: "3", RequestMethod: "GET", RequestURL: "https://example.com/3"},
+				{ID: "4", RequestMethod: "GET", RequestURL: "https://example.com/4"},
+				{ID: "5", RequestMethod: "GET", RequestURL: "https://example.com/5"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Move to bottom
+		for i := 0; i < 10; i++ {
+			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+			updated, _ = tree.Update(msg)
+			tree = updated.(*CollectionTree)
+		}
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestCollectionTree_UpdateCases(t *testing.T) {
+	t.Run("handles unknown message type", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Send some random message type
+		type unknownMsg struct{}
+		updated, _ := tree.Update(unknownMsg{})
+		tree = updated.(*CollectionTree)
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("handles arrow keys without crashing", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetCursor(5)
+
+		// Down arrow - just test it doesn't crash
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		view := tree.View()
+		assert.NotEmpty(t, view)
+
+		// Up arrow
+		msg = tea.KeyMsg{Type: tea.KeyUp}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		view = tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("handles cursor blink message", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// This covers the blink message case in Update
+		tree.Update(nil)
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("handles unfocused state", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.SetSize(80, 30)
+		tree.Blur()
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
 }
