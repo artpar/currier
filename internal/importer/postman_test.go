@@ -512,3 +512,102 @@ func TestPostmanImporter_Import_InvalidJSON(t *testing.T) {
 	_, err := imp.Import(ctx, content)
 	assert.ErrorIs(t, err, ErrParseError)
 }
+
+func TestPostmanImporter_Import_URLObjectWithParts(t *testing.T) {
+	imp := NewPostmanImporter()
+	ctx := context.Background()
+
+	t.Run("builds URL from parts without raw", func(t *testing.T) {
+		content := []byte(`{
+			"info": {
+				"name": "Test",
+				"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+			},
+			"item": [
+				{
+					"name": "Test",
+					"request": {
+						"method": "GET",
+						"url": {
+							"protocol": "https",
+							"host": ["api", "example", "com"],
+							"path": ["users", "1"]
+						}
+					}
+				}
+			]
+		}`)
+
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "https://api.example.com/users/1", requests[0].URL())
+	})
+
+	t.Run("builds URL with port", func(t *testing.T) {
+		content := []byte(`{
+			"info": {
+				"name": "Test",
+				"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+			},
+			"item": [
+				{
+					"name": "Test",
+					"request": {
+						"method": "GET",
+						"url": {
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8080",
+							"path": ["api", "users"]
+						}
+					}
+				}
+			]
+		}`)
+
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "http://localhost:8080/api/users", requests[0].URL())
+	})
+}
+
+func TestPostmanImporter_Import_RequestAuth(t *testing.T) {
+	imp := NewPostmanImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"info": {
+			"name": "Test",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		},
+		"item": [
+			{
+				"name": "Test Request",
+				"request": {
+					"method": "GET",
+					"url": "https://example.com",
+					"auth": {
+						"type": "bearer",
+						"bearer": [
+							{"key": "token", "value": "request-token"}
+						]
+					}
+				}
+			}
+		]
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	requests := coll.Requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "bearer", requests[0].Auth().Type)
+	assert.Equal(t, "request-token", requests[0].Auth().Token)
+}

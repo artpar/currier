@@ -421,3 +421,62 @@ func TestMainView_EmptyView(t *testing.T) {
 		assert.Empty(t, output)
 	})
 }
+
+func TestMainView_StatusBar(t *testing.T) {
+	t.Run("shows environment in status bar", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		env := core.NewEnvironment("Production")
+		env.SetVariable("base_url", "https://api.example.com")
+		env.SetSecret("api_key", "secret")
+		view.SetEnvironment(env, nil)
+
+		output := view.View()
+		assert.Contains(t, output, "Production")
+	})
+
+	t.Run("shows no environment message when nil", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		output := view.View()
+		assert.Contains(t, output, "No Environment")
+	})
+}
+
+func TestMainView_CopyKey(t *testing.T) {
+	t.Run("y key triggers copy", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneResponse)
+
+		// Set up a response to copy
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		view.RequestPanel().SetRequest(req)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify it doesn't panic - actual clipboard testing is difficult
+		assert.Equal(t, PaneResponse, view.FocusedPane())
+	})
+}
+
+func TestMainView_SendRequestKey(t *testing.T) {
+	t.Run("Enter key in request pane", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneRequest)
+
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		view.RequestPanel().SetRequest(req)
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		_, cmd := view.Update(msg)
+
+		// Should trigger some command for send (or nil if no request)
+		_ = cmd // Just verify it doesn't panic
+	})
+}
