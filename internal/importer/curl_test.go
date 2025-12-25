@@ -18,6 +18,14 @@ func TestCurlImporter_Format(t *testing.T) {
 	assert.Equal(t, FormatCurl, imp.Format())
 }
 
+func TestCurlImporter_FileExtensions(t *testing.T) {
+	imp := NewCurlImporter()
+	extensions := imp.FileExtensions()
+	assert.Contains(t, extensions, ".sh")
+	assert.Contains(t, extensions, ".curl")
+	assert.Contains(t, extensions, ".txt")
+}
+
 func TestCurlImporter_DetectFormat(t *testing.T) {
 	imp := NewCurlImporter()
 

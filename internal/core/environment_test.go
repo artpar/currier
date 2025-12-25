@@ -244,3 +244,162 @@ func TestEnvironment_Export(t *testing.T) {
 		assert.False(t, hasSecret)
 	})
 }
+
+func TestEnvironment_WithID(t *testing.T) {
+	t.Run("creates environment with specific ID", func(t *testing.T) {
+		env := NewEnvironmentWithID("test-id-123", "Test Env")
+		assert.Equal(t, "test-id-123", env.ID())
+		assert.Equal(t, "Test Env", env.Name())
+	})
+
+	t.Run("sets timestamps", func(t *testing.T) {
+		env := NewEnvironment("Test")
+		env.SetTimestamps(env.CreatedAt(), env.UpdatedAt())
+		assert.False(t, env.CreatedAt().IsZero())
+	})
+}
+
+func TestLoadEnvironmentFromJSON(t *testing.T) {
+	t.Run("loads Postman format", func(t *testing.T) {
+		data := []byte(`{
+			"id": "env-123",
+			"name": "Development",
+			"values": [
+				{"key": "base_url", "value": "https://dev.example.com"},
+				{"key": "api_key", "value": "secret123", "type": "secret"}
+			]
+		}`)
+
+		env, err := LoadEnvironmentFromJSON(data)
+		assert.NoError(t, err)
+		assert.Equal(t, "Development", env.Name())
+		assert.Equal(t, "https://dev.example.com", env.GetVariable("base_url"))
+		assert.Equal(t, "secret123", env.GetSecret("api_key"))
+	})
+
+	t.Run("loads Postman format with disabled values", func(t *testing.T) {
+		disabled := false
+		_ = disabled // use for reference
+		data := []byte(`{
+			"name": "Test",
+			"values": [
+				{"key": "enabled_var", "value": "yes", "enabled": true},
+				{"key": "disabled_var", "value": "no", "enabled": false}
+			]
+		}`)
+
+		env, err := LoadEnvironmentFromJSON(data)
+		assert.NoError(t, err)
+		assert.Equal(t, "yes", env.GetVariable("enabled_var"))
+		assert.Equal(t, "", env.GetVariable("disabled_var"))
+	})
+
+	t.Run("loads simple format with variables", func(t *testing.T) {
+		data := []byte(`{
+			"name": "Simple Env",
+			"variables": {
+				"base_url": "https://api.example.com",
+				"version": "v1"
+			},
+			"secrets": {
+				"api_key": "secret-value"
+			}
+		}`)
+
+		env, err := LoadEnvironmentFromJSON(data)
+		assert.NoError(t, err)
+		assert.Equal(t, "Simple Env", env.Name())
+		assert.Equal(t, "https://api.example.com", env.GetVariable("base_url"))
+		assert.Equal(t, "secret-value", env.GetSecret("api_key"))
+	})
+
+	t.Run("loads flat key-value format", func(t *testing.T) {
+		data := []byte(`{
+			"name": "Flat Env",
+			"base_url": "https://flat.example.com",
+			"timeout": "30"
+		}`)
+
+		env, err := LoadEnvironmentFromJSON(data)
+		assert.NoError(t, err)
+		assert.Equal(t, "Flat Env", env.Name())
+		assert.Equal(t, "https://flat.example.com", env.GetVariable("base_url"))
+		assert.Equal(t, "30", env.GetVariable("timeout"))
+	})
+
+	t.Run("handles empty Postman name", func(t *testing.T) {
+		data := []byte(`{
+			"values": [
+				{"key": "var1", "value": "value1"}
+			]
+		}`)
+
+		env, err := LoadEnvironmentFromJSON(data)
+		assert.NoError(t, err)
+		assert.Equal(t, "Imported Environment", env.Name())
+	})
+
+	t.Run("handles empty simple name", func(t *testing.T) {
+		data := []byte(`{
+			"variables": {"key": "value"}
+		}`)
+
+		env, err := LoadEnvironmentFromJSON(data)
+		assert.NoError(t, err)
+		assert.Equal(t, "Environment", env.Name())
+	})
+
+	t.Run("fails on invalid JSON", func(t *testing.T) {
+		data := []byte(`not valid json`)
+		_, err := LoadEnvironmentFromJSON(data)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid JSON")
+	})
+}
+
+func TestLoadEnvironmentFromFile(t *testing.T) {
+	t.Run("fails for non-existent file", func(t *testing.T) {
+		_, err := LoadEnvironmentFromFile("/non/existent/file.json")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read environment file")
+	})
+}
+
+func TestLoadMultipleEnvironments(t *testing.T) {
+	t.Run("returns nil for empty paths", func(t *testing.T) {
+		env, err := LoadMultipleEnvironments([]string{})
+		assert.NoError(t, err)
+		assert.Nil(t, env)
+	})
+}
+
+func TestMergeCollectionVariables(t *testing.T) {
+	t.Run("creates environment when nil", func(t *testing.T) {
+		c := NewCollection("Test API")
+		c.SetVariable("api_key", "collection-key")
+
+		result := MergeCollectionVariables(nil, []*Collection{c})
+		assert.NotNil(t, result)
+		assert.Equal(t, "collection-key", result.GetVariable("api_key"))
+	})
+
+	t.Run("environment overrides collection vars", func(t *testing.T) {
+		c := NewCollection("Test API")
+		c.SetVariable("api_key", "collection-key")
+		c.SetVariable("other_var", "collection-value")
+
+		env := NewEnvironment("My Env")
+		env.SetVariable("api_key", "env-key")
+
+		result := MergeCollectionVariables(env, []*Collection{c})
+		assert.Equal(t, "env-key", result.GetVariable("api_key"))
+		assert.Equal(t, "collection-value", result.GetVariable("other_var"))
+	})
+
+	t.Run("uses single collection name", func(t *testing.T) {
+		c := NewCollection("My API")
+
+		result := MergeCollectionVariables(nil, []*Collection{c})
+		assert.Contains(t, result.Name(), "My API")
+	})
+}

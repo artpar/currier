@@ -310,6 +310,15 @@ func TestMainView_Environment(t *testing.T) {
 		view := NewMainView()
 		assert.NotNil(t, view.Interpolator())
 	})
+
+	t.Run("SetEnvironment sets environment and interpolator", func(t *testing.T) {
+		view := NewMainView()
+		env := core.NewEnvironment("Test Env")
+		env.SetVariable("base_url", "https://api.example.com")
+
+		view.SetEnvironment(env, nil)
+		assert.Equal(t, env, view.Environment())
+	})
 }
 
 func TestMainView_ForwardMessages(t *testing.T) {

@@ -282,6 +282,139 @@ func TestCollectionTree_Search(t *testing.T) {
 	})
 }
 
+func TestCollectionTree_Init(t *testing.T) {
+	t.Run("returns nil command", func(t *testing.T) {
+		tree := NewCollectionTree()
+		cmd := tree.Init()
+		assert.Nil(t, cmd)
+	})
+}
+
+func TestCollectionTree_Methods(t *testing.T) {
+	t.Run("Blur sets unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.Blur()
+		assert.False(t, tree.Focused())
+	})
+
+	t.Run("Width returns width", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 40)
+		assert.Equal(t, 80, tree.Width())
+	})
+
+	t.Run("Height returns height", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 40)
+		assert.Equal(t, 40, tree.Height())
+	})
+
+	t.Run("Collapse collapses item", func(t *testing.T) {
+		tree := newTestTreeWithFolders(t)
+		tree.Expand(0)
+		assert.True(t, tree.IsExpanded(0))
+		tree.Collapse(0)
+		assert.False(t, tree.IsExpanded(0))
+	})
+}
+
+func TestCollectionTree_SearchMode(t *testing.T) {
+	t.Run("enters search mode with /", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Should be in search mode
+		assert.True(t, tree.searching)
+	})
+
+	t.Run("handles search input", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.searching = true
+
+		// Type a character
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+		tree.Update(msg)
+
+		// Search query should be set
+		assert.Contains(t, tree.search, "a")
+	})
+
+	t.Run("exits search mode with Escape", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.searching = true
+		tree.search = "test"
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.searching)
+	})
+
+	t.Run("handles Enter in search mode", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.searching = true
+		tree.search = "API"
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.searching)
+	})
+
+	t.Run("handles backspace in search mode", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.searching = true
+		tree.search = "test"
+
+		msg := tea.KeyMsg{Type: tea.KeyBackspace}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "tes", tree.search)
+	})
+}
+
+func TestCollectionTree_ViewWithSearch(t *testing.T) {
+	t.Run("renders search bar when in search mode", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.SetSize(40, 20)
+		tree.Focus()
+		tree.searching = true
+		tree.search = "test"
+
+		view := tree.View()
+		assert.Contains(t, view, "test")
+	})
+}
+
+func TestCollectionTree_MethodBadges(t *testing.T) {
+	t.Run("renders method badges for requests", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(60, 20)
+
+		c := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Get Users", "GET", "/users")
+		c.AddRequest(req)
+
+		tree.SetCollections([]*core.Collection{c})
+		tree.Expand(0)
+
+		view := tree.View()
+		assert.Contains(t, view, "GET")
+	})
+}
+
 // Helper functions
 
 func newTestTree(t *testing.T) *CollectionTree {

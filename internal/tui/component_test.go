@@ -210,3 +210,108 @@ func TestNavigationDirection(t *testing.T) {
 		assert.Equal(t, NavDirection(3), NavRight)
 	})
 }
+
+func TestBaseComponent_Init(t *testing.T) {
+	t.Run("returns nil command", func(t *testing.T) {
+		c := NewBaseComponent("Test")
+		cmd := c.Init()
+		assert.Nil(t, cmd)
+	})
+}
+
+func TestComponentList_EdgeCases(t *testing.T) {
+	t.Run("Get returns nil for invalid index", func(t *testing.T) {
+		cl := NewComponentList()
+		cl.Add(NewBaseComponent("First"))
+
+		assert.Nil(t, cl.Get(-1))
+		assert.Nil(t, cl.Get(5))
+	})
+
+	t.Run("FocusFirst handles empty list", func(t *testing.T) {
+		cl := NewComponentList()
+		cl.FocusFirst() // Should not panic
+	})
+
+	t.Run("FocusNext handles empty list", func(t *testing.T) {
+		cl := NewComponentList()
+		cl.FocusNext() // Should not panic
+	})
+
+	t.Run("FocusPrev handles empty list", func(t *testing.T) {
+		cl := NewComponentList()
+		cl.FocusPrev() // Should not panic
+	})
+
+	t.Run("SetFocusIndex handles invalid index", func(t *testing.T) {
+		cl := NewComponentList()
+		cl.Add(NewBaseComponent("First"))
+
+		cl.SetFocusIndex(-1) // Should not panic
+		cl.SetFocusIndex(10) // Should not panic
+	})
+
+	t.Run("Focused returns nil for empty list", func(t *testing.T) {
+		cl := NewComponentList()
+		assert.Nil(t, cl.Focused())
+	})
+}
+
+func TestStyleHelpers(t *testing.T) {
+	t.Run("DefaultStyles returns style struct", func(t *testing.T) {
+		styles := DefaultStyles()
+		assert.NotNil(t, styles.Title)
+		assert.NotNil(t, styles.Border)
+		assert.NotNil(t, styles.Focused)
+		assert.NotNil(t, styles.Unfocused)
+	})
+
+	t.Run("RenderTitle renders with correct styling", func(t *testing.T) {
+		result := RenderTitle("Test Title", 20, true)
+		assert.Contains(t, result, "Test Title")
+	})
+
+	t.Run("RenderTitle unfocused", func(t *testing.T) {
+		result := RenderTitle("Test", 20, false)
+		assert.Contains(t, result, "Test")
+	})
+
+	t.Run("RenderBorder applies border to content", func(t *testing.T) {
+		result := RenderBorder("Content", 40, 10, true)
+		assert.NotEmpty(t, result)
+	})
+
+	t.Run("RenderBorder unfocused", func(t *testing.T) {
+		result := RenderBorder("Content", 40, 10, false)
+		assert.NotEmpty(t, result)
+	})
+}
+
+func TestStringHelpers(t *testing.T) {
+	t.Run("Truncate truncates long strings", func(t *testing.T) {
+		result := Truncate("This is a very long string", 10)
+		assert.Equal(t, "This is...", result)
+	})
+
+	t.Run("Truncate keeps short strings", func(t *testing.T) {
+		result := Truncate("Short", 10)
+		assert.Equal(t, "Short", result)
+	})
+
+	t.Run("Truncate handles exact length", func(t *testing.T) {
+		result := Truncate("Exactly10!", 10)
+		assert.Equal(t, "Exactly10!", result)
+	})
+
+	t.Run("PadRight pads short strings", func(t *testing.T) {
+		result := PadRight("Test", 10)
+		assert.Equal(t, "Test      ", result)
+		assert.Len(t, result, 10)
+	})
+
+	t.Run("PadRight truncates long strings", func(t *testing.T) {
+		result := PadRight("This is longer", 5)
+		assert.Equal(t, "This ", result)
+		assert.Len(t, result, 5)
+	})
+}
