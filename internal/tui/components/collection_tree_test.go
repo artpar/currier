@@ -319,6 +319,36 @@ func TestCollectionTree_Methods(t *testing.T) {
 	})
 }
 
+func TestCollectionTree_IsSearching(t *testing.T) {
+	t.Run("returns false when not searching", func(t *testing.T) {
+		tree := NewCollectionTree()
+		assert.False(t, tree.IsSearching())
+	})
+
+	t.Run("returns true when searching", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.True(t, tree.IsSearching())
+	})
+
+	t.Run("returns false after exiting search mode", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.searching = true
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.IsSearching())
+	})
+}
+
 func TestCollectionTree_SearchMode(t *testing.T) {
 	t.Run("enters search mode with /", func(t *testing.T) {
 		tree := newTestTree(t)

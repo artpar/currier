@@ -591,3 +591,83 @@ func TestMainView_StatusBarEdgeCases(t *testing.T) {
 		assert.Contains(t, output, "quit")
 	})
 }
+
+func TestMainView_HelpBar(t *testing.T) {
+	t.Run("shows collection hints when collections pane focused", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneCollections)
+
+		output := view.View()
+		assert.Contains(t, output, "Navigate")
+		assert.Contains(t, output, "Search")
+	})
+
+	t.Run("shows request hints when request pane focused", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneRequest)
+
+		output := view.View()
+		assert.Contains(t, output, "Edit URL")
+		assert.Contains(t, output, "Method")
+		assert.Contains(t, output, "Send")
+	})
+
+	t.Run("shows response hints when response pane focused", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneResponse)
+
+		output := view.View()
+		assert.Contains(t, output, "Scroll")
+		assert.Contains(t, output, "Copy")
+	})
+
+	t.Run("shows global hints", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		output := view.View()
+		assert.Contains(t, output, "Pane")
+		assert.Contains(t, output, "Help")
+		assert.Contains(t, output, "Quit")
+	})
+}
+
+func TestMainView_ModeIndicator(t *testing.T) {
+	t.Run("shows NORMAL mode by default", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		output := view.View()
+		assert.Contains(t, output, "NORMAL")
+	})
+
+	t.Run("shows pane name in status bar", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneRequest)
+
+		output := view.View()
+		assert.Contains(t, output, "Request")
+	})
+
+	t.Run("shows Collections when collections focused", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneCollections)
+
+		output := view.View()
+		assert.Contains(t, output, "Collections")
+	})
+
+	t.Run("shows Response when response focused", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneResponse)
+
+		output := view.View()
+		assert.Contains(t, output, "Response")
+	})
+}
