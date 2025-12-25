@@ -415,6 +415,97 @@ func TestPostmanExporter_Export_NilCollection(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidCollection)
 }
 
+func TestPostmanExporter_FileExtension(t *testing.T) {
+	exp := NewPostmanExporter()
+	assert.Equal(t, ".postman_collection.json", exp.FileExtension())
+}
+
+func TestCurlExporter_FileExtension(t *testing.T) {
+	exp := NewCurlExporter()
+	assert.Equal(t, ".sh", exp.FileExtension())
+}
+
+func TestPostmanExporter_Export_WithBasicAuth(t *testing.T) {
+	exp := NewPostmanExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test")
+	coll.SetAuth(core.AuthConfig{
+		Type:     "basic",
+		Username: "user",
+		Password: "pass",
+	})
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var pm map[string]interface{}
+	err = json.Unmarshal(result, &pm)
+	require.NoError(t, err)
+
+	auth := pm["auth"].(map[string]interface{})
+	assert.Equal(t, "basic", auth["type"])
+}
+
+func TestPostmanExporter_Export_WithApiKeyAuth(t *testing.T) {
+	exp := NewPostmanExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test")
+	coll.SetAuth(core.AuthConfig{
+		Type:  "apikey",
+		Key:   "X-Api-Key",
+		Value: "secret123",
+		In:    "header",
+	})
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var pm map[string]interface{}
+	err = json.Unmarshal(result, &pm)
+	require.NoError(t, err)
+
+	auth := pm["auth"].(map[string]interface{})
+	assert.Equal(t, "apikey", auth["type"])
+}
+
+func TestRegistry_Export_UnknownFormat(t *testing.T) {
+	registry := NewRegistry()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test")
+	_, err := registry.Export(ctx, Format("unknown"), coll)
+	assert.Error(t, err)
+}
+
+func TestPostmanExporter_Export_RequestWithAuth(t *testing.T) {
+	exp := NewPostmanExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test")
+	req := core.NewRequestDefinition("Test", "GET", "https://api.example.com")
+	req.SetAuth(core.AuthConfig{
+		Type:  "bearer",
+		Token: "token123",
+	})
+	coll.AddRequest(req)
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var pm map[string]interface{}
+	err = json.Unmarshal(result, &pm)
+	require.NoError(t, err)
+
+	items := pm["item"].([]interface{})
+	item := items[0].(map[string]interface{})
+	request := item["request"].(map[string]interface{})
+
+	auth := request["auth"].(map[string]interface{})
+	assert.Equal(t, "bearer", auth["type"])
+}
+
 // Test shell quoting
 
 func TestShellQuote(t *testing.T) {

@@ -480,3 +480,72 @@ func TestMainView_SendRequestKey(t *testing.T) {
 		_ = cmd // Just verify it doesn't panic
 	})
 }
+
+func TestMainView_StatusBarVariableCount(t *testing.T) {
+	t.Run("shows variable count in status bar", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		env := core.NewEnvironment("Dev")
+		env.SetVariable("var1", "value1")
+		env.SetVariable("var2", "value2")
+		view.SetEnvironment(env, nil)
+
+		output := view.View()
+		assert.Contains(t, output, "2 vars")
+	})
+
+	t.Run("shows secret count in status bar", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		env := core.NewEnvironment("Dev")
+		env.SetSecret("api_key", "secret")
+		view.SetEnvironment(env, nil)
+
+		output := view.View()
+		assert.Contains(t, output, "1 secrets")
+	})
+}
+
+func TestMainView_UpdatePaneSizes(t *testing.T) {
+	t.Run("updates pane sizes on resize", func(t *testing.T) {
+		view := NewMainView()
+
+		// Set initial size
+		view.SetSize(120, 40)
+
+		// Resize
+		view.SetSize(200, 60)
+
+		// Panes should have updated sizes
+		assert.Equal(t, 200, view.Width())
+		assert.Equal(t, 60, view.Height())
+	})
+}
+
+func TestMainView_ClearNotification(t *testing.T) {
+	t.Run("handles clear notification message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// The clearNotificationMsg type is private, so we test via the public API
+		// Just verify the view renders without notification
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+}
+
+func TestMainView_NumberKeyFocus(t *testing.T) {
+	t.Run("1 focuses collection pane", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneRequest)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+	})
+}

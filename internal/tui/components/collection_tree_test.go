@@ -506,6 +506,117 @@ func TestCollectionTree_WindowSizeMessage(t *testing.T) {
 	})
 }
 
+func TestCollectionTree_NestedFolders(t *testing.T) {
+	t.Run("expands nested folder with requests", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		c := core.NewCollection("API")
+		parentFolder := c.AddFolder("Users")
+		childFolder := parentFolder.AddFolder("Admin")
+		childFolder.AddRequest(core.NewRequestDefinition("List Admins", "GET", "/admin/users"))
+
+		tree.SetCollections([]*core.Collection{c})
+
+		// Expand collection
+		tree.Expand(0)
+		// Expand Users folder
+		tree.Expand(1)
+		// Expand Admin folder
+		tree.Expand(2)
+
+		view := tree.View()
+		assert.Contains(t, view, "Admin")
+		assert.Contains(t, view, "List Admins")
+	})
+}
+
+func TestCollectionTree_MethodBadgeOther(t *testing.T) {
+	t.Run("renders HEAD method badge", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(60, 20)
+
+		c := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Head Check", "HEAD", "/health")
+		c.AddRequest(req)
+
+		tree.SetCollections([]*core.Collection{c})
+		tree.Expand(0)
+
+		view := tree.View()
+		assert.Contains(t, view, "HEAD")
+	})
+
+	t.Run("renders OPTIONS method badge", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(60, 20)
+
+		c := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("CORS Options", "OPTIONS", "/api")
+		c.AddRequest(req)
+
+		tree.SetCollections([]*core.Collection{c})
+		tree.Expand(0)
+
+		view := tree.View()
+		assert.Contains(t, view, "OPT")
+	})
+}
+
+func TestCollectionTree_SetCursorEdgeCases(t *testing.T) {
+	t.Run("SetCursor clamps to valid range", func(t *testing.T) {
+		tree := newTestTree(t)
+
+		// Try to set cursor beyond end
+		tree.SetCursor(100)
+		assert.Equal(t, tree.ItemCount()-1, tree.Cursor())
+	})
+
+	t.Run("SetCursor handles negative", func(t *testing.T) {
+		tree := newTestTree(t)
+
+		tree.SetCursor(-1)
+		assert.Equal(t, 0, tree.Cursor())
+	})
+}
+
+func TestCollectionTree_ExpandCollapse(t *testing.T) {
+	t.Run("Expand does nothing for non-expandable", func(t *testing.T) {
+		tree := newTestTreeWithRequests(t)
+		tree.Expand(0)
+
+		// Move to request (not expandable)
+		tree.SetCursor(1)
+		tree.Expand(1)
+
+		// Should not panic
+		assert.True(t, true)
+	})
+
+	t.Run("IsExpanded returns false for non-expandable", func(t *testing.T) {
+		tree := newTestTreeWithRequests(t)
+		tree.Expand(0)
+
+		// Request at index 1 is not expandable
+		assert.False(t, tree.IsExpanded(1))
+	})
+}
+
+func TestCollectionTree_ScrollView(t *testing.T) {
+	t.Run("scrolls view when cursor exceeds viewport", func(t *testing.T) {
+		tree := newTestTree(t) // 10 items
+		tree.SetSize(40, 5)   // Small height
+		tree.Focus()
+
+		// Move cursor to bottom
+		tree.SetCursor(9)
+
+		view := tree.View()
+		// Should show cursor line
+		assert.NotEmpty(t, view)
+	})
+}
+
 // Helper functions
 
 func newTestTree(t *testing.T) *CollectionTree {

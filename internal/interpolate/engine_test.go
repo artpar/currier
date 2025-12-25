@@ -543,3 +543,20 @@ func TestEngine_Performance(t *testing.T) {
 		assert.Equal(t, strings.Repeat("123", 100), result)
 	})
 }
+
+func TestEngine_Options(t *testing.T) {
+	t.Run("SetOption and GetOption work correctly", func(t *testing.T) {
+		engine := NewEngine()
+
+		engine.SetOption("strict", true)
+		assert.True(t, engine.GetOption("strict"))
+
+		engine.SetOption("strict", false)
+		assert.False(t, engine.GetOption("strict"))
+	})
+
+	t.Run("GetOption returns false for unset options", func(t *testing.T) {
+		engine := NewEngine()
+		assert.False(t, engine.GetOption("nonexistent"))
+	})
+}

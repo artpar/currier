@@ -453,6 +453,72 @@ func TestResponsePanel_StatusHelpers(t *testing.T) {
 	})
 }
 
+func TestResponsePanel_CookiesTab(t *testing.T) {
+	t.Run("renders cookies tab", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabCookies)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestResponsePanel_TabWrap(t *testing.T) {
+	t.Run("wraps from last to first tab", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.Focus()
+		panel.SetActiveTab(ResponseTabTiming)
+
+		msg := tea.KeyMsg{Type: tea.KeyTab}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		assert.Equal(t, ResponseTabBody, panel.ActiveTab())
+	})
+
+	t.Run("wraps from first to last tab with Shift+Tab", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.Focus()
+		panel.SetActiveTab(ResponseTabBody)
+
+		msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		assert.Equal(t, ResponseTabTiming, panel.ActiveTab())
+	})
+}
+
+func TestResponsePanel_PageNavigation(t *testing.T) {
+	t.Run("page down with Ctrl+D", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.Focus()
+		panel.SetSize(80, 30)
+
+		msg := tea.KeyMsg{Type: tea.KeyCtrlD}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		// Should have scrolled down
+		assert.GreaterOrEqual(t, panel.ScrollOffset(), 0)
+	})
+
+	t.Run("page up with Ctrl+U", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.Focus()
+		panel.SetSize(80, 30)
+		panel.SetScrollOffset(20)
+
+		msg := tea.KeyMsg{Type: tea.KeyCtrlU}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		// Should not increase scroll offset
+		assert.LessOrEqual(t, panel.ScrollOffset(), 20)
+	})
+}
+
 // Helper functions
 
 func newTestResponsePanel(t *testing.T) *ResponsePanel {

@@ -435,3 +435,46 @@ func TestScope_GetSource(t *testing.T) {
 		assert.Equal(t, LevelNone, scope.GetSource("unknown"))
 	})
 }
+
+func TestLevel_String(t *testing.T) {
+	t.Run("returns string for each level", func(t *testing.T) {
+		assert.Equal(t, "none", LevelNone.String())
+		assert.Equal(t, "global", LevelGlobal.String())
+		assert.Equal(t, "environment", LevelEnvironment.String())
+		assert.Equal(t, "collection", LevelCollection.String())
+		assert.Equal(t, "request", LevelRequest.String())
+	})
+
+	t.Run("returns none for undefined level", func(t *testing.T) {
+		unknown := Level(999)
+		assert.Equal(t, "none", unknown.String())
+	})
+}
+
+func TestScope_InterpolateMap(t *testing.T) {
+	t.Run("interpolates map values", func(t *testing.T) {
+		scope := NewScope()
+		scope.Global().Set("base_url", "https://api.example.com")
+		scope.Global().Set("version", "v1")
+
+		input := map[string]string{
+			"url":     "{{base_url}}/{{version}}/users",
+			"header":  "Content-Type: application/json",
+			"dynamic": "API is at {{base_url}}",
+		}
+
+		result, err := scope.InterpolateMap(input)
+		require.NoError(t, err)
+
+		assert.Equal(t, "https://api.example.com/v1/users", result["url"])
+		assert.Equal(t, "Content-Type: application/json", result["header"])
+		assert.Equal(t, "API is at https://api.example.com", result["dynamic"])
+	})
+
+	t.Run("handles empty map", func(t *testing.T) {
+		scope := NewScope()
+		result, err := scope.InterpolateMap(map[string]string{})
+		require.NoError(t, err)
+		assert.Empty(t, result)
+	})
+}

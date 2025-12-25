@@ -411,3 +411,100 @@ func TestAssertions_Summary(t *testing.T) {
 		assert.Equal(t, 1, summary.Failed)
 	})
 }
+
+func TestAssertEqual(t *testing.T) {
+	t.Run("returns true for equal values", func(t *testing.T) {
+		assert.True(t, AssertEqual(5, 5))
+		assert.True(t, AssertEqual("hello", "hello"))
+		assert.True(t, AssertEqual([]int{1, 2}, []int{1, 2}))
+	})
+
+	t.Run("returns false for unequal values", func(t *testing.T) {
+		assert.False(t, AssertEqual(5, 10))
+		assert.False(t, AssertEqual("hello", "world"))
+	})
+}
+
+func TestAssertContains(t *testing.T) {
+	t.Run("string contains substring", func(t *testing.T) {
+		assert.True(t, AssertContains("hello world", "world"))
+		assert.False(t, AssertContains("hello", "world"))
+	})
+
+	t.Run("slice contains element", func(t *testing.T) {
+		slice := []interface{}{1, 2, 3}
+		assert.True(t, AssertContains(slice, 2))
+		assert.False(t, AssertContains(slice, 5))
+	})
+
+	t.Run("returns false for non-container types", func(t *testing.T) {
+		assert.False(t, AssertContains(123, 1))
+	})
+}
+
+func TestAssertMatch(t *testing.T) {
+	t.Run("matches valid regex", func(t *testing.T) {
+		assert.True(t, AssertMatch("hello123", `hello\d+`))
+		assert.True(t, AssertMatch("test@example.com", `.*@.*\.com`))
+	})
+
+	t.Run("returns false for non-match", func(t *testing.T) {
+		assert.False(t, AssertMatch("hello", `\d+`))
+	})
+
+	t.Run("returns false for invalid regex", func(t *testing.T) {
+		assert.False(t, AssertMatch("test", `[invalid`))
+	})
+}
+
+func TestAssertJSONEqual(t *testing.T) {
+	t.Run("equal JSON objects", func(t *testing.T) {
+		assert.True(t, AssertJSONEqual(`{"a": 1}`, `{"a": 1}`))
+		assert.True(t, AssertJSONEqual(`{"a": 1, "b": 2}`, `{"b": 2, "a": 1}`))
+	})
+
+	t.Run("unequal JSON objects", func(t *testing.T) {
+		assert.False(t, AssertJSONEqual(`{"a": 1}`, `{"a": 2}`))
+	})
+
+	t.Run("returns false for invalid JSON", func(t *testing.T) {
+		assert.False(t, AssertJSONEqual("not json", `{"a": 1}`))
+		assert.False(t, AssertJSONEqual(`{"a": 1}`, "not json"))
+	})
+}
+
+func TestFormatTestResults(t *testing.T) {
+	t.Run("formats passing tests", func(t *testing.T) {
+		results := []TestResult{
+			{Name: "Test 1", Passed: true},
+			{Name: "Test 2", Passed: true},
+		}
+		output := FormatTestResults(results)
+		assert.Contains(t, output, "✓ Test 1")
+		assert.Contains(t, output, "✓ Test 2")
+	})
+
+	t.Run("formats failing tests", func(t *testing.T) {
+		results := []TestResult{
+			{Name: "Test 1", Passed: false, Error: "assertion failed"},
+		}
+		output := FormatTestResults(results)
+		assert.Contains(t, output, "✗ Test 1")
+		assert.Contains(t, output, "Error: assertion failed")
+	})
+
+	t.Run("formats mixed results", func(t *testing.T) {
+		results := []TestResult{
+			{Name: "Test 1", Passed: true},
+			{Name: "Test 2", Passed: false, Error: "failed"},
+		}
+		output := FormatTestResults(results)
+		assert.Contains(t, output, "✓ Test 1")
+		assert.Contains(t, output, "✗ Test 2")
+	})
+
+	t.Run("handles empty results", func(t *testing.T) {
+		output := FormatTestResults([]TestResult{})
+		assert.Empty(t, output)
+	})
+}

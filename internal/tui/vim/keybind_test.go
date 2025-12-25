@@ -258,4 +258,80 @@ func TestKeySequenceHandler(t *testing.T) {
 		assert.True(t, multiCalled)
 		assert.False(t, singleCalled)
 	})
+
+	t.Run("Reset clears buffer", func(t *testing.T) {
+		h := NewKeySequenceHandler()
+		h.Register("dd", func() tea.Cmd { return nil })
+
+		// Start a sequence
+		result := h.Handle("d")
+		assert.Equal(t, SequencePending, result.Status)
+
+		// Reset
+		h.Reset()
+
+		// Buffer should be empty, so 'd' starts fresh
+		result = h.Handle("d")
+		assert.Equal(t, SequencePending, result.Status)
+	})
+
+	t.Run("Buffer returns current buffer", func(t *testing.T) {
+		h := NewKeySequenceHandler()
+		h.Register("dd", func() tea.Cmd { return nil })
+
+		assert.Equal(t, "", h.Buffer())
+
+		h.Handle("d")
+		assert.Equal(t, "d", h.Buffer())
+
+		h.Handle("d")
+		assert.Equal(t, "", h.Buffer()) // Completed, should be empty
+	})
+}
+
+func TestKeyBinding_MatchKey(t *testing.T) {
+	t.Run("matches up arrow", func(t *testing.T) {
+		kb := NewKeyBinding("up", "up")
+		assert.True(t, kb.Matches(tea.KeyMsg{Type: tea.KeyUp}))
+	})
+
+	t.Run("matches down arrow", func(t *testing.T) {
+		kb := NewKeyBinding("down", "down")
+		assert.True(t, kb.Matches(tea.KeyMsg{Type: tea.KeyDown}))
+	})
+
+	t.Run("matches left arrow", func(t *testing.T) {
+		kb := NewKeyBinding("left", "left")
+		assert.True(t, kb.Matches(tea.KeyMsg{Type: tea.KeyLeft}))
+	})
+
+	t.Run("matches right arrow", func(t *testing.T) {
+		kb := NewKeyBinding("right", "right")
+		assert.True(t, kb.Matches(tea.KeyMsg{Type: tea.KeyRight}))
+	})
+
+	t.Run("matches ctrl+d", func(t *testing.T) {
+		kb := NewKeyBinding("ctrl+d", "page down")
+		assert.True(t, kb.Matches(tea.KeyMsg{Type: tea.KeyCtrlD}))
+	})
+
+	t.Run("matches ctrl+u", func(t *testing.T) {
+		kb := NewKeyBinding("ctrl+u", "page up")
+		assert.True(t, kb.Matches(tea.KeyMsg{Type: tea.KeyCtrlU}))
+	})
+
+	t.Run("matches ctrl+f", func(t *testing.T) {
+		kb := NewKeyBinding("ctrl+f", "forward")
+		assert.True(t, kb.Matches(tea.KeyMsg{Type: tea.KeyCtrlF}))
+	})
+
+	t.Run("matches ctrl+b", func(t *testing.T) {
+		kb := NewKeyBinding("ctrl+b", "backward")
+		assert.True(t, kb.Matches(tea.KeyMsg{Type: tea.KeyCtrlB}))
+	})
+
+	t.Run("matches ctrl+r", func(t *testing.T) {
+		kb := NewKeyBinding("ctrl+r", "redo")
+		assert.True(t, kb.Matches(tea.KeyMsg{Type: tea.KeyCtrlR}))
+	})
 }
