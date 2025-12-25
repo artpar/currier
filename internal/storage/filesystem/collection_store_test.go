@@ -308,6 +308,149 @@ func TestCollectionStore_GetByPath(t *testing.T) {
 
 // Helper functions
 
+func TestCollectionStore_CountRequests(t *testing.T) {
+	t.Run("counts requests in nested folders", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("My API")
+
+		// Add 2 root-level requests
+		c.AddRequest(core.NewRequestDefinition("Root 1", "GET", "/root1"))
+		c.AddRequest(core.NewRequestDefinition("Root 2", "POST", "/root2"))
+
+		// Add folder with 3 requests
+		folder1 := c.AddFolder("Users")
+		folder1.AddRequest(core.NewRequestDefinition("Get Users", "GET", "/users"))
+		folder1.AddRequest(core.NewRequestDefinition("Create User", "POST", "/users"))
+		folder1.AddRequest(core.NewRequestDefinition("Delete User", "DELETE", "/users/1"))
+
+		// Add nested subfolder with 2 requests
+		subfolder := folder1.AddFolder("Admin")
+		subfolder.AddRequest(core.NewRequestDefinition("Get Admins", "GET", "/admins"))
+		subfolder.AddRequest(core.NewRequestDefinition("Create Admin", "POST", "/admins"))
+
+		require.NoError(t, store.Save(ctx, c))
+
+		list, err := store.List(ctx)
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+
+		// Total: 2 root + 3 folder + 2 subfolder = 7
+		assert.Equal(t, 7, list[0].RequestCount)
+	})
+
+	t.Run("counts requests in multiple nested levels", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("Deep API")
+
+		// Create deep nesting: folder > subfolder > subsubfolder
+		folder := c.AddFolder("Level1")
+		folder.AddRequest(core.NewRequestDefinition("L1 Request", "GET", "/l1"))
+
+		subfolder := folder.AddFolder("Level2")
+		subfolder.AddRequest(core.NewRequestDefinition("L2 Request", "GET", "/l2"))
+
+		subsubfolder := subfolder.AddFolder("Level3")
+		subsubfolder.AddRequest(core.NewRequestDefinition("L3 Request", "GET", "/l3"))
+
+		require.NoError(t, store.Save(ctx, c))
+
+		list, err := store.List(ctx)
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+
+		// Total: 1 + 1 + 1 = 3 requests at different nesting levels
+		assert.Equal(t, 3, list[0].RequestCount)
+	})
+
+	t.Run("counts requests across multiple folders", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("Multi Folder API")
+
+		// Add multiple folders at root level
+		folder1 := c.AddFolder("Users")
+		folder1.AddRequest(core.NewRequestDefinition("Get Users", "GET", "/users"))
+
+		folder2 := c.AddFolder("Products")
+		folder2.AddRequest(core.NewRequestDefinition("Get Products", "GET", "/products"))
+		folder2.AddRequest(core.NewRequestDefinition("Create Product", "POST", "/products"))
+
+		folder3 := c.AddFolder("Orders")
+		folder3.AddRequest(core.NewRequestDefinition("Get Orders", "GET", "/orders"))
+
+		require.NoError(t, store.Save(ctx, c))
+
+		list, err := store.List(ctx)
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+
+		// Total: 1 + 2 + 1 = 4
+		assert.Equal(t, 4, list[0].RequestCount)
+	})
+}
+
+func TestCollectionStore_SaveLoadScripts(t *testing.T) {
+	t.Run("saves and loads pre/post scripts", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("Scripted API")
+		c.SetPreScript("console.log('pre-request');")
+		c.SetPostScript("console.log('post-request');")
+
+		require.NoError(t, store.Save(ctx, c))
+
+		loaded, err := store.Get(ctx, c.ID())
+		require.NoError(t, err)
+		assert.Equal(t, "console.log('pre-request');", loaded.PreScript())
+		assert.Equal(t, "console.log('post-request');", loaded.PostScript())
+	})
+
+	t.Run("saves and loads request scripts", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("API")
+		req := core.NewRequestDefinition("Test", "GET", "/test")
+		req.SetPreScript("pm.environment.set('token', 'abc');")
+		req.SetPostScript("pm.test('Status is 200', () => pm.response.code === 200);")
+		c.AddRequest(req)
+
+		require.NoError(t, store.Save(ctx, c))
+
+		loaded, err := store.Get(ctx, c.ID())
+		require.NoError(t, err)
+		require.Len(t, loaded.Requests(), 1)
+		assert.Equal(t, "pm.environment.set('token', 'abc');", loaded.Requests()[0].PreScript())
+		assert.Equal(t, "pm.test('Status is 200', () => pm.response.code === 200);", loaded.Requests()[0].PostScript())
+	})
+}
+
+func TestCollectionStore_SaveLoadRequestBody(t *testing.T) {
+	t.Run("saves and loads request body", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("API")
+		req := core.NewRequestDefinition("Create User", "POST", "/users")
+		req.SetBodyRaw(`{"name": "John", "email": "john@example.com"}`, "raw")
+		c.AddRequest(req)
+
+		require.NoError(t, store.Save(ctx, c))
+
+		loaded, err := store.Get(ctx, c.ID())
+		require.NoError(t, err)
+		require.Len(t, loaded.Requests(), 1)
+		assert.Equal(t, `{"name": "John", "email": "john@example.com"}`, loaded.Requests()[0].BodyContent())
+		assert.Equal(t, "raw", loaded.Requests()[0].BodyType())
+	})
+}
+
 func newTestStore(t *testing.T) *CollectionStore {
 	t.Helper()
 	tmpDir := t.TempDir()

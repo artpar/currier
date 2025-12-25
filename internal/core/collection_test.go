@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/artpar/currier/internal/interpolate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -620,5 +621,178 @@ func TestRequestDefinition_ToRequestWithBody(t *testing.T) {
 		req, err := def.ToRequest()
 		require.NoError(t, err)
 		assert.NotNil(t, req.Body())
+	})
+}
+
+func TestRequestDefinition_Headers(t *testing.T) {
+	t.Run("returns copy of headers map", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetHeader("Content-Type", "application/json")
+		req.SetHeader("Authorization", "Bearer token")
+
+		headers := req.Headers()
+		assert.Len(t, headers, 2)
+		assert.Equal(t, "application/json", headers["Content-Type"])
+		assert.Equal(t, "Bearer token", headers["Authorization"])
+
+		// Verify it's a copy - modifications shouldn't affect original
+		headers["X-New"] = "value"
+		assert.Equal(t, "", req.GetHeader("X-New"))
+	})
+}
+
+func TestCollection_GetFolderByNameEdgeCases(t *testing.T) {
+	t.Run("returns false for non-existent folder name", func(t *testing.T) {
+		c := NewCollection("My API")
+		c.AddFolder("Users")
+
+		_, ok := c.GetFolderByName("NonExistent")
+		assert.False(t, ok)
+	})
+
+	t.Run("finds folder among multiple", func(t *testing.T) {
+		c := NewCollection("My API")
+		c.AddFolder("Users")
+		c.AddFolder("Products")
+		c.AddFolder("Orders")
+
+		found, ok := c.GetFolderByName("Products")
+		assert.True(t, ok)
+		assert.Equal(t, "Products", found.Name())
+	})
+}
+
+func TestCollection_FindRequestEdgeCases(t *testing.T) {
+	t.Run("returns false for non-existent request", func(t *testing.T) {
+		c := NewCollection("My API")
+		c.AddRequest(NewRequestDefinition("Existing", "GET", "/existing"))
+
+		_, ok := c.FindRequest("non-existent-id")
+		assert.False(t, ok)
+	})
+
+	t.Run("finds request in root level", func(t *testing.T) {
+		c := NewCollection("My API")
+		req := NewRequestDefinition("Root Request", "GET", "/root")
+		c.AddRequest(req)
+
+		found, ok := c.FindRequest(req.ID())
+		assert.True(t, ok)
+		assert.Equal(t, "Root Request", found.Name())
+	})
+
+	t.Run("finds request in deeply nested folder", func(t *testing.T) {
+		c := NewCollection("My API")
+		folder1 := c.AddFolder("Level1")
+		folder2 := folder1.AddFolder("Level2")
+		folder3 := folder2.AddFolder("Level3")
+		req := NewRequestDefinition("Deep Request", "GET", "/deep")
+		folder3.AddRequest(req)
+
+		found, ok := c.FindRequest(req.ID())
+		assert.True(t, ok)
+		assert.Equal(t, "Deep Request", found.Name())
+	})
+}
+
+func TestFolder_FindRequestEdgeCases(t *testing.T) {
+	t.Run("returns false for non-existent request", func(t *testing.T) {
+		f := NewFolder("Test")
+		f.AddRequest(NewRequestDefinition("Existing", "GET", "/existing"))
+
+		_, ok := f.FindRequest("non-existent-id")
+		assert.False(t, ok)
+	})
+
+	t.Run("finds request in direct children", func(t *testing.T) {
+		f := NewFolder("Test")
+		req := NewRequestDefinition("Direct Request", "GET", "/direct")
+		f.AddRequest(req)
+
+		found, ok := f.FindRequest(req.ID())
+		assert.True(t, ok)
+		assert.Equal(t, "Direct Request", found.Name())
+	})
+}
+
+func TestRequestDefinition_SetBodyJSONError(t *testing.T) {
+	t.Run("returns error for unmarshalable data", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "POST", "https://example.com")
+		// channels cannot be marshaled to JSON
+		err := req.SetBodyJSON(make(chan int))
+		assert.Error(t, err)
+	})
+}
+
+func TestRequestDefinition_ToRequestDefault(t *testing.T) {
+	t.Run("handles default body type", func(t *testing.T) {
+		def := NewRequestDefinition("Test", "POST", "https://example.com")
+		// Set body content without specifying type
+		def.SetBody("some content")
+
+		req, err := def.ToRequest()
+		require.NoError(t, err)
+		assert.NotNil(t, req)
+	})
+}
+
+func TestRequestDefinition_ToRequestWithEnv(t *testing.T) {
+	t.Run("interpolates URL with variables", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetVariable("host", "api.example.com")
+		engine.SetVariable("user_id", "123")
+
+		def := NewRequestDefinition("Get User", "GET", "https://{{host}}/users/{{user_id}}")
+		req, err := def.ToRequestWithEnv(engine)
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://api.example.com/users/123", req.Endpoint())
+	})
+
+	t.Run("interpolates headers with variables", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetVariable("token", "my-secret-token")
+
+		def := NewRequestDefinition("Auth Request", "GET", "https://example.com")
+		def.SetHeader("Authorization", "Bearer {{token}}")
+		req, err := def.ToRequestWithEnv(engine)
+
+		require.NoError(t, err)
+		assert.Equal(t, "Bearer my-secret-token", req.Headers().Get("Authorization"))
+	})
+
+	t.Run("interpolates body with variables", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetVariable("username", "john")
+		engine.SetVariable("email", "john@example.com")
+
+		def := NewRequestDefinition("Create User", "POST", "https://example.com/users")
+		def.SetBodyRaw(`{"name": "{{username}}", "email": "{{email}}"}`, "application/json")
+		req, err := def.ToRequestWithEnv(engine)
+
+		require.NoError(t, err)
+		assert.Contains(t, req.Body().String(), "john")
+		assert.Contains(t, req.Body().String(), "john@example.com")
+	})
+
+	t.Run("handles empty body", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		def := NewRequestDefinition("Get Users", "GET", "https://example.com/users")
+
+		req, err := def.ToRequestWithEnv(engine)
+
+		require.NoError(t, err)
+		assert.True(t, req.Body().IsEmpty())
+	})
+
+	t.Run("returns error for invalid URL interpolation", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetOption("strict", true)
+
+		def := NewRequestDefinition("Get User", "GET", "https://{{undefined_host}}/users")
+		_, err := def.ToRequestWithEnv(engine)
+
+		// Strict mode should fail on undefined variable
+		assert.Error(t, err)
 	})
 }

@@ -859,6 +859,134 @@ func TestRequestPanel_TabContent(t *testing.T) {
 		view := panel.View()
 		assert.NotEmpty(t, view)
 	})
+
+	t.Run("renders body tab", func(t *testing.T) {
+		panel := newTestRequestPanel(t)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabBody)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renders body tab with JSON content", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Create User", "POST", "https://example.com/users")
+		req.SetBodyRaw(`{"name": "John", "email": "john@example.com"}`, "application/json")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabBody)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renders query tab with URL having query params", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Search", "GET", "https://example.com/search?q=test&page=1")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabQuery)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestRequestPanel_MethodStyles(t *testing.T) {
+	t.Run("GET method displays correctly", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Get", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		view := panel.View()
+		assert.Contains(t, view, "GET")
+	})
+
+	t.Run("POST method displays correctly", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Post", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		view := panel.View()
+		assert.Contains(t, view, "POST")
+	})
+
+	t.Run("PUT method displays correctly", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Put", "PUT", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		view := panel.View()
+		assert.Contains(t, view, "PUT")
+	})
+
+	t.Run("DELETE method displays correctly", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Delete", "DELETE", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		view := panel.View()
+		assert.Contains(t, view, "DELETE")
+	})
+
+	t.Run("PATCH method displays correctly", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Patch", "PATCH", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		view := panel.View()
+		assert.Contains(t, view, "PATCH")
+	})
+
+	t.Run("HEAD method displays correctly", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Head", "HEAD", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		view := panel.View()
+		assert.Contains(t, view, "HEAD")
+	})
+
+	t.Run("OPTIONS method displays correctly", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Options", "OPTIONS", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		view := panel.View()
+		assert.Contains(t, view, "OPTIONS")
+	})
+}
+
+func TestRequestPanel_HeadersAndBody(t *testing.T) {
+	t.Run("Headers returns request headers", func(t *testing.T) {
+		panel := newTestRequestPanel(t)
+		headers := panel.Headers()
+		assert.Contains(t, headers, "Content-Type")
+		assert.Contains(t, headers, "Authorization")
+	})
+
+	t.Run("Headers returns empty for nil request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		headers := panel.Headers()
+		assert.Empty(t, headers)
+	})
+
+	t.Run("Body returns request body", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Create", "POST", "https://example.com")
+		req.SetBodyRaw(`{"key": "value"}`, "application/json")
+		panel.SetRequest(req)
+
+		body := panel.Body()
+		assert.Equal(t, `{"key": "value"}`, body)
+	})
+
+	t.Run("Body returns empty for nil request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		body := panel.Body()
+		assert.Empty(t, body)
+	})
 }
 
 // Helper functions

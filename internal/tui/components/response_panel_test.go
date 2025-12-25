@@ -575,3 +575,87 @@ func newTestResponseWithHeaders(code int, statusText string) *core.Response {
 			EndTime:   end,
 		})
 }
+
+func TestResponsePanel_AllStatusColors(t *testing.T) {
+	t.Run("shows 201 Created correctly", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetResponse(newTestResponse(201, "Created"))
+		view := panel.View()
+		assert.Contains(t, view, "201")
+	})
+
+	t.Run("shows 3xx redirects correctly", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetResponse(newTestResponse(301, "Moved Permanently"))
+		view := panel.View()
+		assert.Contains(t, view, "301")
+	})
+
+	t.Run("shows 302 redirect correctly", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetResponse(newTestResponse(302, "Found"))
+		view := panel.View()
+		assert.Contains(t, view, "302")
+	})
+
+	t.Run("shows 400 Bad Request correctly", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetResponse(newTestResponse(400, "Bad Request"))
+		view := panel.View()
+		assert.Contains(t, view, "400")
+	})
+
+	t.Run("shows 503 Service Unavailable correctly", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetResponse(newTestResponse(503, "Service Unavailable"))
+		view := panel.View()
+		assert.Contains(t, view, "503")
+	})
+}
+
+func TestResponsePanel_BodySize(t *testing.T) {
+	t.Run("shows body size for small response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		body := core.NewRawBody([]byte("Hello"), "text/plain")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithBody(body)
+		panel.SetResponse(resp)
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("shows body size for KB response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		// Create a ~2KB body
+		largeContent := make([]byte, 2000)
+		for i := range largeContent {
+			largeContent[i] = 'x'
+		}
+		body := core.NewRawBody(largeContent, "text/plain")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithBody(body)
+		panel.SetResponse(resp)
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("shows body size for MB response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		// Create a ~1.5MB body
+		largeContent := make([]byte, 1500000)
+		for i := range largeContent {
+			largeContent[i] = 'y'
+		}
+		body := core.NewRawBody(largeContent, "text/plain")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithBody(body)
+		panel.SetResponse(resp)
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}

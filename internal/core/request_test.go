@@ -237,6 +237,14 @@ func TestBody(t *testing.T) {
 		assert.True(t, b.IsEmpty())
 		assert.Equal(t, int64(0), b.Size())
 		assert.Equal(t, "", b.String())
+		assert.Equal(t, "empty", b.Type())
+		assert.Equal(t, "", b.ContentType())
+		assert.Nil(t, b.Bytes())
+		_, err := b.JSON()
+		assert.Error(t, err)
+		reader := b.Reader()
+		data, _ := io.ReadAll(reader)
+		assert.Empty(t, data)
 	})
 
 	t.Run("JSON body from map", func(t *testing.T) {
@@ -278,6 +286,40 @@ func TestBody(t *testing.T) {
 		assert.Equal(t, "raw", b.Type())
 		assert.Equal(t, "text/plain", b.ContentType())
 		assert.Equal(t, content, b.Bytes())
+		assert.Equal(t, int64(len(content)), b.Size())
+		assert.Equal(t, "raw content here", b.String())
+		assert.False(t, b.IsEmpty())
+	})
+
+	t.Run("raw body JSON parsing", func(t *testing.T) {
+		content := []byte(`{"key": "value"}`)
+		b := NewRawBody(content, "application/json")
+		parsed, err := b.JSON()
+		assert.NoError(t, err)
+		m := parsed.(map[string]any)
+		assert.Equal(t, "value", m["key"])
+	})
+
+	t.Run("raw body empty check", func(t *testing.T) {
+		b := NewRawBody([]byte{}, "text/plain")
+		assert.True(t, b.IsEmpty())
+		assert.Equal(t, int64(0), b.Size())
+	})
+
+	t.Run("JSON body size and bytes", func(t *testing.T) {
+		data := map[string]string{"key": "value"}
+		b := NewJSONBody(data)
+		assert.True(t, b.Size() > 0)
+		assert.NotEmpty(t, b.Bytes())
+		assert.NotEmpty(t, b.String())
+		reader := b.Reader()
+		readData, _ := io.ReadAll(reader)
+		assert.NotEmpty(t, readData)
+	})
+
+	t.Run("JSON body empty check", func(t *testing.T) {
+		b := NewJSONBody(nil)
+		assert.False(t, b.IsEmpty()) // nil marshals to "null"
 	})
 
 	t.Run("body reader can be read multiple times", func(t *testing.T) {
