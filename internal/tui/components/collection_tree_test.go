@@ -823,22 +823,40 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		updated, _ := tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
+		// Initial cursor should be at 0
+		assert.Equal(t, 0, tree.HistoryCursor())
+
 		// Move down with j
 		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
 		updated, _ = tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
-		// The history cursor should be at 1
-		view := tree.View()
-		assert.NotEmpty(t, view)
+		// Cursor should now be at 1
+		assert.Equal(t, 1, tree.HistoryCursor())
+
+		// Move down again
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Cursor should now be at 2
+		assert.Equal(t, 2, tree.HistoryCursor())
 
 		// Move up with k
 		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
 		updated, _ = tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
-		view = tree.View()
-		assert.NotEmpty(t, view)
+		// Cursor should be back at 1
+		assert.Equal(t, 1, tree.HistoryCursor())
+
+		// Move up again
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Cursor should be at 0
+		assert.Equal(t, 0, tree.HistoryCursor())
 	})
 
 	t.Run("handles gg navigation in history", func(t *testing.T) {

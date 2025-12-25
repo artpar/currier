@@ -493,8 +493,8 @@ func (c *CollectionTree) applyFilter() {
 
 // contentHeight returns the height available for content.
 func (c *CollectionTree) contentHeight() int {
-	// height - 2 (borders) - 1 (title) - search bar if present
-	height := c.height - 3
+	// height - 2 (borders) - 1 (title) - 1 (mode indicator) - search bar if present
+	height := c.height - 4
 	if c.searching || c.search != "" {
 		height-- // Search bar
 	}
@@ -1243,4 +1243,9 @@ func (c *CollectionTree) HistoryEntries() []history.Entry {
 // GPressed returns true if waiting for second 'g' in gg sequence.
 func (c *CollectionTree) GPressed() bool {
 	return c.gPressed
+}
+
+// HistoryCursor returns the current history cursor position.
+func (c *CollectionTree) HistoryCursor() int {
+	return c.historyCursor
 }
