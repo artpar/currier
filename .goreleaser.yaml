@@ -123,8 +123,9 @@ checksum:
 #       - "${artifact}"
 #     stdin: "{{ .Env.GPG_PASSWORD }}"
 
-sboms:
-  - artifacts: archive
+# SBOM generation (optional - requires syft installed)
+# sboms:
+#   - artifacts: archive
 
 changelog:
   sort: asc
