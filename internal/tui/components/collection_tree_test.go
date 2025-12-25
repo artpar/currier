@@ -1671,3 +1671,40 @@ func TestCollectionTree_UpdateCases(t *testing.T) {
 		assert.NotEmpty(t, view)
 	})
 }
+
+func TestCollectionTree_GPressed(t *testing.T) {
+	t.Run("returns false initially", func(t *testing.T) {
+		tree := newTestTree(t)
+		assert.False(t, tree.GPressed())
+	})
+
+	t.Run("returns true after pressing g", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.SetSize(80, 30)
+		tree.Focus() // Must be focused to handle key messages
+
+		// Press 'g' once to set pending state
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.True(t, tree.GPressed())
+	})
+
+	t.Run("returns false after gg sequence", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.SetSize(80, 30)
+		tree.Focus()
+
+		// Press 'g' twice for gg sequence
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// After gg, gPressed should be false
+		assert.False(t, tree.GPressed())
+	})
+}

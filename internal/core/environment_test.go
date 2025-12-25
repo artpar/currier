@@ -1,9 +1,11 @@
 package core
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewEnvironment(t *testing.T) {
@@ -371,6 +373,57 @@ func TestLoadMultipleEnvironments(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Nil(t, env)
 	})
+
+	t.Run("returns nil for nil paths", func(t *testing.T) {
+		env, err := LoadMultipleEnvironments(nil)
+		assert.NoError(t, err)
+		assert.Nil(t, env)
+	})
+
+	t.Run("loads single environment from file", func(t *testing.T) {
+		// Create temp file
+		tmpDir := t.TempDir()
+		envPath := tmpDir + "/test.json"
+		content := `{"name": "Test", "values": [{"key": "var1", "value": "val1", "enabled": true}]}`
+		err := os.WriteFile(envPath, []byte(content), 0644)
+		require.NoError(t, err)
+
+		env, err := LoadMultipleEnvironments([]string{envPath})
+		assert.NoError(t, err)
+		assert.NotNil(t, env)
+		assert.Equal(t, "val1", env.GetVariable("var1"))
+	})
+
+	t.Run("merges multiple environment files", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// First environment - use generic name to avoid name update path
+		env1Path := tmpDir + "/env1.json"
+		content1 := `{"name": "Environment", "values": [{"key": "shared", "value": "base", "enabled": true}, {"key": "base_only", "value": "yes", "enabled": true}]}`
+		err := os.WriteFile(env1Path, []byte(content1), 0644)
+		require.NoError(t, err)
+
+		// Second environment - also generic name
+		env2Path := tmpDir + "/env2.json"
+		content2 := `{"name": "Environment", "values": [{"key": "shared", "value": "overridden", "enabled": true}, {"key": "override_only", "value": "added", "enabled": true}]}`
+		err = os.WriteFile(env2Path, []byte(content2), 0644)
+		require.NoError(t, err)
+
+		env, err := LoadMultipleEnvironments([]string{env1Path, env2Path})
+		assert.NoError(t, err)
+		assert.NotNil(t, env)
+
+		// Second env should override first
+		assert.Equal(t, "overridden", env.GetVariable("shared"))
+		// Both unique vars should exist
+		assert.Equal(t, "yes", env.GetVariable("base_only"))
+		assert.Equal(t, "added", env.GetVariable("override_only"))
+	})
+
+	t.Run("returns error for non-existent file", func(t *testing.T) {
+		_, err := LoadMultipleEnvironments([]string{"/nonexistent/path.json"})
+		assert.Error(t, err)
+	})
 }
 
 func TestMergeCollectionVariables(t *testing.T) {
@@ -403,3 +456,4 @@ func TestMergeCollectionVariables(t *testing.T) {
 		assert.Contains(t, result.Name(), "My API")
 	})
 }
+

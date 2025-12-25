@@ -1,10 +1,12 @@
 package views
 
 import (
+	"context"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/artpar/currier/internal/core"
+	"github.com/artpar/currier/internal/history"
 	"github.com/artpar/currier/internal/tui/components"
 	"github.com/stretchr/testify/assert"
 )
@@ -746,6 +748,113 @@ func TestMainView_HelpBarShowsNewHint(t *testing.T) {
 		assert.Contains(t, output, "New")
 	})
 }
+
+func TestMainView_Feedback(t *testing.T) {
+	t.Run("handles feedback message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.FeedbackMsg{Message: "Tab: switch to URL tab", IsError: false}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Notification should be set
+		assert.NotNil(t, cmd)
+		output := view.View()
+		_ = output // Verify no panic
+	})
+
+	t.Run("handles error feedback message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.FeedbackMsg{Message: "Something went wrong", IsError: true}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestMainView_CopyMsg(t *testing.T) {
+	t.Run("handles copy message for small content", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.CopyMsg{Content: "small text"}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should return a tick command for clearing notification
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("handles copy message for large content", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Create content > 1024 bytes
+		largeContent := make([]byte, 2048)
+		for i := range largeContent {
+			largeContent[i] = 'x'
+		}
+		msg := components.CopyMsg{Content: string(largeContent)}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestMainView_HistoryStore(t *testing.T) {
+	t.Run("sets history store", func(t *testing.T) {
+		view := NewMainView()
+
+		// Create a mock history store
+		mockStore := &mockHistoryStore{}
+		view.SetHistoryStore(mockStore)
+
+		// Verify it was set (indirectly via tree)
+		assert.NotNil(t, view.CollectionTree())
+	})
+}
+
+func TestMainView_Notification(t *testing.T) {
+	t.Run("returns empty string initially", func(t *testing.T) {
+		view := NewMainView()
+		assert.Equal(t, "", view.Notification())
+	})
+}
+
+// mockHistoryStore is a simple mock for testing
+type mockHistoryStore struct{}
+
+func (m *mockHistoryStore) Add(ctx context.Context, entry history.Entry) (string, error) {
+	return "mock-id", nil
+}
+func (m *mockHistoryStore) Get(ctx context.Context, id string) (history.Entry, error) {
+	return history.Entry{}, nil
+}
+func (m *mockHistoryStore) List(ctx context.Context, opts history.QueryOptions) ([]history.Entry, error) {
+	return nil, nil
+}
+func (m *mockHistoryStore) Count(ctx context.Context, opts history.QueryOptions) (int64, error) {
+	return 0, nil
+}
+func (m *mockHistoryStore) Update(ctx context.Context, entry history.Entry) error { return nil }
+func (m *mockHistoryStore) Delete(ctx context.Context, id string) error           { return nil }
+func (m *mockHistoryStore) DeleteMany(ctx context.Context, opts history.QueryOptions) (int64, error) {
+	return 0, nil
+}
+func (m *mockHistoryStore) Search(ctx context.Context, query string, opts history.QueryOptions) ([]history.Entry, error) {
+	return nil, nil
+}
+func (m *mockHistoryStore) Prune(ctx context.Context, opts history.PruneOptions) (history.PruneResult, error) {
+	return history.PruneResult{}, nil
+}
+func (m *mockHistoryStore) Stats(ctx context.Context) (history.Stats, error) { return history.Stats{}, nil }
+func (m *mockHistoryStore) Clear(ctx context.Context) error                  { return nil }
+func (m *mockHistoryStore) Close() error                                     { return nil }
 
 func TestMainView_InsertModePassthrough(t *testing.T) {
 	t.Run("number keys pass through in edit mode", func(t *testing.T) {

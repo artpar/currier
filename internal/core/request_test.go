@@ -172,6 +172,28 @@ func TestRequest_Validate(t *testing.T) {
 		req, _ := NewRequest("http", "GET", "https://example.com")
 		assert.NoError(t, req.Validate())
 	})
+
+	t.Run("empty method fails validation", func(t *testing.T) {
+		req := &Request{
+			protocol: "http",
+			method:   "",
+			endpoint: "https://example.com",
+		}
+		err := req.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "method")
+	})
+
+	t.Run("empty endpoint fails validation", func(t *testing.T) {
+		req := &Request{
+			protocol: "http",
+			method:   "GET",
+			endpoint: "",
+		}
+		err := req.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "endpoint")
+	})
 }
 
 func TestHeaders(t *testing.T) {

@@ -624,6 +624,56 @@ func TestRequestDefinition_ToRequestWithBody(t *testing.T) {
 	})
 }
 
+func TestRequestDefinition_ToRequestWithAuth(t *testing.T) {
+	t.Run("applies basic auth to request", func(t *testing.T) {
+		def := NewRequestDefinition("Get User", "GET", "https://example.com/users")
+		auth := NewBasicAuth("admin", "secret")
+		def.SetAuth(auth)
+
+		req, err := def.ToRequest()
+		require.NoError(t, err)
+		assert.Contains(t, req.Headers().Get("Authorization"), "Basic")
+	})
+
+	t.Run("applies bearer auth to request", func(t *testing.T) {
+		def := NewRequestDefinition("Get User", "GET", "https://example.com/users")
+		auth := NewBearerAuth("mytoken123")
+		def.SetAuth(auth)
+
+		req, err := def.ToRequest()
+		require.NoError(t, err)
+		assert.Equal(t, "Bearer mytoken123", req.Headers().Get("Authorization"))
+	})
+
+	t.Run("applies API key in header", func(t *testing.T) {
+		def := NewRequestDefinition("Get User", "GET", "https://example.com/users")
+		auth := NewAPIKeyAuth("X-API-Key", "secret123", APIKeyInHeader)
+		def.SetAuth(auth)
+
+		req, err := def.ToRequest()
+		require.NoError(t, err)
+		assert.Equal(t, "secret123", req.Headers().Get("X-API-Key"))
+	})
+
+	t.Run("applies API key in query param", func(t *testing.T) {
+		def := NewRequestDefinition("Get User", "GET", "https://example.com/users")
+		auth := NewAPIKeyAuth("api_key", "secret456", APIKeyInQuery)
+		def.SetAuth(auth)
+
+		req, err := def.ToRequest()
+		require.NoError(t, err)
+		assert.Contains(t, req.Endpoint(), "api_key=secret456")
+	})
+
+	t.Run("no auth headers when auth not configured", func(t *testing.T) {
+		def := NewRequestDefinition("Get User", "GET", "https://example.com/users")
+
+		req, err := def.ToRequest()
+		require.NoError(t, err)
+		assert.Empty(t, req.Headers().Get("Authorization"))
+	})
+}
+
 func TestRequestDefinition_Headers(t *testing.T) {
 	t.Run("returns copy of headers map", func(t *testing.T) {
 		req := NewRequestDefinition("Test", "GET", "https://example.com")
@@ -794,5 +844,217 @@ func TestRequestDefinition_ToRequestWithEnv(t *testing.T) {
 
 		// Strict mode should fail on undefined variable
 		assert.Error(t, err)
+	})
+
+	t.Run("interpolates bearer token auth", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetVariable("api_token", "secret123")
+
+		def := NewRequestDefinition("Get User", "GET", "https://example.com/users")
+		auth := NewBearerAuth("{{api_token}}")
+		def.SetAuth(auth)
+
+		req, err := def.ToRequestWithEnv(engine)
+		require.NoError(t, err)
+		assert.Equal(t, "Bearer secret123", req.Headers().Get("Authorization"))
+	})
+
+	t.Run("interpolates basic auth credentials", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetVariable("user", "admin")
+		engine.SetVariable("pass", "secret")
+
+		def := NewRequestDefinition("Get User", "GET", "https://example.com/users")
+		auth := NewBasicAuth("{{user}}", "{{pass}}")
+		def.SetAuth(auth)
+
+		req, err := def.ToRequestWithEnv(engine)
+		require.NoError(t, err)
+		assert.Contains(t, req.Headers().Get("Authorization"), "Basic")
+	})
+
+	t.Run("interpolates API key value", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetVariable("key_value", "my-api-key")
+
+		def := NewRequestDefinition("Get User", "GET", "https://example.com/users")
+		auth := NewAPIKeyAuth("X-API-Key", "{{key_value}}", APIKeyInHeader)
+		def.SetAuth(auth)
+
+		req, err := def.ToRequestWithEnv(engine)
+		require.NoError(t, err)
+		assert.Equal(t, "my-api-key", req.Headers().Get("X-API-Key"))
+	})
+
+	t.Run("interpolates API key in query param", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetVariable("api_key", "secret-key")
+
+		def := NewRequestDefinition("Get User", "GET", "https://example.com/users")
+		auth := NewAPIKeyAuth("key", "{{api_key}}", APIKeyInQuery)
+		def.SetAuth(auth)
+
+		req, err := def.ToRequestWithEnv(engine)
+		require.NoError(t, err)
+		assert.Contains(t, req.Endpoint(), "key=secret-key")
+	})
+
+	t.Run("returns error for invalid header interpolation", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetOption("strict", true)
+
+		def := NewRequestDefinition("Get User", "GET", "https://example.com/users")
+		def.SetHeader("X-Custom", "{{undefined_var}}")
+
+		_, err := def.ToRequestWithEnv(engine)
+		assert.Error(t, err)
+	})
+
+	t.Run("returns error for invalid body interpolation", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetOption("strict", true)
+
+		def := NewRequestDefinition("Create User", "POST", "https://example.com/users")
+		def.SetBodyRaw(`{"name": "{{undefined_name}}"}`, "application/json")
+
+		_, err := def.ToRequestWithEnv(engine)
+		assert.Error(t, err)
+	})
+}
+
+func TestCollection_FirstRequest(t *testing.T) {
+	t.Run("returns first root request", func(t *testing.T) {
+		c := NewCollection("Test")
+		req := NewRequestDefinition("First", "GET", "/first")
+		c.AddRequest(req)
+
+		first := c.FirstRequest()
+		assert.NotNil(t, first)
+		assert.Equal(t, "First", first.Name())
+	})
+
+	t.Run("returns first request from folder if no root requests", func(t *testing.T) {
+		c := NewCollection("Test")
+		folder := c.AddFolder("Users")
+		req := NewRequestDefinition("List Users", "GET", "/users")
+		folder.AddRequest(req)
+
+		first := c.FirstRequest()
+		assert.NotNil(t, first)
+		assert.Equal(t, "List Users", first.Name())
+	})
+
+	t.Run("returns nil if no requests", func(t *testing.T) {
+		c := NewCollection("Test")
+		first := c.FirstRequest()
+		assert.Nil(t, first)
+	})
+
+	t.Run("returns first request from nested folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		folder := c.AddFolder("API")
+		nested := folder.AddFolder("Users")
+		req := NewRequestDefinition("Nested Request", "GET", "/nested")
+		nested.AddRequest(req)
+
+		first := c.FirstRequest()
+		assert.NotNil(t, first)
+		assert.Equal(t, "Nested Request", first.Name())
+	})
+}
+
+func TestFolder_FirstRequest(t *testing.T) {
+	t.Run("returns first request in folder", func(t *testing.T) {
+		f := NewFolder("Users")
+		req := NewRequestDefinition("Get User", "GET", "/user")
+		f.AddRequest(req)
+
+		first := f.FirstRequest()
+		assert.NotNil(t, first)
+		assert.Equal(t, "Get User", first.Name())
+	})
+
+	t.Run("returns first request from subfolder", func(t *testing.T) {
+		f := NewFolder("API")
+		sub := f.AddFolder("Users")
+		req := NewRequestDefinition("List", "GET", "/list")
+		sub.AddRequest(req)
+
+		first := f.FirstRequest()
+		assert.NotNil(t, first)
+		assert.Equal(t, "List", first.Name())
+	})
+
+	t.Run("returns nil if empty", func(t *testing.T) {
+		f := NewFolder("Empty")
+		assert.Nil(t, f.FirstRequest())
+	})
+}
+
+func TestRequestDefinition_FullURL(t *testing.T) {
+	t.Run("returns URL without params when none set", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "https://api.example.com/users")
+		assert.Equal(t, "https://api.example.com/users", req.FullURL())
+	})
+
+	t.Run("appends query params to URL", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "https://api.example.com/users")
+		req.SetQueryParam("page", "1")
+		req.SetQueryParam("limit", "10")
+
+		fullURL := req.FullURL()
+		assert.Contains(t, fullURL, "page=1")
+		assert.Contains(t, fullURL, "limit=10")
+	})
+
+	t.Run("handles invalid URL gracefully", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "://invalid-url")
+		req.SetQueryParam("key", "value")
+		// Should return original URL on parse error
+		assert.Equal(t, "://invalid-url", req.FullURL())
+	})
+}
+
+func TestRequestDefinition_QueryParams(t *testing.T) {
+	t.Run("GetQueryParam returns empty string for missing key", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "/test")
+		assert.Equal(t, "", req.GetQueryParam("missing"))
+	})
+
+	t.Run("SetQueryParam and GetQueryParam work together", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "/test")
+		req.SetQueryParam("key", "value")
+		assert.Equal(t, "value", req.GetQueryParam("key"))
+	})
+
+	t.Run("RemoveQueryParam removes parameter", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "/test")
+		req.SetQueryParam("key", "value")
+		assert.Equal(t, "value", req.GetQueryParam("key"))
+
+		req.RemoveQueryParam("key")
+		assert.Equal(t, "", req.GetQueryParam("key"))
+	})
+
+	t.Run("RemoveQueryParam on nil map is safe", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "/test")
+		// This should not panic
+		req.RemoveQueryParam("nonexistent")
+		assert.Equal(t, "", req.GetQueryParam("nonexistent"))
+	})
+
+	t.Run("QueryParams returns copy of params", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "/test")
+		req.SetQueryParam("key1", "value1")
+		req.SetQueryParam("key2", "value2")
+
+		params := req.QueryParams()
+		assert.Len(t, params, 2)
+		assert.Equal(t, "value1", params["key1"])
+		assert.Equal(t, "value2", params["key2"])
+
+		// Modifying the returned map should not affect the original
+		params["key3"] = "value3"
+		assert.Equal(t, "", req.GetQueryParam("key3"))
 	})
 }
