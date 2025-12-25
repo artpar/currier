@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
+	"github.com/artpar/currier/internal/script"
 	"github.com/artpar/currier/internal/tui"
 )
 
@@ -19,10 +20,11 @@ const (
 	TabQuery
 	TabBody
 	TabAuth
+	TabPreRequest
 	TabTests
 )
 
-var tabNames = []string{"URL", "Headers", "Query", "Body", "Auth", "Tests"}
+var tabNames = []string{"URL", "Headers", "Query", "Body", "Auth", "Pre-req", "Tests"}
 
 // SendRequestMsg is sent when user wants to send the request.
 type SendRequestMsg struct {
@@ -31,7 +33,9 @@ type SendRequestMsg struct {
 
 // ResponseReceivedMsg is sent when a response is received.
 type ResponseReceivedMsg struct {
-	Response *core.Response
+	Response    *core.Response
+	TestResults []script.TestResult
+	Console     []ConsoleMessage // Console output from scripts
 }
 
 // RequestErrorMsg is sent when a request fails.
@@ -93,6 +97,18 @@ type RequestPanel struct {
 	authEditingField bool   // True when actively editing a field value
 	authFieldInput   string // Current input for the active field
 	authFieldCursor  int    // Cursor position in field input
+
+	// Pre-request script editing state
+	editingPreScript    bool     // True when editing pre-request script
+	preScriptLines      []string // Pre-request script split into lines
+	preScriptCursorLine int      // Current line
+	preScriptCursorCol  int      // Current column
+
+	// Test script editing state
+	editingTestScript    bool     // True when editing test script
+	testScriptLines      []string // Test script split into lines
+	testScriptCursorLine int      // Current line
+	testScriptCursorCol  int      // Current column
 }
 
 // NewRequestPanel creates a new request panel.
@@ -168,6 +184,16 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	// Handle auth editing mode
 	if p.editingAuth {
 		return p.handleAuthEditInput(msg)
+	}
+
+	// Handle pre-request script editing mode
+	if p.editingPreScript {
+		return p.handlePreScriptEditInput(msg)
+	}
+
+	// Handle test script editing mode
+	if p.editingTestScript {
+		return p.handleTestScriptEditInput(msg)
 	}
 
 	switch msg.Type {
@@ -254,10 +280,29 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 				}
 				return p, nil
 			}
-			if p.activeTab == TabTests {
-				return p, func() tea.Msg {
-					return FeedbackMsg{Message: "Tests tab coming soon", IsError: false}
+			// Enter pre-request script edit mode
+			if p.activeTab == TabPreRequest && p.request != nil {
+				script := p.request.PreScript()
+				p.preScriptLines = strings.Split(script, "\n")
+				if len(p.preScriptLines) == 0 {
+					p.preScriptLines = []string{""}
 				}
+				p.preScriptCursorLine = 0
+				p.preScriptCursorCol = 0
+				p.editingPreScript = true
+				return p, nil
+			}
+			// Enter test script edit mode
+			if p.activeTab == TabTests && p.request != nil {
+				script := p.request.PostScript()
+				p.testScriptLines = strings.Split(script, "\n")
+				if len(p.testScriptLines) == 0 {
+					p.testScriptLines = []string{""}
+				}
+				p.testScriptCursorLine = 0
+				p.testScriptCursorCol = 0
+				p.editingTestScript = true
+				return p, nil
 			}
 		case "a":
 			// Add new header
@@ -815,6 +860,256 @@ func (p *RequestPanel) handleBodyEditInput(msg tea.KeyMsg) (tui.Component, tea.C
 		line := p.bodyLines[p.bodyCursorLine]
 		p.bodyLines[p.bodyCursorLine] = line[:p.bodyCursorCol] + char + line[p.bodyCursorCol:]
 		p.bodyCursorCol += len(char)
+		return p, nil
+	}
+
+	return p, nil
+}
+
+// handlePreScriptEditInput handles keyboard input while editing the pre-request script.
+func (p *RequestPanel) handlePreScriptEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyTab:
+		// Insert tab character
+		line := p.preScriptLines[p.preScriptCursorLine]
+		p.preScriptLines[p.preScriptCursorLine] = line[:p.preScriptCursorCol] + "\t" + line[p.preScriptCursorCol:]
+		p.preScriptCursorCol++
+		return p, nil
+
+	case tea.KeyEsc:
+		// Save and exit
+		script := strings.Join(p.preScriptLines, "\n")
+		p.request.SetPreScript(script)
+		p.editingPreScript = false
+		return p, nil
+
+	case tea.KeyEnter:
+		// Insert new line
+		line := p.preScriptLines[p.preScriptCursorLine]
+		before := line[:p.preScriptCursorCol]
+		after := line[p.preScriptCursorCol:]
+		p.preScriptLines[p.preScriptCursorLine] = before
+		newLines := make([]string, 0, len(p.preScriptLines)+1)
+		newLines = append(newLines, p.preScriptLines[:p.preScriptCursorLine+1]...)
+		newLines = append(newLines, after)
+		newLines = append(newLines, p.preScriptLines[p.preScriptCursorLine+1:]...)
+		p.preScriptLines = newLines
+		p.preScriptCursorLine++
+		p.preScriptCursorCol = 0
+		return p, nil
+
+	case tea.KeyBackspace:
+		if p.preScriptCursorCol > 0 {
+			line := p.preScriptLines[p.preScriptCursorLine]
+			p.preScriptLines[p.preScriptCursorLine] = line[:p.preScriptCursorCol-1] + line[p.preScriptCursorCol:]
+			p.preScriptCursorCol--
+		} else if p.preScriptCursorLine > 0 {
+			prevLine := p.preScriptLines[p.preScriptCursorLine-1]
+			currLine := p.preScriptLines[p.preScriptCursorLine]
+			p.preScriptCursorCol = len(prevLine)
+			p.preScriptLines[p.preScriptCursorLine-1] = prevLine + currLine
+			p.preScriptLines = append(p.preScriptLines[:p.preScriptCursorLine], p.preScriptLines[p.preScriptCursorLine+1:]...)
+			p.preScriptCursorLine--
+		}
+		return p, nil
+
+	case tea.KeyDelete:
+		line := p.preScriptLines[p.preScriptCursorLine]
+		if p.preScriptCursorCol < len(line) {
+			p.preScriptLines[p.preScriptCursorLine] = line[:p.preScriptCursorCol] + line[p.preScriptCursorCol+1:]
+		} else if p.preScriptCursorLine < len(p.preScriptLines)-1 {
+			nextLine := p.preScriptLines[p.preScriptCursorLine+1]
+			p.preScriptLines[p.preScriptCursorLine] = line + nextLine
+			p.preScriptLines = append(p.preScriptLines[:p.preScriptCursorLine+1], p.preScriptLines[p.preScriptCursorLine+2:]...)
+		}
+		return p, nil
+
+	case tea.KeyLeft:
+		if p.preScriptCursorCol > 0 {
+			p.preScriptCursorCol--
+		} else if p.preScriptCursorLine > 0 {
+			p.preScriptCursorLine--
+			p.preScriptCursorCol = len(p.preScriptLines[p.preScriptCursorLine])
+		}
+		return p, nil
+
+	case tea.KeyRight:
+		line := p.preScriptLines[p.preScriptCursorLine]
+		if p.preScriptCursorCol < len(line) {
+			p.preScriptCursorCol++
+		} else if p.preScriptCursorLine < len(p.preScriptLines)-1 {
+			p.preScriptCursorLine++
+			p.preScriptCursorCol = 0
+		}
+		return p, nil
+
+	case tea.KeyUp:
+		if p.preScriptCursorLine > 0 {
+			p.preScriptCursorLine--
+			if p.preScriptCursorCol > len(p.preScriptLines[p.preScriptCursorLine]) {
+				p.preScriptCursorCol = len(p.preScriptLines[p.preScriptCursorLine])
+			}
+		}
+		return p, nil
+
+	case tea.KeyDown:
+		if p.preScriptCursorLine < len(p.preScriptLines)-1 {
+			p.preScriptCursorLine++
+			if p.preScriptCursorCol > len(p.preScriptLines[p.preScriptCursorLine]) {
+				p.preScriptCursorCol = len(p.preScriptLines[p.preScriptCursorLine])
+			}
+		}
+		return p, nil
+
+	case tea.KeyHome, tea.KeyCtrlA:
+		p.preScriptCursorCol = 0
+		return p, nil
+
+	case tea.KeyEnd, tea.KeyCtrlE:
+		p.preScriptCursorCol = len(p.preScriptLines[p.preScriptCursorLine])
+		return p, nil
+
+	case tea.KeyCtrlU:
+		p.preScriptLines[p.preScriptCursorLine] = ""
+		p.preScriptCursorCol = 0
+		return p, nil
+
+	case tea.KeySpace:
+		line := p.preScriptLines[p.preScriptCursorLine]
+		p.preScriptLines[p.preScriptCursorLine] = line[:p.preScriptCursorCol] + " " + line[p.preScriptCursorCol:]
+		p.preScriptCursorCol++
+		return p, nil
+
+	case tea.KeyRunes:
+		char := string(msg.Runes)
+		line := p.preScriptLines[p.preScriptCursorLine]
+		p.preScriptLines[p.preScriptCursorLine] = line[:p.preScriptCursorCol] + char + line[p.preScriptCursorCol:]
+		p.preScriptCursorCol += len(char)
+		return p, nil
+	}
+
+	return p, nil
+}
+
+// handleTestScriptEditInput handles keyboard input while editing the test script.
+func (p *RequestPanel) handleTestScriptEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyTab:
+		// Insert tab character
+		line := p.testScriptLines[p.testScriptCursorLine]
+		p.testScriptLines[p.testScriptCursorLine] = line[:p.testScriptCursorCol] + "\t" + line[p.testScriptCursorCol:]
+		p.testScriptCursorCol++
+		return p, nil
+
+	case tea.KeyEsc:
+		// Save and exit
+		script := strings.Join(p.testScriptLines, "\n")
+		p.request.SetPostScript(script)
+		p.editingTestScript = false
+		return p, nil
+
+	case tea.KeyEnter:
+		// Insert new line
+		line := p.testScriptLines[p.testScriptCursorLine]
+		before := line[:p.testScriptCursorCol]
+		after := line[p.testScriptCursorCol:]
+		p.testScriptLines[p.testScriptCursorLine] = before
+		newLines := make([]string, 0, len(p.testScriptLines)+1)
+		newLines = append(newLines, p.testScriptLines[:p.testScriptCursorLine+1]...)
+		newLines = append(newLines, after)
+		newLines = append(newLines, p.testScriptLines[p.testScriptCursorLine+1:]...)
+		p.testScriptLines = newLines
+		p.testScriptCursorLine++
+		p.testScriptCursorCol = 0
+		return p, nil
+
+	case tea.KeyBackspace:
+		if p.testScriptCursorCol > 0 {
+			line := p.testScriptLines[p.testScriptCursorLine]
+			p.testScriptLines[p.testScriptCursorLine] = line[:p.testScriptCursorCol-1] + line[p.testScriptCursorCol:]
+			p.testScriptCursorCol--
+		} else if p.testScriptCursorLine > 0 {
+			prevLine := p.testScriptLines[p.testScriptCursorLine-1]
+			currLine := p.testScriptLines[p.testScriptCursorLine]
+			p.testScriptCursorCol = len(prevLine)
+			p.testScriptLines[p.testScriptCursorLine-1] = prevLine + currLine
+			p.testScriptLines = append(p.testScriptLines[:p.testScriptCursorLine], p.testScriptLines[p.testScriptCursorLine+1:]...)
+			p.testScriptCursorLine--
+		}
+		return p, nil
+
+	case tea.KeyDelete:
+		line := p.testScriptLines[p.testScriptCursorLine]
+		if p.testScriptCursorCol < len(line) {
+			p.testScriptLines[p.testScriptCursorLine] = line[:p.testScriptCursorCol] + line[p.testScriptCursorCol+1:]
+		} else if p.testScriptCursorLine < len(p.testScriptLines)-1 {
+			nextLine := p.testScriptLines[p.testScriptCursorLine+1]
+			p.testScriptLines[p.testScriptCursorLine] = line + nextLine
+			p.testScriptLines = append(p.testScriptLines[:p.testScriptCursorLine+1], p.testScriptLines[p.testScriptCursorLine+2:]...)
+		}
+		return p, nil
+
+	case tea.KeyLeft:
+		if p.testScriptCursorCol > 0 {
+			p.testScriptCursorCol--
+		} else if p.testScriptCursorLine > 0 {
+			p.testScriptCursorLine--
+			p.testScriptCursorCol = len(p.testScriptLines[p.testScriptCursorLine])
+		}
+		return p, nil
+
+	case tea.KeyRight:
+		line := p.testScriptLines[p.testScriptCursorLine]
+		if p.testScriptCursorCol < len(line) {
+			p.testScriptCursorCol++
+		} else if p.testScriptCursorLine < len(p.testScriptLines)-1 {
+			p.testScriptCursorLine++
+			p.testScriptCursorCol = 0
+		}
+		return p, nil
+
+	case tea.KeyUp:
+		if p.testScriptCursorLine > 0 {
+			p.testScriptCursorLine--
+			if p.testScriptCursorCol > len(p.testScriptLines[p.testScriptCursorLine]) {
+				p.testScriptCursorCol = len(p.testScriptLines[p.testScriptCursorLine])
+			}
+		}
+		return p, nil
+
+	case tea.KeyDown:
+		if p.testScriptCursorLine < len(p.testScriptLines)-1 {
+			p.testScriptCursorLine++
+			if p.testScriptCursorCol > len(p.testScriptLines[p.testScriptCursorLine]) {
+				p.testScriptCursorCol = len(p.testScriptLines[p.testScriptCursorLine])
+			}
+		}
+		return p, nil
+
+	case tea.KeyHome, tea.KeyCtrlA:
+		p.testScriptCursorCol = 0
+		return p, nil
+
+	case tea.KeyEnd, tea.KeyCtrlE:
+		p.testScriptCursorCol = len(p.testScriptLines[p.testScriptCursorLine])
+		return p, nil
+
+	case tea.KeyCtrlU:
+		p.testScriptLines[p.testScriptCursorLine] = ""
+		p.testScriptCursorCol = 0
+		return p, nil
+
+	case tea.KeySpace:
+		line := p.testScriptLines[p.testScriptCursorLine]
+		p.testScriptLines[p.testScriptCursorLine] = line[:p.testScriptCursorCol] + " " + line[p.testScriptCursorCol:]
+		p.testScriptCursorCol++
+		return p, nil
+
+	case tea.KeyRunes:
+		char := string(msg.Runes)
+		line := p.testScriptLines[p.testScriptCursorLine]
+		p.testScriptLines[p.testScriptCursorLine] = line[:p.testScriptCursorCol] + char + line[p.testScriptCursorCol:]
+		p.testScriptCursorCol += len(char)
 		return p, nil
 	}
 
@@ -1618,6 +1913,8 @@ func (p *RequestPanel) renderTabContent(height int) string {
 		lines = p.renderBodyTab()
 	case TabAuth:
 		lines = p.renderAuthTab()
+	case TabPreRequest:
+		lines = p.renderPreRequestTab()
 	case TabTests:
 		lines = p.renderTestsTab()
 	}
@@ -2066,19 +2363,138 @@ func (p *RequestPanel) renderAuthTab() []string {
 	return lines
 }
 
-func (p *RequestPanel) renderTestsTab() []string {
-	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-	comingSoonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+func (p *RequestPanel) renderPreRequestTab() []string {
+	if p.request == nil {
+		return []string{"No request"}
+	}
 
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+	innerWidth := p.width - 4
 	var lines []string
-	lines = append(lines, comingSoonStyle.Render("  🚧 Tests (Coming Soon)"))
-	lines = append(lines, "")
-	lines = append(lines, hintStyle.Render("  Test scripts will allow you to:"))
-	lines = append(lines, hintStyle.Render("  - Validate response status codes"))
-	lines = append(lines, hintStyle.Render("  - Check response body content"))
-	lines = append(lines, hintStyle.Render("  - Extract and reuse values"))
-	lines = append(lines, "")
-	lines = append(lines, hintStyle.Render("  This feature is planned for a future release."))
+
+	if p.editingPreScript {
+		// Show editable script with cursor
+		for i, line := range p.preScriptLines {
+			displayLine := line
+			if i == p.preScriptCursorLine {
+				// Insert cursor at position
+				if p.preScriptCursorCol >= len(displayLine) {
+					displayLine += "▌"
+				} else {
+					displayLine = displayLine[:p.preScriptCursorCol] + "▌" + displayLine[p.preScriptCursorCol:]
+				}
+			}
+			// Truncate if too long
+			if len(displayLine) > innerWidth {
+				displayLine = displayLine[:innerWidth-1] + "…"
+			}
+			// Highlight current line
+			if i == p.preScriptCursorLine {
+				lineStyle := lipgloss.NewStyle().Background(lipgloss.Color("238"))
+				displayLine = lineStyle.Render(displayLine)
+			}
+			lines = append(lines, displayLine)
+		}
+
+		// Add hints
+		lines = append(lines, "")
+		lines = append(lines, hintStyle.Render("  Esc: save and exit │ ↑↓←→: navigate │ Enter: new line"))
+	} else {
+		script := p.request.PreScript()
+		if script == "" {
+			lines = []string{""}
+			lines = append(lines, hintStyle.Render("  No pre-request script defined."))
+			lines = append(lines, "")
+			lines = append(lines, hintStyle.Render("  Pre-request scripts run before the request is sent."))
+			lines = append(lines, hintStyle.Render("  Use them to set variables, modify headers, etc."))
+			lines = append(lines, "")
+			lines = append(lines, hintStyle.Render("  Example:"))
+			lines = append(lines, hintStyle.Render("    currier.request.headers['X-Timestamp'] = Date.now();"))
+		} else {
+			scriptLines := strings.Split(script, "\n")
+			for _, line := range scriptLines {
+				if len(line) > innerWidth {
+					line = line[:innerWidth-1] + "…"
+				}
+				lines = append(lines, line)
+			}
+		}
+
+		// Add hint when focused
+		if p.focused {
+			lines = append(lines, "")
+			lines = append(lines, hintStyle.Render("  Press 'e' to edit (Esc saves and exits)"))
+		}
+	}
+
+	return lines
+}
+
+func (p *RequestPanel) renderTestsTab() []string {
+	if p.request == nil {
+		return []string{"No request"}
+	}
+
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+	innerWidth := p.width - 4
+	var lines []string
+
+	if p.editingTestScript {
+		// Show editable script with cursor
+		for i, line := range p.testScriptLines {
+			displayLine := line
+			if i == p.testScriptCursorLine {
+				// Insert cursor at position
+				if p.testScriptCursorCol >= len(displayLine) {
+					displayLine += "▌"
+				} else {
+					displayLine = displayLine[:p.testScriptCursorCol] + "▌" + displayLine[p.testScriptCursorCol:]
+				}
+			}
+			// Truncate if too long
+			if len(displayLine) > innerWidth {
+				displayLine = displayLine[:innerWidth-1] + "…"
+			}
+			// Highlight current line
+			if i == p.testScriptCursorLine {
+				lineStyle := lipgloss.NewStyle().Background(lipgloss.Color("238"))
+				displayLine = lineStyle.Render(displayLine)
+			}
+			lines = append(lines, displayLine)
+		}
+
+		// Add hints
+		lines = append(lines, "")
+		lines = append(lines, hintStyle.Render("  Esc: save and exit │ ↑↓←→: navigate │ Enter: new line"))
+	} else {
+		script := p.request.PostScript()
+		if script == "" {
+			lines = []string{""}
+			lines = append(lines, hintStyle.Render("  No test script defined."))
+			lines = append(lines, "")
+			lines = append(lines, hintStyle.Render("  Test scripts run after the response is received."))
+			lines = append(lines, hintStyle.Render("  Use currier.test() and currier.expect() to validate."))
+			lines = append(lines, "")
+			lines = append(lines, hintStyle.Render("  Example:"))
+			lines = append(lines, hintStyle.Render("    currier.test('Status is 200', function() {"))
+			lines = append(lines, hintStyle.Render("      currier.expect(currier.response.status).toBe(200);"))
+			lines = append(lines, hintStyle.Render("    });"))
+		} else {
+			scriptLines := strings.Split(script, "\n")
+			for _, line := range scriptLines {
+				if len(line) > innerWidth {
+					line = line[:innerWidth-1] + "…"
+				}
+				lines = append(lines, line)
+			}
+		}
+
+		// Add hint when focused
+		if p.focused {
+			lines = append(lines, "")
+			lines = append(lines, hintStyle.Render("  Press 'e' to edit (Esc saves and exits)"))
+		}
+	}
 
 	return lines
 }
@@ -2141,7 +2557,7 @@ func (p *RequestPanel) Blur() {
 
 // IsEditing returns true if the panel is in any editing mode.
 func (p *RequestPanel) IsEditing() bool {
-	return p.editingURL || p.editingMethod || p.editingHeader || p.editingQuery || p.editingBody || p.editingAuth
+	return p.editingURL || p.editingMethod || p.editingHeader || p.editingQuery || p.editingBody || p.editingAuth || p.editingPreScript || p.editingTestScript
 }
 
 // SetSize sets dimensions.
@@ -2305,6 +2721,12 @@ func (p *RequestPanel) EditingField() string {
 	if p.editingMethod {
 		return "method"
 	}
+	if p.editingPreScript {
+		return "pre_script"
+	}
+	if p.editingTestScript {
+		return "test_script"
+	}
 	return ""
 }
 
@@ -2328,5 +2750,41 @@ func (p *RequestPanel) CursorPosition() int {
 		}
 		return p.queryValueCursor
 	}
+	if p.editingPreScript {
+		return p.preScriptCursorCol
+	}
+	if p.editingTestScript {
+		return p.testScriptCursorCol
+	}
 	return 0
+}
+
+// PreRequestScript returns the pre-request script.
+func (p *RequestPanel) PreRequestScript() string {
+	if p.request == nil {
+		return ""
+	}
+	return p.request.PreScript()
+}
+
+// TestScript returns the test script.
+func (p *RequestPanel) TestScript() string {
+	if p.request == nil {
+		return ""
+	}
+	return p.request.PostScript()
+}
+
+// SetPreRequestScript sets the pre-request script.
+func (p *RequestPanel) SetPreRequestScript(script string) {
+	if p.request != nil {
+		p.request.SetPreScript(script)
+	}
+}
+
+// SetTestScript sets the test script.
+func (p *RequestPanel) SetTestScript(script string) {
+	if p.request != nil {
+		p.request.SetPostScript(script)
+	}
 }

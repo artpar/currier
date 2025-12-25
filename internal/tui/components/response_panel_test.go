@@ -475,7 +475,7 @@ func TestResponsePanel_TabWrap(t *testing.T) {
 	t.Run("wraps from last to first tab", func(t *testing.T) {
 		panel := newTestResponsePanel(t)
 		panel.Focus()
-		panel.SetActiveTab(ResponseTabConsole) // Console is now the last tab
+		panel.SetActiveTab(ResponseTabTests) // Tests is now the last tab
 
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}}
 		updated, _ := panel.Update(msg)
@@ -493,7 +493,7 @@ func TestResponsePanel_TabWrap(t *testing.T) {
 		updated, _ := panel.Update(msg)
 		panel = updated.(*ResponsePanel)
 
-		assert.Equal(t, ResponseTabConsole, panel.ActiveTab()) // Console is now the last tab
+		assert.Equal(t, ResponseTabTests, panel.ActiveTab()) // Tests is now the last tab
 	})
 }
 

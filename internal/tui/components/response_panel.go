@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
+	"github.com/artpar/currier/internal/script"
 	"github.com/artpar/currier/internal/tui"
 )
 
@@ -19,9 +20,10 @@ const (
 	ResponseTabCookies
 	ResponseTabTiming
 	ResponseTabConsole
+	ResponseTabTests
 )
 
-var responseTabNames = []string{"Body", "Headers", "Cookies", "Timing", "Console"}
+var responseTabNames = []string{"Body", "Headers", "Cookies", "Timing", "Console", "Tests"}
 
 // CopyMsg is sent when content should be copied.
 type CopyMsg struct {
@@ -54,11 +56,13 @@ type ResponsePanel struct {
 	response        *core.Response
 	activeTab       ResponseTab
 	scrollOffset    int
-	tabScrollOffset [5]int // Store scroll offset per tab
+	tabScrollOffset [6]int // Store scroll offset per tab
 	loading         bool
 	err             error
 	consoleMessages []ConsoleMessage
 	gPressed        bool // For gg sequence
+	testResults     []script.TestResult
+	testSummary     script.TestSummary
 }
 
 // NewResponsePanel creates a new response panel.
@@ -337,7 +341,19 @@ func (p *ResponsePanel) renderStatusLine() string {
 	// Size
 	sizeStr := p.formatSize(p.response.Body().Size())
 
-	return fmt.Sprintf("%s  %s  %s", statusStr, timeStr, sizeStr)
+	// Test badge (if tests were run)
+	testBadge := ""
+	if len(p.testResults) > 0 {
+		if p.testSummary.Failed == 0 {
+			passStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")) // Green
+			testBadge = passStyle.Render(fmt.Sprintf("  ✓ %d/%d", p.testSummary.Passed, p.testSummary.Total))
+		} else {
+			failStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("160")) // Red
+			testBadge = failStyle.Render(fmt.Sprintf("  ✗ %d/%d", p.testSummary.Passed, p.testSummary.Total))
+		}
+	}
+
+	return fmt.Sprintf("%s  %s  %s%s", statusStr, timeStr, sizeStr, testBadge)
 }
 
 func (p *ResponsePanel) statusStyle(code int) lipgloss.Style {
@@ -421,6 +437,8 @@ func (p *ResponsePanel) renderTabContent(height int) string {
 		lines = p.renderTimingTab()
 	case ResponseTabConsole:
 		lines = p.renderConsoleTab()
+	case ResponseTabTests:
+		lines = p.renderTestsTab()
 	}
 
 	// Apply scroll offset
@@ -649,6 +667,48 @@ func (p *ResponsePanel) renderConsoleTab() []string {
 	return lines
 }
 
+func (p *ResponsePanel) renderTestsTab() []string {
+	passStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34"))  // Green
+	failStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("160")) // Red
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+
+	if len(p.testResults) == 0 {
+		return []string{
+			"",
+			hintStyle.Render("  No tests run"),
+			"",
+			hintStyle.Render("  Add tests in Request → Tests tab"),
+			hintStyle.Render("  using currier.test() and currier.expect()"),
+		}
+	}
+
+	var lines []string
+
+	// Summary line
+	summaryStyle := passStyle
+	if p.testSummary.Failed > 0 {
+		summaryStyle = failStyle
+	}
+	summary := fmt.Sprintf("%d/%d tests passed", p.testSummary.Passed, p.testSummary.Total)
+	lines = append(lines, summaryStyle.Bold(true).Render(summary))
+	lines = append(lines, "")
+
+	// Individual test results
+	for _, r := range p.testResults {
+		if r.Passed {
+			lines = append(lines, passStyle.Render("  ✓ "+r.Name))
+		} else {
+			lines = append(lines, failStyle.Render("  ✗ "+r.Name))
+			if r.Error != "" {
+				errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+				lines = append(lines, errorStyle.Render("      "+r.Error))
+			}
+		}
+	}
+
+	return lines
+}
+
 func (p *ResponsePanel) wrapWithBorder(content string) string {
 	borderStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder())
@@ -712,10 +772,39 @@ func (p *ResponsePanel) Response() *core.Response {
 func (p *ResponsePanel) SetResponse(resp *core.Response) {
 	p.response = resp
 	p.scrollOffset = 0
-	p.tabScrollOffset = [5]int{} // Reset all tab scroll offsets
+	p.tabScrollOffset = [6]int{} // Reset all tab scroll offsets
 	p.loading = false
 	p.err = nil
 	p.consoleMessages = nil // Clear console for new response
+	p.testResults = nil     // Clear test results for new response
+	p.testSummary = script.TestSummary{}
+}
+
+// SetTestResults sets the test results to display.
+func (p *ResponsePanel) SetTestResults(results []script.TestResult) {
+	p.testResults = results
+
+	// Compute summary
+	p.testSummary = script.TestSummary{
+		Total: len(results),
+	}
+	for _, r := range results {
+		if r.Passed {
+			p.testSummary.Passed++
+		} else {
+			p.testSummary.Failed++
+		}
+	}
+}
+
+// TestResults returns the current test results.
+func (p *ResponsePanel) TestResults() []script.TestResult {
+	return p.testResults
+}
+
+// TestSummary returns the current test summary.
+func (p *ResponsePanel) TestSummary() script.TestSummary {
+	return p.testSummary
 }
 
 // SetConsoleMessages sets the console output messages.

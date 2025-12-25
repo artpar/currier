@@ -15,6 +15,7 @@ import (
 	"github.com/artpar/currier/internal/interpolate"
 	httpclient "github.com/artpar/currier/internal/protocol/http"
 	"github.com/artpar/currier/internal/protocol/websocket"
+	"github.com/artpar/currier/internal/script"
 	"github.com/artpar/currier/internal/tui"
 	"github.com/artpar/currier/internal/tui/components"
 )
@@ -150,6 +151,14 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 	case components.ResponseReceivedMsg:
 		v.response.SetLoading(false)
 		v.response.SetResponse(msg.Response)
+		// Set test results (if any)
+		if len(msg.TestResults) > 0 {
+			v.response.SetTestResults(msg.TestResults)
+		}
+		// Set console messages (if any)
+		if len(msg.Console) > 0 {
+			v.response.SetConsoleMessages(msg.Console)
+		}
 		// Save to history
 		if v.historyStore != nil && v.lastRequest != nil {
 			go v.saveToHistory(v.lastRequest, msg.Response, nil)
@@ -959,6 +968,35 @@ func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine) tea
 			return components.RequestErrorMsg{Error: fmt.Errorf("URL must start with http:// or https://")}
 		}
 
+		// Create script scope for pre-request and test scripts
+		scope := script.NewScopeWithAssertions()
+		var consoleMessages []components.ConsoleMessage
+
+		// Set up console handler to capture console output
+		scope.Engine().SetConsoleHandler(func(level, message string) {
+			consoleMessages = append(consoleMessages, components.ConsoleMessage{
+				Level:   level,
+				Message: message,
+			})
+		})
+
+		// Set up request context for scripts
+		scope.SetRequestMethod(reqDef.Method())
+		scope.SetRequestURL(reqDef.FullURL())
+		scope.SetRequestHeaders(reqDef.Headers())
+		scope.SetRequestBody(reqDef.Body())
+
+		// Execute pre-request script (if any)
+		preScript := reqDef.PreScript()
+		if preScript != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_, err := scope.Execute(ctx, preScript)
+			cancel()
+			if err != nil {
+				return components.RequestErrorMsg{Error: fmt.Errorf("pre-request script error: %w", err)}
+			}
+		}
+
 		// Convert RequestDefinition to Request (with or without interpolation)
 		var req *core.Request
 		var err error
@@ -987,7 +1025,42 @@ func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine) tea
 			return components.RequestErrorMsg{Error: err}
 		}
 
-		return components.ResponseReceivedMsg{Response: resp}
+		// Execute test script (if any)
+		var testResults []script.TestResult
+		testScript := reqDef.PostScript()
+		if testScript != "" {
+			// Convert headers to map[string]string for script context
+			headersMap := make(map[string]string)
+			for _, key := range resp.Headers().Keys() {
+				headersMap[key] = resp.Headers().Get(key)
+			}
+
+			// Set up response context for test scripts
+			scope.SetResponseStatus(resp.Status().Code())
+			scope.SetResponseHeaders(headersMap)
+			scope.SetResponseBody(resp.Body().String())
+			scope.SetResponseTime(resp.Timing().Total.Milliseconds())
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_, err := scope.Execute(ctx, testScript)
+			cancel()
+			if err != nil {
+				// Add script error to console but don't fail the request
+				consoleMessages = append(consoleMessages, components.ConsoleMessage{
+					Level:   "error",
+					Message: fmt.Sprintf("Test script error: %v", err),
+				})
+			}
+
+			// Get test results
+			testResults = scope.GetTestResults()
+		}
+
+		return components.ResponseReceivedMsg{
+			Response:    resp,
+			TestResults: testResults,
+			Console:     consoleMessages,
+		}
 	}
 }
 
