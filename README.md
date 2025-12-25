@@ -26,6 +26,18 @@ brew install artpar/tap/currier
 go install github.com/artpar/currier/cmd/currier@latest
 ```
 
+### macOS (Direct Download)
+
+```bash
+# Apple Silicon (M1/M2/M3)
+curl -L https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_darwin_arm64.tar.gz | tar xz
+sudo mv currier /usr/local/bin/
+
+# Intel Mac
+curl -L https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_darwin_amd64.tar.gz | tar xz
+sudo mv currier /usr/local/bin/
+```
+
 ### Linux (Debian/Ubuntu)
 
 ```bash
