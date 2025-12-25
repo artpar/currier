@@ -21,7 +21,7 @@ func TestTUI_VimNavigation(t *testing.T) {
 		assert := harness.NewAssertions(t)
 
 		// Should show the three panes
-		assert.OutputContains(output, "No request selected", "No response yet")
+		assert.OutputContains(output, "Press n", "No response yet")
 	})
 
 	t.Run("j moves down in collection tree", func(t *testing.T) {

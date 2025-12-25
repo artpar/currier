@@ -18,26 +18,39 @@ const (
 	ResponseTabHeaders
 	ResponseTabCookies
 	ResponseTabTiming
+	ResponseTabConsole
 )
 
-var responseTabNames = []string{"Body", "Headers", "Cookies", "Timing"}
+var responseTabNames = []string{"Body", "Headers", "Cookies", "Timing", "Console"}
 
 // CopyMsg is sent when content should be copied.
 type CopyMsg struct {
 	Content string
 }
 
+// ConsoleOutputMsg is sent when console output is available from scripts.
+type ConsoleOutputMsg struct {
+	Messages []ConsoleMessage
+}
+
+// ConsoleMessage represents a single console message.
+type ConsoleMessage struct {
+	Level   string // "log", "error", "warn", "info"
+	Message string
+}
+
 // ResponsePanel displays response details.
 type ResponsePanel struct {
-	title        string
-	focused      bool
-	width        int
-	height       int
-	response     *core.Response
-	activeTab    ResponseTab
-	scrollOffset int
-	loading      bool
-	err          error
+	title           string
+	focused         bool
+	width           int
+	height          int
+	response        *core.Response
+	activeTab       ResponseTab
+	scrollOffset    int
+	loading         bool
+	err             error
+	consoleMessages []ConsoleMessage
 }
 
 // NewResponsePanel creates a new response panel.
@@ -86,12 +99,16 @@ func (p *ResponsePanel) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 
 func (p *ResponsePanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
-	case tea.KeyTab:
-		p.nextTab()
-	case tea.KeyShiftTab:
-		p.prevTab()
 	case tea.KeyRunes:
 		switch string(msg.Runes) {
+		case "[":
+			// Switch to previous tab
+			p.prevTab()
+			return p, nil
+		case "]":
+			// Switch to next tab
+			p.nextTab()
+			return p, nil
 		case "j":
 			p.scrollOffset++
 		case "k":
@@ -205,9 +222,12 @@ func (p *ResponsePanel) View() string {
 		return p.wrapWithBorder(title + "\n" + content)
 	}
 
-	// Empty state
+	// Empty state - still show tabs but with "No response yet" content
 	if p.response == nil {
-		emptyHeight := innerHeight - 1
+		// Tab bar (now 2 lines: tabs + indicator)
+		tabBar := p.renderTabBar()
+
+		emptyHeight := innerHeight - 3 // -1 title, -2 tabBar
 		if emptyHeight < 1 {
 			emptyHeight = 1
 		}
@@ -217,7 +237,8 @@ func (p *ResponsePanel) View() string {
 			Align(lipgloss.Center, lipgloss.Center).
 			Foreground(lipgloss.Color("240"))
 
-		content := emptyStyle.Render("No response yet")
+		emptyContent := emptyStyle.Render("No response yet")
+		content := tabBar + "\n" + emptyContent
 		return p.wrapWithBorder(title + "\n" + content)
 	}
 
@@ -340,6 +361,8 @@ func (p *ResponsePanel) renderTabContent(height int) string {
 		lines = p.renderCookiesTab()
 	case ResponseTabTiming:
 		lines = p.renderTimingTab()
+	case ResponseTabConsole:
+		lines = p.renderConsoleTab()
 	}
 
 	// Apply scroll offset
@@ -399,8 +422,122 @@ func (p *ResponsePanel) renderHeadersTab() []string {
 }
 
 func (p *ResponsePanel) renderCookiesTab() []string {
-	// TODO: Parse Set-Cookie headers
-	return []string{"Cookies not yet implemented"}
+	if p.response == nil {
+		return []string{"No cookies"}
+	}
+
+	headers := p.response.Headers()
+	if headers == nil {
+		return []string{"No cookies"}
+	}
+
+	setCookies := headers.GetAll("Set-Cookie")
+	if len(setCookies) == 0 {
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+		return []string{
+			"No cookies in response",
+			"",
+			hintStyle.Render("Set-Cookie headers will be parsed and shown here."),
+		}
+	}
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("Cookies: %d", len(setCookies)))
+	lines = append(lines, "")
+
+	for i, cookie := range setCookies {
+		// Parse the cookie
+		parsed := parseCookie(cookie)
+		lines = append(lines, fmt.Sprintf("Cookie %d:", i+1))
+		lines = append(lines, fmt.Sprintf("  Name:  %s", parsed.Name))
+		lines = append(lines, fmt.Sprintf("  Value: %s", truncateValue(parsed.Value, 40)))
+		if parsed.Domain != "" {
+			lines = append(lines, fmt.Sprintf("  Domain: %s", parsed.Domain))
+		}
+		if parsed.Path != "" {
+			lines = append(lines, fmt.Sprintf("  Path:   %s", parsed.Path))
+		}
+		if parsed.Expires != "" {
+			lines = append(lines, fmt.Sprintf("  Expires: %s", parsed.Expires))
+		}
+		var flags []string
+		if parsed.HttpOnly {
+			flags = append(flags, "HttpOnly")
+		}
+		if parsed.Secure {
+			flags = append(flags, "Secure")
+		}
+		if parsed.SameSite != "" {
+			flags = append(flags, "SameSite="+parsed.SameSite)
+		}
+		if len(flags) > 0 {
+			lines = append(lines, fmt.Sprintf("  Flags:  %s", strings.Join(flags, ", ")))
+		}
+		lines = append(lines, "")
+	}
+
+	return lines
+}
+
+// parsedCookie holds parsed cookie attributes.
+type parsedCookie struct {
+	Name     string
+	Value    string
+	Domain   string
+	Path     string
+	Expires  string
+	HttpOnly bool
+	Secure   bool
+	SameSite string
+}
+
+// parseCookie parses a Set-Cookie header value.
+func parseCookie(raw string) parsedCookie {
+	var c parsedCookie
+
+	parts := strings.Split(raw, ";")
+	if len(parts) == 0 {
+		return c
+	}
+
+	// First part is name=value
+	nameValue := strings.TrimSpace(parts[0])
+	if idx := strings.Index(nameValue, "="); idx > 0 {
+		c.Name = nameValue[:idx]
+		c.Value = nameValue[idx+1:]
+	} else {
+		c.Name = nameValue
+	}
+
+	// Parse attributes
+	for i := 1; i < len(parts); i++ {
+		attr := strings.TrimSpace(parts[i])
+		attrLower := strings.ToLower(attr)
+
+		if attrLower == "httponly" {
+			c.HttpOnly = true
+		} else if attrLower == "secure" {
+			c.Secure = true
+		} else if strings.HasPrefix(attrLower, "domain=") {
+			c.Domain = attr[7:]
+		} else if strings.HasPrefix(attrLower, "path=") {
+			c.Path = attr[5:]
+		} else if strings.HasPrefix(attrLower, "expires=") {
+			c.Expires = attr[8:]
+		} else if strings.HasPrefix(attrLower, "samesite=") {
+			c.SameSite = attr[9:]
+		}
+	}
+
+	return c
+}
+
+// truncateValue truncates a string to maxLen with ellipsis.
+func truncateValue(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }
 
 func (p *ResponsePanel) renderTimingTab() []string {
@@ -419,6 +556,39 @@ func (p *ResponsePanel) renderTimingTab() []string {
 		fmt.Sprintf("  TCP Connection: %.2fms", float64(timing.TCPConnection.Milliseconds())),
 		fmt.Sprintf("  TLS Handshake:  %.2fms", float64(timing.TLSHandshake.Milliseconds())),
 	}
+}
+
+func (p *ResponsePanel) renderConsoleTab() []string {
+	if len(p.consoleMessages) == 0 {
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+		return []string{
+			"No console output",
+			"",
+			hintStyle.Render("Console output from pre-request scripts"),
+			hintStyle.Render("and test scripts will appear here."),
+		}
+	}
+
+	var lines []string
+	for _, msg := range p.consoleMessages {
+		// Color based on level
+		var style lipgloss.Style
+		switch msg.Level {
+		case "error":
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("160")) // Red
+		case "warn":
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // Orange
+		case "info":
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("33")) // Blue
+		default: // "log"
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("252")) // White
+		}
+
+		prefix := fmt.Sprintf("[%s] ", msg.Level)
+		lines = append(lines, style.Render(prefix+msg.Message))
+	}
+
+	return lines
 }
 
 func (p *ResponsePanel) wrapWithBorder(content string) string {
@@ -485,6 +655,20 @@ func (p *ResponsePanel) SetResponse(resp *core.Response) {
 	p.scrollOffset = 0
 	p.loading = false
 	p.err = nil
+	p.consoleMessages = nil // Clear console for new response
+}
+
+// SetConsoleMessages sets the console output messages.
+func (p *ResponsePanel) SetConsoleMessages(messages []ConsoleMessage) {
+	p.consoleMessages = messages
+}
+
+// AddConsoleMessage adds a single console message.
+func (p *ResponsePanel) AddConsoleMessage(level, message string) {
+	p.consoleMessages = append(p.consoleMessages, ConsoleMessage{
+		Level:   level,
+		Message: message,
+	})
 }
 
 // ActiveTab returns the currently active tab.
@@ -522,6 +706,7 @@ func (p *ResponsePanel) SetLoading(loading bool) {
 func (p *ResponsePanel) SetError(err error) {
 	p.err = err
 	p.response = nil
+	p.loading = false // Clear loading state on error
 }
 
 // Error returns the current error.
@@ -554,4 +739,68 @@ func (p *ResponsePanel) IsServerError() bool {
 	}
 	code := p.response.Status().Code()
 	return code >= 500
+}
+
+// --- State accessors for E2E testing ---
+
+// HasResponse returns true if a response is loaded.
+func (p *ResponsePanel) HasResponse() bool {
+	return p.response != nil
+}
+
+// StatusCode returns the response status code.
+func (p *ResponsePanel) StatusCode() int {
+	if p.response == nil {
+		return 0
+	}
+	return p.response.Status().Code()
+}
+
+// StatusText returns the response status text.
+func (p *ResponsePanel) StatusText() string {
+	if p.response == nil {
+		return ""
+	}
+	return p.response.Status().Text()
+}
+
+// ResponseTime returns the response time in milliseconds.
+func (p *ResponsePanel) ResponseTime() int64 {
+	if p.response == nil {
+		return 0
+	}
+	return p.response.Timing().Total.Milliseconds()
+}
+
+// BodySize returns the response body size in bytes.
+func (p *ResponsePanel) BodySize() int64 {
+	if p.response == nil {
+		return 0
+	}
+	return p.response.Body().Size()
+}
+
+// BodyPreview returns the first n characters of the body.
+func (p *ResponsePanel) BodyPreview(n int) string {
+	if p.response == nil {
+		return ""
+	}
+	body := p.response.Body().String()
+	if len(body) > n {
+		return body[:n]
+	}
+	return body
+}
+
+// ActiveTabName returns the active tab name as a string.
+func (p *ResponsePanel) ActiveTabName() string {
+	return responseTabNames[p.activeTab]
+}
+
+// ErrorString returns the error as a string, or empty if no error.
+func (p *ResponsePanel) ErrorString() string {
+	if p.err == nil {
+		return ""
+	}
+	return p.err.Error()
 }

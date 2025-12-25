@@ -2,6 +2,8 @@ package core
 
 import (
 	"encoding/json"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -349,6 +351,7 @@ type RequestDefinition struct {
 	method      string
 	url         string
 	headers     map[string]string
+	queryParams map[string]string
 	bodyType    string
 	bodyContent string
 	auth        *AuthConfig
@@ -359,11 +362,12 @@ type RequestDefinition struct {
 // NewRequestDefinition creates a new request definition.
 func NewRequestDefinition(name, method, url string) *RequestDefinition {
 	return &RequestDefinition{
-		id:      uuid.New().String(),
-		name:    name,
-		method:  method,
-		url:     url,
-		headers: make(map[string]string),
+		id:          uuid.New().String(),
+		name:        name,
+		method:      method,
+		url:         url,
+		headers:     make(map[string]string),
+		queryParams: make(map[string]string),
 	}
 }
 
@@ -371,7 +375,24 @@ func (r *RequestDefinition) ID() string          { return r.id }
 func (r *RequestDefinition) Name() string        { return r.name }
 func (r *RequestDefinition) Description() string { return r.description }
 func (r *RequestDefinition) Method() string      { return r.method }
-func (r *RequestDefinition) URL() string         { return r.url }
+func (r *RequestDefinition) URL() string { return r.url }
+
+// FullURL returns the URL with query parameters appended.
+func (r *RequestDefinition) FullURL() string {
+	if len(r.queryParams) == 0 {
+		return r.url
+	}
+	parsed, err := url.Parse(r.url)
+	if err != nil {
+		return r.url
+	}
+	q := parsed.Query()
+	for k, v := range r.queryParams {
+		q.Set(k, v)
+	}
+	parsed.RawQuery = q.Encode()
+	return parsed.String()
+}
 func (r *RequestDefinition) BodyType() string    { return r.bodyType }
 func (r *RequestDefinition) BodyContent() string { return r.bodyContent }
 func (r *RequestDefinition) PreScript() string   { return r.preScript }
@@ -530,9 +551,25 @@ func (r *RequestDefinition) SetBody(content string) {
 	r.bodyContent = content
 }
 
-// SetURL sets the request URL.
-func (r *RequestDefinition) SetURL(url string) {
-	r.url = url
+// SetURL sets the request URL and parses any query parameters from it.
+func (r *RequestDefinition) SetURL(rawURL string) {
+	// Parse query params from the URL
+	if parsed, err := url.Parse(rawURL); err == nil {
+		// Extract query params
+		for key, values := range parsed.Query() {
+			if len(values) > 0 {
+				r.SetQueryParam(key, values[0])
+			}
+		}
+		// Store the base URL without query string
+		parsed.RawQuery = ""
+		r.url = parsed.String()
+		// Remove trailing ? if present
+		r.url = strings.TrimSuffix(r.url, "?")
+	} else {
+		// If parsing fails, just store the raw URL
+		r.url = rawURL
+	}
 }
 
 // SetMethod sets the HTTP method.
@@ -545,10 +582,39 @@ func (r *RequestDefinition) RemoveHeader(key string) {
 	delete(r.headers, key)
 }
 
-// QueryParams returns query parameters (placeholder for now).
+// QueryParams returns query parameters.
 func (r *RequestDefinition) QueryParams() map[string]string {
-	// TODO: Parse query params from URL or store separately
-	return make(map[string]string)
+	if r.queryParams == nil {
+		return make(map[string]string)
+	}
+	result := make(map[string]string)
+	for k, v := range r.queryParams {
+		result[k] = v
+	}
+	return result
+}
+
+// GetQueryParam returns a single query parameter value.
+func (r *RequestDefinition) GetQueryParam(key string) string {
+	if r.queryParams == nil {
+		return ""
+	}
+	return r.queryParams[key]
+}
+
+// SetQueryParam sets a query parameter.
+func (r *RequestDefinition) SetQueryParam(key, value string) {
+	if r.queryParams == nil {
+		r.queryParams = make(map[string]string)
+	}
+	r.queryParams[key] = value
+}
+
+// RemoveQueryParam removes a query parameter.
+func (r *RequestDefinition) RemoveQueryParam(key string) {
+	if r.queryParams != nil {
+		delete(r.queryParams, key)
+	}
 }
 
 // NewCollectionWithID creates a collection with a specific ID (for loading from storage).
@@ -594,10 +660,11 @@ func (f *Folder) AddExistingFolder(sf *Folder) {
 // NewRequestDefinitionWithID creates a request definition with a specific ID.
 func NewRequestDefinitionWithID(id, name, method, url string) *RequestDefinition {
 	return &RequestDefinition{
-		id:      id,
-		name:    name,
-		method:  method,
-		url:     url,
-		headers: make(map[string]string),
+		id:          id,
+		name:        name,
+		method:      method,
+		url:         url,
+		headers:     make(map[string]string),
+		queryParams: make(map[string]string),
 	}
 }

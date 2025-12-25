@@ -99,24 +99,24 @@ func TestResponsePanel_Tabs(t *testing.T) {
 		assert.Equal(t, ResponseTabTiming, panel.ActiveTab())
 	})
 
-	t.Run("cycles through tabs with Tab key", func(t *testing.T) {
+	t.Run("cycles through tabs with ] key", func(t *testing.T) {
 		panel := newTestResponsePanel(t)
 		panel.Focus()
 		panel.SetActiveTab(ResponseTabBody)
 
-		msg := tea.KeyMsg{Type: tea.KeyTab}
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}}
 		updated, _ := panel.Update(msg)
 		panel = updated.(*ResponsePanel)
 
 		assert.Equal(t, ResponseTabHeaders, panel.ActiveTab())
 	})
 
-	t.Run("cycles backwards with Shift+Tab", func(t *testing.T) {
+	t.Run("cycles backwards with [ key", func(t *testing.T) {
 		panel := newTestResponsePanel(t)
 		panel.Focus()
 		panel.SetActiveTab(ResponseTabHeaders)
 
-		msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}}
 		updated, _ := panel.Update(msg)
 		panel = updated.(*ResponsePanel)
 
@@ -468,25 +468,25 @@ func TestResponsePanel_TabWrap(t *testing.T) {
 	t.Run("wraps from last to first tab", func(t *testing.T) {
 		panel := newTestResponsePanel(t)
 		panel.Focus()
-		panel.SetActiveTab(ResponseTabTiming)
+		panel.SetActiveTab(ResponseTabConsole) // Console is now the last tab
 
-		msg := tea.KeyMsg{Type: tea.KeyTab}
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}}
 		updated, _ := panel.Update(msg)
 		panel = updated.(*ResponsePanel)
 
 		assert.Equal(t, ResponseTabBody, panel.ActiveTab())
 	})
 
-	t.Run("wraps from first to last tab with Shift+Tab", func(t *testing.T) {
+	t.Run("wraps from first to last tab with [ key", func(t *testing.T) {
 		panel := newTestResponsePanel(t)
 		panel.Focus()
 		panel.SetActiveTab(ResponseTabBody)
 
-		msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}}
 		updated, _ := panel.Update(msg)
 		panel = updated.(*ResponsePanel)
 
-		assert.Equal(t, ResponseTabTiming, panel.ActiveTab())
+		assert.Equal(t, ResponseTabConsole, panel.ActiveTab()) // Console is now the last tab
 	})
 }
 

@@ -74,6 +74,17 @@ type RequestPanel struct {
 	bodyLines      []string // Body split into lines
 	bodyCursorLine int      // Current line
 	bodyCursorCol  int      // Current column
+
+	// Query param editing state
+	editingQuery     bool     // True when editing a query param
+	queryEditMode    string   // "key" or "value"
+	queryKeyInput    string   // Current key input
+	queryValueInput  string   // Current value input
+	queryKeyCursor   int      // Cursor position in key
+	queryValueCursor int      // Cursor position in value
+	queryIsNew       bool     // True if adding new param
+	queryOrigKey     string   // Original key when editing (for replacement)
+	queryKeys        []string // Ordered list of param keys for stable navigation
 }
 
 // NewRequestPanel creates a new request panel.
@@ -136,18 +147,20 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return p.handleHeaderEditInput(msg)
 	}
 
+	// Handle query editing mode
+	if p.editingQuery {
+		return p.handleQueryEditInput(msg)
+	}
+
 	// Handle body editing mode
 	if p.editingBody {
 		return p.handleBodyEditInput(msg)
 	}
 
 	switch msg.Type {
-	case tea.KeyTab:
-		p.nextTab()
-	case tea.KeyShiftTab:
-		p.prevTab()
 	case tea.KeyEnter:
-		if p.activeTab == TabURL && p.request != nil {
+		// Send request from any tab when not in edit mode
+		if p.request != nil {
 			return p, func() tea.Msg {
 				return SendRequestMsg{Request: p.request}
 			}
@@ -158,7 +171,7 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Enter URL edit mode
 			if p.activeTab == TabURL && p.request != nil {
 				p.editingURL = true
-				p.urlInput = p.request.URL()
+				p.urlInput = p.request.FullURL()
 				p.urlCursor = len(p.urlInput)
 				return p, nil
 			}
@@ -176,6 +189,23 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 					p.headerKeyCursor = len(key)
 					p.headerValueCursor = len(value)
 					p.headerOrigKey = key
+					return p, nil
+				}
+			}
+			// Enter query param edit mode (edit existing)
+			if p.activeTab == TabQuery && p.request != nil {
+				p.syncQueryKeys()
+				if p.cursor < len(p.queryKeys) {
+					key := p.queryKeys[p.cursor]
+					value := p.request.GetQueryParam(key)
+					p.editingQuery = true
+					p.queryIsNew = false
+					p.queryEditMode = "key"
+					p.queryKeyInput = key
+					p.queryValueInput = value
+					p.queryKeyCursor = len(key)
+					p.queryValueCursor = len(value)
+					p.queryOrigKey = key
 					return p, nil
 				}
 			}
@@ -204,6 +234,18 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 				p.headerOrigKey = ""
 				return p, nil
 			}
+			// Add new query param
+			if p.activeTab == TabQuery && p.request != nil {
+				p.editingQuery = true
+				p.queryIsNew = true
+				p.queryEditMode = "key"
+				p.queryKeyInput = ""
+				p.queryValueInput = ""
+				p.queryKeyCursor = 0
+				p.queryValueCursor = 0
+				p.queryOrigKey = ""
+				return p, nil
+			}
 		case "d":
 			// Delete header at cursor
 			if p.activeTab == TabHeaders && p.request != nil {
@@ -213,6 +255,19 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 					p.request.RemoveHeader(key)
 					p.syncHeaderKeys()
 					if p.cursor >= len(p.headerKeys) && p.cursor > 0 {
+						p.cursor--
+					}
+					return p, nil
+				}
+			}
+			// Delete query param at cursor
+			if p.activeTab == TabQuery && p.request != nil {
+				p.syncQueryKeys()
+				if p.cursor < len(p.queryKeys) {
+					key := p.queryKeys[p.cursor]
+					p.request.RemoveQueryParam(key)
+					p.syncQueryKeys()
+					if p.cursor >= len(p.queryKeys) && p.cursor > 0 {
 						p.cursor--
 					}
 					return p, nil
@@ -233,6 +288,14 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 				}
 				return p, nil
 			}
+		case "[":
+			// Switch to previous tab
+			p.prevTab()
+			return p, nil
+		case "]":
+			// Switch to next tab
+			p.nextTab()
+			return p, nil
 		case "j":
 			p.moveCursor(1)
 		case "k":
@@ -269,13 +332,39 @@ func (p *RequestPanel) syncHeaderKeys() {
 	p.headerKeys = newKeys
 }
 
+// syncQueryKeys updates the ordered list of query param keys for stable navigation.
+func (p *RequestPanel) syncQueryKeys() {
+	if p.request == nil {
+		p.queryKeys = nil
+		return
+	}
+	params := p.request.QueryParams()
+	newKeys := make([]string, 0, len(params))
+	seen := make(map[string]bool)
+
+	// Keep existing keys that still exist
+	for _, key := range p.queryKeys {
+		if _, exists := params[key]; exists {
+			newKeys = append(newKeys, key)
+			seen[key] = true
+		}
+	}
+	// Add any new keys
+	for key := range params {
+		if !seen[key] {
+			newKeys = append(newKeys, key)
+		}
+	}
+	p.queryKeys = newKeys
+}
+
 // StartURLEdit enters URL edit mode externally.
 func (p *RequestPanel) StartURLEdit() {
 	if p.request == nil {
 		return
 	}
 	p.editingURL = true
-	p.urlInput = p.request.URL()
+	p.urlInput = p.request.FullURL()
 	p.urlCursor = len(p.urlInput)
 	p.activeTab = TabURL
 }
@@ -348,6 +437,54 @@ func (p *RequestPanel) handleHeaderEditInput(msg tea.KeyMsg) (tui.Component, tea
 		}
 		return p, nil
 
+	case tea.KeyDelete:
+		if p.headerEditMode == "key" {
+			if p.headerKeyCursor < len(p.headerKeyInput) {
+				p.headerKeyInput = p.headerKeyInput[:p.headerKeyCursor] + p.headerKeyInput[p.headerKeyCursor+1:]
+			}
+		} else {
+			if p.headerValueCursor < len(p.headerValueInput) {
+				p.headerValueInput = p.headerValueInput[:p.headerValueCursor] + p.headerValueInput[p.headerValueCursor+1:]
+			}
+		}
+		return p, nil
+
+	case tea.KeyHome, tea.KeyCtrlA:
+		if p.headerEditMode == "key" {
+			p.headerKeyCursor = 0
+		} else {
+			p.headerValueCursor = 0
+		}
+		return p, nil
+
+	case tea.KeyEnd, tea.KeyCtrlE:
+		if p.headerEditMode == "key" {
+			p.headerKeyCursor = len(p.headerKeyInput)
+		} else {
+			p.headerValueCursor = len(p.headerValueInput)
+		}
+		return p, nil
+
+	case tea.KeyCtrlU:
+		if p.headerEditMode == "key" {
+			p.headerKeyInput = ""
+			p.headerKeyCursor = 0
+		} else {
+			p.headerValueInput = ""
+			p.headerValueCursor = 0
+		}
+		return p, nil
+
+	case tea.KeySpace:
+		if p.headerEditMode == "key" {
+			p.headerKeyInput = p.headerKeyInput[:p.headerKeyCursor] + " " + p.headerKeyInput[p.headerKeyCursor:]
+			p.headerKeyCursor++
+		} else {
+			p.headerValueInput = p.headerValueInput[:p.headerValueCursor] + " " + p.headerValueInput[p.headerValueCursor:]
+			p.headerValueCursor++
+		}
+		return p, nil
+
 	case tea.KeyRunes:
 		char := string(msg.Runes)
 		if p.headerEditMode == "key" {
@@ -363,11 +500,142 @@ func (p *RequestPanel) handleHeaderEditInput(msg tea.KeyMsg) (tui.Component, tea
 	return p, nil
 }
 
+// handleQueryEditInput handles keyboard input while editing a query param.
+func (p *RequestPanel) handleQueryEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Cancel editing
+		p.editingQuery = false
+		return p, nil
+
+	case tea.KeyEnter:
+		// Save query param
+		if p.queryKeyInput != "" {
+			if !p.queryIsNew && p.queryOrigKey != p.queryKeyInput {
+				// Key was renamed - remove old key
+				p.request.RemoveQueryParam(p.queryOrigKey)
+			}
+			p.request.SetQueryParam(p.queryKeyInput, p.queryValueInput)
+			p.syncQueryKeys()
+		}
+		p.editingQuery = false
+		return p, nil
+
+	case tea.KeyTab:
+		// Switch between key and value
+		if p.queryEditMode == "key" {
+			p.queryEditMode = "value"
+		} else {
+			p.queryEditMode = "key"
+		}
+		return p, nil
+
+	case tea.KeyBackspace:
+		if p.queryEditMode == "key" {
+			if p.queryKeyCursor > 0 {
+				p.queryKeyInput = p.queryKeyInput[:p.queryKeyCursor-1] + p.queryKeyInput[p.queryKeyCursor:]
+				p.queryKeyCursor--
+			}
+		} else {
+			if p.queryValueCursor > 0 {
+				p.queryValueInput = p.queryValueInput[:p.queryValueCursor-1] + p.queryValueInput[p.queryValueCursor:]
+				p.queryValueCursor--
+			}
+		}
+		return p, nil
+
+	case tea.KeyLeft:
+		if p.queryEditMode == "key" {
+			if p.queryKeyCursor > 0 {
+				p.queryKeyCursor--
+			}
+		} else {
+			if p.queryValueCursor > 0 {
+				p.queryValueCursor--
+			}
+		}
+		return p, nil
+
+	case tea.KeyRight:
+		if p.queryEditMode == "key" {
+			if p.queryKeyCursor < len(p.queryKeyInput) {
+				p.queryKeyCursor++
+			}
+		} else {
+			if p.queryValueCursor < len(p.queryValueInput) {
+				p.queryValueCursor++
+			}
+		}
+		return p, nil
+
+	case tea.KeyDelete:
+		if p.queryEditMode == "key" {
+			if p.queryKeyCursor < len(p.queryKeyInput) {
+				p.queryKeyInput = p.queryKeyInput[:p.queryKeyCursor] + p.queryKeyInput[p.queryKeyCursor+1:]
+			}
+		} else {
+			if p.queryValueCursor < len(p.queryValueInput) {
+				p.queryValueInput = p.queryValueInput[:p.queryValueCursor] + p.queryValueInput[p.queryValueCursor+1:]
+			}
+		}
+		return p, nil
+
+	case tea.KeyHome, tea.KeyCtrlA:
+		if p.queryEditMode == "key" {
+			p.queryKeyCursor = 0
+		} else {
+			p.queryValueCursor = 0
+		}
+		return p, nil
+
+	case tea.KeyEnd, tea.KeyCtrlE:
+		if p.queryEditMode == "key" {
+			p.queryKeyCursor = len(p.queryKeyInput)
+		} else {
+			p.queryValueCursor = len(p.queryValueInput)
+		}
+		return p, nil
+
+	case tea.KeyCtrlU:
+		if p.queryEditMode == "key" {
+			p.queryKeyInput = ""
+			p.queryKeyCursor = 0
+		} else {
+			p.queryValueInput = ""
+			p.queryValueCursor = 0
+		}
+		return p, nil
+
+	case tea.KeySpace:
+		if p.queryEditMode == "key" {
+			p.queryKeyInput = p.queryKeyInput[:p.queryKeyCursor] + " " + p.queryKeyInput[p.queryKeyCursor:]
+			p.queryKeyCursor++
+		} else {
+			p.queryValueInput = p.queryValueInput[:p.queryValueCursor] + " " + p.queryValueInput[p.queryValueCursor:]
+			p.queryValueCursor++
+		}
+		return p, nil
+
+	case tea.KeyRunes:
+		char := string(msg.Runes)
+		if p.queryEditMode == "key" {
+			p.queryKeyInput = p.queryKeyInput[:p.queryKeyCursor] + char + p.queryKeyInput[p.queryKeyCursor:]
+			p.queryKeyCursor += len(char)
+		} else {
+			p.queryValueInput = p.queryValueInput[:p.queryValueCursor] + char + p.queryValueInput[p.queryValueCursor:]
+			p.queryValueCursor += len(char)
+		}
+		return p, nil
+	}
+
+	return p, nil
+}
+
 // handleBodyEditInput handles keyboard input while editing the body.
 func (p *RequestPanel) handleBodyEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
-		// Save and exit
+		// Save and exit (vim-like: Esc returns to normal mode with changes saved)
 		body := strings.Join(p.bodyLines, "\n")
 		p.request.SetBody(body)
 		p.editingBody = false
@@ -403,6 +671,18 @@ func (p *RequestPanel) handleBodyEditInput(msg tea.KeyMsg) (tui.Component, tea.C
 			// Remove current line
 			p.bodyLines = append(p.bodyLines[:p.bodyCursorLine], p.bodyLines[p.bodyCursorLine+1:]...)
 			p.bodyCursorLine--
+		}
+		return p, nil
+
+	case tea.KeyDelete:
+		line := p.bodyLines[p.bodyCursorLine]
+		if p.bodyCursorCol < len(line) {
+			p.bodyLines[p.bodyCursorLine] = line[:p.bodyCursorCol] + line[p.bodyCursorCol+1:]
+		} else if p.bodyCursorLine < len(p.bodyLines)-1 {
+			// Join with next line
+			nextLine := p.bodyLines[p.bodyCursorLine+1]
+			p.bodyLines[p.bodyCursorLine] = line + nextLine
+			p.bodyLines = append(p.bodyLines[:p.bodyCursorLine+1], p.bodyLines[p.bodyCursorLine+2:]...)
 		}
 		return p, nil
 
@@ -443,6 +723,26 @@ func (p *RequestPanel) handleBodyEditInput(msg tea.KeyMsg) (tui.Component, tea.C
 		}
 		return p, nil
 
+	case tea.KeyHome, tea.KeyCtrlA:
+		p.bodyCursorCol = 0
+		return p, nil
+
+	case tea.KeyEnd, tea.KeyCtrlE:
+		p.bodyCursorCol = len(p.bodyLines[p.bodyCursorLine])
+		return p, nil
+
+	case tea.KeyCtrlU:
+		// Clear current line
+		p.bodyLines[p.bodyCursorLine] = ""
+		p.bodyCursorCol = 0
+		return p, nil
+
+	case tea.KeySpace:
+		line := p.bodyLines[p.bodyCursorLine]
+		p.bodyLines[p.bodyCursorLine] = line[:p.bodyCursorCol] + " " + line[p.bodyCursorCol:]
+		p.bodyCursorCol++
+		return p, nil
+
 	case tea.KeyRunes:
 		char := string(msg.Runes)
 		line := p.bodyLines[p.bodyCursorLine]
@@ -457,7 +757,11 @@ func (p *RequestPanel) handleBodyEditInput(msg tea.KeyMsg) (tui.Component, tea.C
 func (p *RequestPanel) handleURLEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
-		// Cancel editing, discard changes
+		// Save URL and exit edit mode (Postman-like behavior)
+		if p.request != nil && p.urlInput != "" {
+			p.request.SetURL(p.urlInput)
+			p.syncQueryKeys()
+		}
 		p.editingURL = false
 		p.urlInput = ""
 		return p, nil
@@ -466,6 +770,8 @@ func (p *RequestPanel) handleURLEditInput(msg tea.KeyMsg) (tui.Component, tea.Cm
 		// Save URL and exit edit mode
 		if p.request != nil && p.urlInput != "" {
 			p.request.SetURL(p.urlInput)
+			// Sync query keys after URL is set (may contain query params)
+			p.syncQueryKeys()
 		}
 		p.editingURL = false
 		p.urlInput = ""
@@ -508,6 +814,12 @@ func (p *RequestPanel) handleURLEditInput(msg tea.KeyMsg) (tui.Component, tea.Cm
 		// Clear input
 		p.urlInput = ""
 		p.urlCursor = 0
+		return p, nil
+
+	case tea.KeySpace:
+		// Insert space at cursor position
+		p.urlInput = p.urlInput[:p.urlCursor] + " " + p.urlInput[p.urlCursor:]
+		p.urlCursor++
 		return p, nil
 
 	case tea.KeyRunes:
@@ -757,7 +1069,7 @@ func (p *RequestPanel) renderURLBar() string {
 			}
 		}
 	} else {
-		urlContent = p.request.URL()
+		urlContent = p.request.FullURL()
 		if urlContent == "" {
 			urlContent = "Enter request URL..."
 			isPlaceholder = true
@@ -949,7 +1261,7 @@ func (p *RequestPanel) renderURLTab() []string {
 	}
 
 	return []string{
-		fmt.Sprintf("URL: %s", p.request.URL()),
+		fmt.Sprintf("URL: %s", p.request.FullURL()),
 		fmt.Sprintf("Method: %s", p.request.Method()),
 		"",
 		"Press m to change method",
@@ -1096,22 +1408,87 @@ func (p *RequestPanel) renderQueryTab() []string {
 		return []string{"No query params"}
 	}
 
-	params := p.request.QueryParams()
-	if len(params) == 0 {
-		return []string{"No query parameters defined"}
+	var lines []string
+
+	// Sync query keys for stable ordering
+	p.syncQueryKeys()
+
+	// Show editing row if adding new or editing
+	if p.editingQuery {
+		if p.queryIsNew {
+			lines = append(lines, p.renderQueryEditRow())
+		}
+		for i, key := range p.queryKeys {
+			if !p.queryIsNew && i == p.cursor {
+				lines = append(lines, p.renderQueryEditRow())
+			} else {
+				prefix := "  "
+				if i == p.cursor && p.focused {
+					prefix = "> "
+				}
+				value := p.request.GetQueryParam(key)
+				lines = append(lines, fmt.Sprintf("%s%s: %s", prefix, key, value))
+			}
+		}
+		// Add hints
+		lines = append(lines, "")
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+		lines = append(lines, hintStyle.Render("  Tab: key/value │ Enter: save │ Esc: cancel"))
+	} else {
+		if len(p.queryKeys) == 0 {
+			lines = []string{"  No query parameters defined"}
+			if p.focused {
+				lines = append(lines, "")
+				hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+				lines = append(lines, hintStyle.Render("  Press 'a' to add a parameter"))
+			}
+		} else {
+			for i, key := range p.queryKeys {
+				prefix := "  "
+				if i == p.cursor && p.focused {
+					prefix = "> "
+				}
+				value := p.request.GetQueryParam(key)
+				lines = append(lines, fmt.Sprintf("%s%s: %s", prefix, key, value))
+			}
+			// Add hints when focused
+			if p.focused {
+				lines = append(lines, "")
+				hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+				lines = append(lines, hintStyle.Render("  e: edit │ a: add │ d: delete │ j/k: navigate"))
+			}
+		}
 	}
 
-	var lines []string
-	i := 0
-	for key, value := range params {
-		prefix := "  "
-		if i == p.cursor && p.focused {
-			prefix = "> "
-		}
-		lines = append(lines, fmt.Sprintf("%s%s: %s", prefix, key, value))
-		i++
-	}
 	return lines
+}
+
+func (p *RequestPanel) renderQueryEditRow() string {
+	// Similar to header edit row
+	keyStyle := lipgloss.NewStyle()
+	valueStyle := lipgloss.NewStyle()
+
+	keyContent := p.queryKeyInput
+	valueContent := p.queryValueInput
+
+	// Add cursor indicator
+	if p.queryEditMode == "key" {
+		keyStyle = keyStyle.Background(lipgloss.Color("62")).Foreground(lipgloss.Color("229"))
+		if p.queryKeyCursor >= len(keyContent) {
+			keyContent += "▌"
+		} else {
+			keyContent = keyContent[:p.queryKeyCursor] + "▌" + keyContent[p.queryKeyCursor:]
+		}
+	} else {
+		valueStyle = valueStyle.Background(lipgloss.Color("62")).Foreground(lipgloss.Color("229"))
+		if p.queryValueCursor >= len(valueContent) {
+			valueContent += "▌"
+		} else {
+			valueContent = valueContent[:p.queryValueCursor] + "▌" + valueContent[p.queryValueCursor:]
+		}
+	}
+
+	return fmt.Sprintf("> %s │ %s", keyStyle.Render(keyContent), valueStyle.Render(valueContent))
 }
 
 func (p *RequestPanel) renderBodyTab() []string {
@@ -1253,7 +1630,7 @@ func (p *RequestPanel) Blur() {
 
 // IsEditing returns true if the panel is in any editing mode.
 func (p *RequestPanel) IsEditing() bool {
-	return p.editingURL || p.editingMethod || p.editingHeader || p.editingBody
+	return p.editingURL || p.editingMethod || p.editingHeader || p.editingQuery || p.editingBody
 }
 
 // SetSize sets dimensions.
@@ -1339,4 +1716,106 @@ func (p *RequestPanel) SetBody(body string) {
 	if p.request != nil {
 		p.request.SetBody(body)
 	}
+}
+
+// --- State accessors for E2E testing ---
+
+// HasRequest returns true if a request is loaded.
+func (p *RequestPanel) HasRequest() bool {
+	return p.request != nil
+}
+
+// URL returns the current URL (from input buffer if editing, otherwise from request).
+func (p *RequestPanel) URL() string {
+	// When editing, return the input buffer
+	if p.editingURL {
+		return p.urlInput
+	}
+	if p.request == nil {
+		return ""
+	}
+	return p.request.FullURL()
+}
+
+// Method returns the current HTTP method.
+func (p *RequestPanel) Method() string {
+	if p.request == nil {
+		return ""
+	}
+	return p.request.Method()
+}
+
+// HeadersMap returns headers as a map.
+func (p *RequestPanel) HeadersMap() map[string]string {
+	if p.request == nil {
+		return nil
+	}
+	return p.request.Headers()
+}
+
+// QueryParamsMap returns query parameters as a map.
+func (p *RequestPanel) QueryParamsMap() map[string]string {
+	if p.request == nil {
+		return nil
+	}
+	return p.request.QueryParams()
+}
+
+// ActiveTabName returns the active tab name as a string.
+func (p *RequestPanel) ActiveTabName() string {
+	return tabNames[p.activeTab]
+}
+
+// IsEditingMethod returns true if in method edit mode.
+func (p *RequestPanel) IsEditingMethod() bool {
+	return p.editingMethod
+}
+
+// EditingField returns which field is being edited.
+func (p *RequestPanel) EditingField() string {
+	if p.editingURL {
+		return "url"
+	}
+	if p.editingHeader {
+		if p.headerEditMode == "key" {
+			return "header_key"
+		}
+		return "header_value"
+	}
+	if p.editingQuery {
+		if p.queryEditMode == "key" {
+			return "query_key"
+		}
+		return "query_value"
+	}
+	if p.editingBody {
+		return "body"
+	}
+	if p.editingMethod {
+		return "method"
+	}
+	return ""
+}
+
+// CursorPosition returns the current cursor position in the active field.
+func (p *RequestPanel) CursorPosition() int {
+	if p.editingURL {
+		return p.urlCursor
+	}
+	if p.editingBody {
+		return p.bodyCursorCol // Return column position
+	}
+	if p.editingHeader {
+		if p.headerEditMode == "key" {
+			return p.headerKeyCursor
+		}
+		return p.headerValueCursor
+	}
+	if p.editingQuery {
+		if p.queryEditMode == "key" {
+			return p.queryKeyCursor
+		}
+		return p.queryValueCursor
+	}
+	return 0
 }

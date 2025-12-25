@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
+	"github.com/artpar/currier/internal/history"
 	"github.com/artpar/currier/internal/interpolate"
 	httpclient "github.com/artpar/currier/internal/protocol/http"
 	"github.com/artpar/currier/internal/tui"
@@ -38,6 +39,8 @@ type MainView struct {
 	interpolator *interpolate.Engine
 	notification string    // Temporary notification message
 	notifyUntil  time.Time // When to clear notification
+	historyStore history.Store // Store for request history
+	lastRequest  *core.RequestDefinition // Last sent request for history
 }
 
 // clearNotificationMsg is sent to clear the notification.
@@ -89,19 +92,51 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		v.focusPane(PaneRequest)
 		return v, nil
 
+	case components.SelectHistoryItemMsg:
+		// Create a request from history entry
+		name := msg.Entry.RequestName
+		if name == "" {
+			name = "History Request"
+		}
+		req := core.NewRequestDefinition(
+			name,
+			msg.Entry.RequestMethod,
+			msg.Entry.RequestURL,
+		)
+		// Set body if present
+		if msg.Entry.RequestBody != "" {
+			req.SetBody(msg.Entry.RequestBody)
+		}
+		// Set headers if present
+		for key, value := range msg.Entry.RequestHeaders {
+			req.SetHeader(key, value)
+		}
+		v.request.SetRequest(req)
+		v.focusPane(PaneRequest)
+		return v, nil
+
 	case components.SendRequestMsg:
 		v.response.SetLoading(true)
 		v.focusPane(PaneResponse)
+		v.lastRequest = msg.Request // Save for history
 		return v, sendRequest(msg.Request, v.interpolator)
 
 	case components.ResponseReceivedMsg:
 		v.response.SetLoading(false)
 		v.response.SetResponse(msg.Response)
+		// Save to history
+		if v.historyStore != nil && v.lastRequest != nil {
+			go v.saveToHistory(v.lastRequest, msg.Response, nil)
+		}
 		return v, nil
 
 	case components.RequestErrorMsg:
 		v.response.SetLoading(false)
 		v.response.SetError(msg.Error)
+		// Save failed request to history too
+		if v.historyStore != nil && v.lastRequest != nil {
+			go v.saveToHistory(v.lastRequest, nil, msg.Error)
+		}
 		return v, nil
 
 	case components.CopyMsg:
@@ -155,10 +190,12 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	// NORMAL mode - handle global shortcuts
 	switch msg.Type {
 	case tea.KeyTab:
+		// Tab always cycles panes
 		v.cycleFocusForward()
 		return v, nil
 
 	case tea.KeyShiftTab:
+		// Shift+Tab always cycles panes backward
 		v.cycleFocusBackward()
 		return v, nil
 
@@ -183,8 +220,13 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			v.focusPane(PaneResponse)
 			return v, nil
 		case "n":
-			// Create a new request and start editing URL immediately
+			// Create a new request and add it to a collection
 			newReq := core.NewRequestDefinition("New Request", "GET", "")
+
+			// Add to collection tree (creates default collection if none exist)
+			v.tree.AddRequest(newReq, nil)
+
+			// Set it in the request panel
 			v.request.SetRequest(newReq)
 			v.focusPane(PaneRequest)
 			// Auto-enter URL edit mode
@@ -249,25 +291,34 @@ func (v *MainView) updatePaneSizes() {
 		return
 	}
 
-	// Postman-like layout: narrow sidebar, wider request/response panes
-	// 20% / 40% / 40%
-	leftWidth := v.width * 20 / 100
-	if leftWidth < 20 {
-		leftWidth = 20
+	// Postman-like layout:
+	// [Sidebar 25%] | [Request/Response stacked vertically 75%]
+	sidebarWidth := v.width * 25 / 100
+	if sidebarWidth < 25 {
+		sidebarWidth = 25
 	}
-	middleWidth := (v.width - leftWidth) / 2
-	rightWidth := v.width - leftWidth - middleWidth
+	if sidebarWidth > 60 {
+		sidebarWidth = 60
+	}
+	rightWidth := v.width - sidebarWidth
 
 	// Reserve 2 lines for help bar + status bar
-	paneHeight := v.height - 2
-	if paneHeight < 1 {
-		paneHeight = 1
+	totalHeight := v.height - 2
+	if totalHeight < 2 {
+		totalHeight = 2
 	}
 
+	// Split right side vertically: Request on top (45%), Response on bottom (55%)
+	requestHeight := totalHeight * 45 / 100
+	if requestHeight < 8 {
+		requestHeight = 8
+	}
+	responseHeight := totalHeight - requestHeight
+
 	// Set sizes
-	v.tree.SetSize(leftWidth, paneHeight)
-	v.request.SetSize(middleWidth, paneHeight)
-	v.response.SetSize(rightWidth, paneHeight)
+	v.tree.SetSize(sidebarWidth, totalHeight)
+	v.request.SetSize(rightWidth, requestHeight)
+	v.response.SetSize(rightWidth, responseHeight)
 }
 
 // View renders the view.
@@ -281,13 +332,22 @@ func (v *MainView) View() string {
 		return v.renderHelp()
 	}
 
-	// Render three panes side by side
-	leftPane := v.tree.View()
-	middlePane := v.request.View()
-	rightPane := v.response.View()
+	// Postman-like layout:
+	// [Sidebar] | [Request  ]
+	//           | [Response ]
 
-	// Join panes horizontally
-	panes := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, middlePane, rightPane)
+	// Render sidebar (Collections)
+	sidebar := v.tree.View()
+
+	// Render request and response panels
+	requestPane := v.request.View()
+	responsePane := v.response.View()
+
+	// Stack request and response vertically on the right
+	rightStack := lipgloss.JoinVertical(lipgloss.Left, requestPane, responsePane)
+
+	// Join sidebar with right stack horizontally
+	panes := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, rightStack)
 
 	// Render help bar and status bar
 	helpBar := v.renderHelpBar()
@@ -339,14 +399,14 @@ func (v *MainView) renderHelpBar() string {
 				keyStyle.Render("e") + descStyle.Render(" Edit URL"),
 				keyStyle.Render("m") + descStyle.Render(" Method"),
 				keyStyle.Render("Enter") + descStyle.Render(" Send"),
-				keyStyle.Render("Tab") + descStyle.Render(" Switch tab"),
+				keyStyle.Render("[/]") + descStyle.Render(" Switch tab"),
 			}
 		}
 	case PaneResponse:
 		hints = []string{
 			keyStyle.Render("j/k") + descStyle.Render(" Scroll"),
 			keyStyle.Render("y") + descStyle.Render(" Copy body"),
-			keyStyle.Render("Tab") + descStyle.Render(" Switch tab"),
+			keyStyle.Render("[/]") + descStyle.Render(" Switch tab"),
 		}
 	}
 
@@ -472,21 +532,26 @@ func (v *MainView) renderHelp() string {
 		"│                                                     │",
 		"│  Navigation                                         │",
 		"│    Tab / Shift+Tab    Cycle between panes          │",
+		"│    [ / ]              Switch tabs within pane      │",
 		"│    1 / 2 / 3          Jump to pane                 │",
 		"│    j / k              Move down/up                 │",
 		"│    h / l              Collapse/Expand              │",
 		"│    gg / G             Go to top/bottom             │",
 		"│                                                     │",
-		"│  Search (Collections pane)                         │",
+		"│  Collections Pane                                   │",
 		"│    /                  Start search                 │",
+		"│    H                  Switch to History view       │",
+		"│    C                  Switch to Collections view   │",
 		"│    Esc                Clear search filter          │",
 		"│                                                     │",
-		"│  Request (Request pane)                            │",
+		"│  Request Pane                                       │",
 		"│    m                  Change HTTP method           │",
-		"│    e                  Edit URL inline              │",
+		"│    e                  Edit URL/header/body         │",
+		"│    a                  Add header/query param       │",
+		"│    d                  Delete header/query param    │",
 		"│    Enter              Send request                 │",
 		"│                                                     │",
-		"│  Response (Response pane)                          │",
+		"│  Response Pane                                      │",
 		"│    y                  Copy response body           │",
 		"│                                                     │",
 		"│  General                                            │",
@@ -589,6 +654,52 @@ func (v *MainView) SetEnvironment(env *core.Environment, engine *interpolate.Eng
 	v.interpolator = engine
 }
 
+// SetHistoryStore sets the history store for browsing request history.
+func (v *MainView) SetHistoryStore(store history.Store) {
+	v.historyStore = store
+	v.tree.SetHistoryStore(store)
+}
+
+// saveToHistory saves a request/response pair to history.
+func (v *MainView) saveToHistory(req *core.RequestDefinition, resp *core.Response, err error) {
+	if v.historyStore == nil || req == nil {
+		return
+	}
+
+	entry := history.Entry{
+		RequestMethod:  req.Method(),
+		RequestURL:     req.FullURL(),
+		RequestName:    req.Name(),
+		RequestBody:    req.Body(),
+		RequestHeaders: req.Headers(),
+		Timestamp:      time.Now(),
+	}
+
+	if resp != nil {
+		entry.ResponseStatus = resp.Status().Code()
+		entry.ResponseStatusText = resp.Status().Text()
+		entry.ResponseBody = resp.Body().String()
+		entry.ResponseTime = resp.Timing().Total.Milliseconds()
+		entry.ResponseSize = resp.Body().Size()
+		entry.ResponseHeaders = make(map[string]string)
+		for _, key := range resp.Headers().Keys() {
+			entry.ResponseHeaders[key] = resp.Headers().Get(key)
+		}
+	}
+
+	if err != nil {
+		entry.ResponseStatusText = "Error: " + err.Error()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if _, addErr := v.historyStore.Add(ctx, entry); addErr != nil {
+		// Log error but don't crash - history is optional
+		// Could add notification here if desired
+	}
+}
+
 // Environment returns the current environment.
 func (v *MainView) Environment() *core.Environment {
 	return v.environment
@@ -614,9 +725,27 @@ func (v *MainView) HideHelp() {
 	v.showHelp = false
 }
 
+// --- State accessors for E2E testing ---
+
+// Notification returns the current notification message.
+func (v *MainView) Notification() string {
+	return v.notification
+}
+
 // sendRequest creates a tea.Cmd that sends an HTTP request asynchronously.
 func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine) tea.Cmd {
 	return func() tea.Msg {
+		// Early validation of URL
+		url := reqDef.FullURL()
+		if url == "" {
+			return components.RequestErrorMsg{Error: fmt.Errorf("URL is empty. Press 'e' to edit the URL")}
+		}
+
+		// Basic URL validation
+		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+			return components.RequestErrorMsg{Error: fmt.Errorf("URL must start with http:// or https://")}
+		}
+
 		// Convert RequestDefinition to Request (with or without interpolation)
 		var req *core.Request
 		var err error

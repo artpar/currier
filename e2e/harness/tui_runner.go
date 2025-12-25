@@ -1,12 +1,15 @@
 package harness
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/artpar/currier/internal/core"
+	"github.com/artpar/currier/internal/history"
+	"github.com/artpar/currier/internal/history/sqlite"
 	"github.com/artpar/currier/internal/tui/views"
 )
 
@@ -17,9 +20,10 @@ type TUIRunner struct {
 
 // TUISession represents an active TUI test session.
 type TUISession struct {
-	runner *TUIRunner
-	model  *views.MainView
-	t      *testing.T
+	runner       *TUIRunner
+	model        *views.MainView
+	t            *testing.T
+	historyStore history.Store
 }
 
 // Start starts a new TUI session.
@@ -66,12 +70,61 @@ func (r *TUIRunner) StartWithCollections(t *testing.T, collections []*core.Colle
 	}
 }
 
+// StartWithHistory starts a TUI session with an in-memory history store.
+func (r *TUIRunner) StartWithHistory(t *testing.T) *TUISession {
+	t.Helper()
+
+	// Create in-memory history store
+	store, err := sqlite.NewInMemory()
+	if err != nil {
+		t.Fatalf("Failed to create in-memory history store: %v", err)
+	}
+
+	model := views.NewMainView()
+	model.SetSize(120, 40)
+	model.SetHistoryStore(store)
+
+	return &TUISession{
+		runner:       r,
+		model:        model,
+		t:            t,
+		historyStore: store,
+	}
+}
+
 // SendKey sends a key press.
 func (s *TUISession) SendKey(key string) *TUISession {
 	msg := parseKeyMsg(key)
-	updated, _ := s.model.Update(msg)
+	updated, cmd := s.model.Update(msg)
 	s.model = updated.(*views.MainView)
+
+	// Execute any returned command and process the result
+	if cmd != nil {
+		s.executeCmd(cmd)
+	}
 	return s
+}
+
+// executeCmd executes a tea.Cmd and processes the resulting message.
+func (s *TUISession) executeCmd(cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+
+	// Execute the command to get the message
+	msg := cmd()
+	if msg == nil {
+		return
+	}
+
+	// Feed the message back into Update
+	updated, nextCmd := s.model.Update(msg)
+	s.model = updated.(*views.MainView)
+
+	// Recursively execute any chained commands
+	if nextCmd != nil {
+		s.executeCmd(nextCmd)
+	}
 }
 
 // SendKeys sends multiple key presses.
@@ -86,8 +139,11 @@ func (s *TUISession) SendKeys(keys ...string) *TUISession {
 func (s *TUISession) Type(text string) *TUISession {
 	for _, r := range text {
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
-		updated, _ := s.model.Update(msg)
+		updated, cmd := s.model.Update(msg)
 		s.model = updated.(*views.MainView)
+		if cmd != nil {
+			s.executeCmd(cmd)
+		}
 	}
 	return s
 }
@@ -140,6 +196,32 @@ func (s *TUISession) ShowingHelp() bool {
 	return s.model.ShowingHelp()
 }
 
+// HistoryEntries returns history entries from the store.
+func (s *TUISession) HistoryEntries() []history.Entry {
+	if s.historyStore == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	entries, _ := s.historyStore.List(ctx, history.QueryOptions{Limit: 100})
+	return entries
+}
+
+// HistoryCount returns the number of history entries.
+func (s *TUISession) HistoryCount() int {
+	return len(s.HistoryEntries())
+}
+
+// HasHistoryWithURL checks if a history entry with the given URL exists.
+func (s *TUISession) HasHistoryWithURL(url string) bool {
+	for _, entry := range s.HistoryEntries() {
+		if strings.Contains(entry.RequestURL, url) {
+			return true
+		}
+	}
+	return false
+}
+
 // TimeoutError represents a timeout waiting for output.
 type TimeoutError struct {
 	text    string
@@ -163,6 +245,12 @@ func parseKeyMsg(key string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEsc}
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
+	case "ctrl+a":
+		return tea.KeyMsg{Type: tea.KeyCtrlA}
+	case "ctrl+e":
+		return tea.KeyMsg{Type: tea.KeyCtrlE}
+	case "ctrl+u":
+		return tea.KeyMsg{Type: tea.KeyCtrlU}
 	case "up":
 		return tea.KeyMsg{Type: tea.KeyUp}
 	case "down":
@@ -171,6 +259,10 @@ func parseKeyMsg(key string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyLeft}
 	case "right":
 		return tea.KeyMsg{Type: tea.KeyRight}
+	case "home":
+		return tea.KeyMsg{Type: tea.KeyHome}
+	case "end":
+		return tea.KeyMsg{Type: tea.KeyEnd}
 	case "backspace":
 		return tea.KeyMsg{Type: tea.KeyBackspace}
 	case "delete":

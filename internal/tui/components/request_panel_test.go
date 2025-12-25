@@ -99,24 +99,24 @@ func TestRequestPanel_Tabs(t *testing.T) {
 		assert.Equal(t, TabQuery, panel.ActiveTab())
 	})
 
-	t.Run("cycles through tabs with Tab key", func(t *testing.T) {
+	t.Run("cycles through tabs with ] key", func(t *testing.T) {
 		panel := newTestRequestPanel(t)
 		panel.Focus()
 		panel.SetActiveTab(TabURL)
 
-		msg := tea.KeyMsg{Type: tea.KeyTab}
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}}
 		updated, _ := panel.Update(msg)
 		panel = updated.(*RequestPanel)
 
 		assert.Equal(t, TabHeaders, panel.ActiveTab())
 	})
 
-	t.Run("cycles backwards with Shift+Tab", func(t *testing.T) {
+	t.Run("cycles backwards with [ key", func(t *testing.T) {
 		panel := newTestRequestPanel(t)
 		panel.Focus()
 		panel.SetActiveTab(TabHeaders)
 
-		msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}}
 		updated, _ := panel.Update(msg)
 		panel = updated.(*RequestPanel)
 
@@ -128,7 +128,7 @@ func TestRequestPanel_Tabs(t *testing.T) {
 		panel.Focus()
 		panel.SetActiveTab(TabTests)
 
-		msg := tea.KeyMsg{Type: tea.KeyTab}
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}}
 		updated, _ := panel.Update(msg)
 		panel = updated.(*RequestPanel)
 

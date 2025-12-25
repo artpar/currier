@@ -115,7 +115,7 @@ func TestTUI_PaneContent(t *testing.T) {
 		output := session.Output()
 
 		assert := harness.NewAssertions(t)
-		assert.OutputContains(output, "No request selected")
+		assert.OutputContains(output, "Press n")
 	})
 
 	t.Run("response pane shows no response initially", func(t *testing.T) {
