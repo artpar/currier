@@ -746,3 +746,63 @@ func TestMainView_HelpBarShowsNewHint(t *testing.T) {
 		assert.Contains(t, output, "New")
 	})
 }
+
+func TestMainView_InsertModePassthrough(t *testing.T) {
+	t.Run("number keys pass through in edit mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Create and select request
+		req := core.NewRequestDefinition("Test", "GET", "http://localhost:")
+		view.RequestPanel().SetRequest(req)
+		view.FocusPane(PaneRequest)
+
+		// Start editing URL
+		view.RequestPanel().StartURLEdit()
+		assert.True(t, view.RequestPanel().IsEditing())
+
+		// Press '3' - should NOT switch pane, should be passed to input
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should still be in request pane, not response pane
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+
+		// Should still be editing
+		assert.True(t, view.RequestPanel().IsEditing())
+	})
+
+	t.Run("q key does not quit in edit mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		req := core.NewRequestDefinition("Test", "GET", "")
+		view.RequestPanel().SetRequest(req)
+		view.FocusPane(PaneRequest)
+		view.RequestPanel().StartURLEdit()
+
+		// Press 'q' - should NOT quit, should be passed to input
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+		_, cmd := view.Update(msg)
+
+		// Should NOT produce a quit command
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("1/2/3 switch panes in normal mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneRequest)
+
+		// Not in edit mode
+		assert.False(t, view.RequestPanel().IsEditing())
+
+		// Press '3' - should switch to response pane
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneResponse, view.FocusedPane())
+	})
+}

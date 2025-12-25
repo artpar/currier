@@ -137,10 +137,23 @@ func (v *MainView) handleCopy(content string) (tui.Component, tea.Cmd) {
 }
 
 func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyCtrlC:
-		return v, tea.Quit
+	// Check if we're in INSERT mode (editing text in any pane)
+	// In INSERT mode, forward ALL keys to the focused pane except Ctrl+C
+	isEditing := v.request.IsEditing() || v.tree.IsSearching()
 
+	// Ctrl+C always quits
+	if msg.Type == tea.KeyCtrlC {
+		return v, tea.Quit
+	}
+
+	// In INSERT mode, forward everything to the focused pane
+	// Only Escape exits insert mode (handled by the pane itself)
+	if isEditing {
+		return v.forwardToFocusedPane(msg)
+	}
+
+	// NORMAL mode - handle global shortcuts
+	switch msg.Type {
 	case tea.KeyTab:
 		v.cycleFocusForward()
 		return v, nil
@@ -150,7 +163,7 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return v, nil
 
 	case tea.KeyEsc:
-		// Could be used for mode switching
+		// Already in normal mode, nothing to do
 		return v, nil
 
 	case tea.KeyRunes:
@@ -180,7 +193,7 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		}
 	}
 
-	// Forward to focused pane
+	// Forward to focused pane for other keys
 	return v.forwardToFocusedPane(msg)
 }
 
