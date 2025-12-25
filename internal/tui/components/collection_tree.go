@@ -569,6 +569,11 @@ func (c *CollectionTree) Blur() {
 	c.focused = false
 }
 
+// IsSearching returns true if the tree is in search mode.
+func (c *CollectionTree) IsSearching() bool {
+	return c.searching
+}
+
 // SetSize sets dimensions.
 func (c *CollectionTree) SetSize(width, height int) {
 	c.width = width

@@ -237,8 +237,8 @@ func (v *MainView) updatePaneSizes() {
 	middleWidth := (v.width - leftWidth) / 2
 	rightWidth := v.width - leftWidth - middleWidth
 
-	// Reserve 1 line for status bar
-	paneHeight := v.height - 1
+	// Reserve 2 lines for help bar + status bar
+	paneHeight := v.height - 2
 	if paneHeight < 1 {
 		paneHeight = 1
 	}
@@ -268,17 +268,119 @@ func (v *MainView) View() string {
 	// Join panes horizontally
 	panes := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, middlePane, rightPane)
 
-	// Render status bar
+	// Render help bar and status bar
+	helpBar := v.renderHelpBar()
 	statusBar := v.renderStatusBar()
 
-	// Join panes and status bar vertically
-	return lipgloss.JoinVertical(lipgloss.Left, panes, statusBar)
+	// Join panes, help bar, and status bar vertically
+	return lipgloss.JoinVertical(lipgloss.Left, panes, helpBar, statusBar)
+}
+
+// renderHelpBar renders context-sensitive keyboard shortcuts.
+func (v *MainView) renderHelpBar() string {
+	keyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("214")).
+		Bold(true)
+	descStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+	sepStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240"))
+
+	sep := sepStyle.Render(" │ ")
+
+	var hints []string
+
+	// Context-sensitive hints based on focused pane and mode
+	switch v.focusedPane {
+	case PaneCollections:
+		if v.tree.IsSearching() {
+			hints = []string{
+				keyStyle.Render("Enter") + descStyle.Render(" Apply"),
+				keyStyle.Render("Esc") + descStyle.Render(" Cancel"),
+				keyStyle.Render("Ctrl+U") + descStyle.Render(" Clear"),
+			}
+		} else {
+			hints = []string{
+				keyStyle.Render("j/k") + descStyle.Render(" Navigate"),
+				keyStyle.Render("Enter") + descStyle.Render(" Select"),
+				keyStyle.Render("/") + descStyle.Render(" Search"),
+				keyStyle.Render("Tab") + descStyle.Render(" Next pane"),
+			}
+		}
+	case PaneRequest:
+		if v.request.IsEditing() {
+			hints = []string{
+				keyStyle.Render("Enter") + descStyle.Render(" Save"),
+				keyStyle.Render("Esc") + descStyle.Render(" Cancel"),
+			}
+		} else {
+			hints = []string{
+				keyStyle.Render("e") + descStyle.Render(" Edit URL"),
+				keyStyle.Render("m") + descStyle.Render(" Method"),
+				keyStyle.Render("Enter") + descStyle.Render(" Send"),
+				keyStyle.Render("Tab") + descStyle.Render(" Switch tab"),
+			}
+		}
+	case PaneResponse:
+		hints = []string{
+			keyStyle.Render("j/k") + descStyle.Render(" Scroll"),
+			keyStyle.Render("y") + descStyle.Render(" Copy body"),
+			keyStyle.Render("Tab") + descStyle.Render(" Switch tab"),
+		}
+	}
+
+	// Always add global hints
+	hints = append(hints,
+		keyStyle.Render("1/2/3")+descStyle.Render(" Pane"),
+		keyStyle.Render("?")+descStyle.Render(" Help"),
+		keyStyle.Render("q")+descStyle.Render(" Quit"),
+	)
+
+	content := strings.Join(hints, sep)
+
+	// Help bar style
+	barStyle := lipgloss.NewStyle().
+		Width(v.width).
+		Background(lipgloss.Color("235")).
+		Padding(0, 1)
+
+	return barStyle.Render(content)
 }
 
 // renderStatusBar renders the bottom status bar with environment info.
 func (v *MainView) renderStatusBar() string {
 	// Build status items
 	var items []string
+
+	// Mode indicator
+	modeStyle := lipgloss.NewStyle().
+		Bold(true).
+		Padding(0, 1)
+	isEditing := v.request.IsEditing() || v.tree.IsSearching()
+	if isEditing {
+		modeStyle = modeStyle.
+			Background(lipgloss.Color("214")).
+			Foreground(lipgloss.Color("0"))
+		items = append(items, modeStyle.Render("INSERT"))
+	} else {
+		modeStyle = modeStyle.
+			Background(lipgloss.Color("34")).
+			Foreground(lipgloss.Color("255"))
+		items = append(items, modeStyle.Render("NORMAL"))
+	}
+
+	// Focused pane indicator
+	paneStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")).
+		Padding(0, 1)
+	paneName := "Collections"
+	switch v.focusedPane {
+	case PaneRequest:
+		paneName = "Request"
+	case PaneResponse:
+		paneName = "Response"
+	}
+	items = append(items, paneStyle.Render(paneName))
 
 	// Environment indicator
 	if v.environment != nil {

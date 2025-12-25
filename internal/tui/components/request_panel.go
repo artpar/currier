@@ -57,6 +57,23 @@ type RequestPanel struct {
 	urlCursor     int    // Cursor position in URL input
 	editingMethod bool   // True when editing HTTP method
 	methodIndex   int    // Current index in httpMethods
+
+	// Header editing state
+	editingHeader     bool   // True when editing a header
+	headerEditMode    string // "key" or "value"
+	headerKeyInput    string // Current key input
+	headerValueInput  string // Current value input
+	headerKeyCursor   int    // Cursor position in key
+	headerValueCursor int    // Cursor position in value
+	headerIsNew       bool   // True if adding new header
+	headerOrigKey     string // Original key when editing (for replacement)
+	headerKeys        []string // Ordered list of header keys for stable navigation
+
+	// Body editing state
+	editingBody    bool     // True when editing body
+	bodyLines      []string // Body split into lines
+	bodyCursorLine int      // Current line
+	bodyCursorCol  int      // Current column
 }
 
 // NewRequestPanel creates a new request panel.
@@ -114,6 +131,16 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return p.handleMethodEditInput(msg)
 	}
 
+	// Handle header editing mode
+	if p.editingHeader {
+		return p.handleHeaderEditInput(msg)
+	}
+
+	// Handle body editing mode
+	if p.editingBody {
+		return p.handleBodyEditInput(msg)
+	}
+
 	switch msg.Type {
 	case tea.KeyTab:
 		p.nextTab()
@@ -135,6 +162,62 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 				p.urlCursor = len(p.urlInput)
 				return p, nil
 			}
+			// Enter header edit mode (edit existing)
+			if p.activeTab == TabHeaders && p.request != nil {
+				p.syncHeaderKeys()
+				if p.cursor < len(p.headerKeys) {
+					key := p.headerKeys[p.cursor]
+					value := p.request.GetHeader(key)
+					p.editingHeader = true
+					p.headerIsNew = false
+					p.headerEditMode = "key"
+					p.headerKeyInput = key
+					p.headerValueInput = value
+					p.headerKeyCursor = len(key)
+					p.headerValueCursor = len(value)
+					p.headerOrigKey = key
+					return p, nil
+				}
+			}
+			// Enter body edit mode
+			if p.activeTab == TabBody && p.request != nil {
+				body := p.request.Body()
+				p.bodyLines = strings.Split(body, "\n")
+				if len(p.bodyLines) == 0 {
+					p.bodyLines = []string{""}
+				}
+				p.bodyCursorLine = 0
+				p.bodyCursorCol = 0
+				p.editingBody = true
+				return p, nil
+			}
+		case "a":
+			// Add new header
+			if p.activeTab == TabHeaders && p.request != nil {
+				p.editingHeader = true
+				p.headerIsNew = true
+				p.headerEditMode = "key"
+				p.headerKeyInput = ""
+				p.headerValueInput = ""
+				p.headerKeyCursor = 0
+				p.headerValueCursor = 0
+				p.headerOrigKey = ""
+				return p, nil
+			}
+		case "d":
+			// Delete header at cursor
+			if p.activeTab == TabHeaders && p.request != nil {
+				p.syncHeaderKeys()
+				if p.cursor < len(p.headerKeys) {
+					key := p.headerKeys[p.cursor]
+					p.request.RemoveHeader(key)
+					p.syncHeaderKeys()
+					if p.cursor >= len(p.headerKeys) && p.cursor > 0 {
+						p.cursor--
+					}
+					return p, nil
+				}
+			}
 		case "m":
 			// Enter method edit mode
 			if p.activeTab == TabURL && p.request != nil {
@@ -155,6 +238,206 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		case "k":
 			p.moveCursor(-1)
 		}
+	}
+
+	return p, nil
+}
+
+// syncHeaderKeys updates the ordered list of header keys for stable navigation.
+func (p *RequestPanel) syncHeaderKeys() {
+	if p.request == nil {
+		p.headerKeys = nil
+		return
+	}
+	headers := p.request.Headers()
+	newKeys := make([]string, 0, len(headers))
+	seen := make(map[string]bool)
+
+	// Keep existing keys that still exist
+	for _, key := range p.headerKeys {
+		if _, exists := headers[key]; exists {
+			newKeys = append(newKeys, key)
+			seen[key] = true
+		}
+	}
+	// Add any new keys
+	for key := range headers {
+		if !seen[key] {
+			newKeys = append(newKeys, key)
+		}
+	}
+	p.headerKeys = newKeys
+}
+
+// handleHeaderEditInput handles keyboard input while editing a header.
+func (p *RequestPanel) handleHeaderEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Cancel editing
+		p.editingHeader = false
+		return p, nil
+
+	case tea.KeyEnter:
+		// Save header
+		if p.headerKeyInput != "" {
+			if !p.headerIsNew && p.headerOrigKey != p.headerKeyInput {
+				// Key was renamed - remove old key
+				p.request.RemoveHeader(p.headerOrigKey)
+			}
+			p.request.SetHeader(p.headerKeyInput, p.headerValueInput)
+			p.syncHeaderKeys()
+		}
+		p.editingHeader = false
+		return p, nil
+
+	case tea.KeyTab:
+		// Switch between key and value
+		if p.headerEditMode == "key" {
+			p.headerEditMode = "value"
+		} else {
+			p.headerEditMode = "key"
+		}
+		return p, nil
+
+	case tea.KeyBackspace:
+		if p.headerEditMode == "key" {
+			if p.headerKeyCursor > 0 {
+				p.headerKeyInput = p.headerKeyInput[:p.headerKeyCursor-1] + p.headerKeyInput[p.headerKeyCursor:]
+				p.headerKeyCursor--
+			}
+		} else {
+			if p.headerValueCursor > 0 {
+				p.headerValueInput = p.headerValueInput[:p.headerValueCursor-1] + p.headerValueInput[p.headerValueCursor:]
+				p.headerValueCursor--
+			}
+		}
+		return p, nil
+
+	case tea.KeyLeft:
+		if p.headerEditMode == "key" {
+			if p.headerKeyCursor > 0 {
+				p.headerKeyCursor--
+			}
+		} else {
+			if p.headerValueCursor > 0 {
+				p.headerValueCursor--
+			}
+		}
+		return p, nil
+
+	case tea.KeyRight:
+		if p.headerEditMode == "key" {
+			if p.headerKeyCursor < len(p.headerKeyInput) {
+				p.headerKeyCursor++
+			}
+		} else {
+			if p.headerValueCursor < len(p.headerValueInput) {
+				p.headerValueCursor++
+			}
+		}
+		return p, nil
+
+	case tea.KeyRunes:
+		char := string(msg.Runes)
+		if p.headerEditMode == "key" {
+			p.headerKeyInput = p.headerKeyInput[:p.headerKeyCursor] + char + p.headerKeyInput[p.headerKeyCursor:]
+			p.headerKeyCursor += len(char)
+		} else {
+			p.headerValueInput = p.headerValueInput[:p.headerValueCursor] + char + p.headerValueInput[p.headerValueCursor:]
+			p.headerValueCursor += len(char)
+		}
+		return p, nil
+	}
+
+	return p, nil
+}
+
+// handleBodyEditInput handles keyboard input while editing the body.
+func (p *RequestPanel) handleBodyEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Save and exit
+		body := strings.Join(p.bodyLines, "\n")
+		p.request.SetBody(body)
+		p.editingBody = false
+		return p, nil
+
+	case tea.KeyEnter:
+		// Insert new line
+		line := p.bodyLines[p.bodyCursorLine]
+		before := line[:p.bodyCursorCol]
+		after := line[p.bodyCursorCol:]
+		p.bodyLines[p.bodyCursorLine] = before
+		// Insert new line after current
+		newLines := make([]string, 0, len(p.bodyLines)+1)
+		newLines = append(newLines, p.bodyLines[:p.bodyCursorLine+1]...)
+		newLines = append(newLines, after)
+		newLines = append(newLines, p.bodyLines[p.bodyCursorLine+1:]...)
+		p.bodyLines = newLines
+		p.bodyCursorLine++
+		p.bodyCursorCol = 0
+		return p, nil
+
+	case tea.KeyBackspace:
+		if p.bodyCursorCol > 0 {
+			line := p.bodyLines[p.bodyCursorLine]
+			p.bodyLines[p.bodyCursorLine] = line[:p.bodyCursorCol-1] + line[p.bodyCursorCol:]
+			p.bodyCursorCol--
+		} else if p.bodyCursorLine > 0 {
+			// Join with previous line
+			prevLine := p.bodyLines[p.bodyCursorLine-1]
+			currLine := p.bodyLines[p.bodyCursorLine]
+			p.bodyCursorCol = len(prevLine)
+			p.bodyLines[p.bodyCursorLine-1] = prevLine + currLine
+			// Remove current line
+			p.bodyLines = append(p.bodyLines[:p.bodyCursorLine], p.bodyLines[p.bodyCursorLine+1:]...)
+			p.bodyCursorLine--
+		}
+		return p, nil
+
+	case tea.KeyLeft:
+		if p.bodyCursorCol > 0 {
+			p.bodyCursorCol--
+		} else if p.bodyCursorLine > 0 {
+			p.bodyCursorLine--
+			p.bodyCursorCol = len(p.bodyLines[p.bodyCursorLine])
+		}
+		return p, nil
+
+	case tea.KeyRight:
+		line := p.bodyLines[p.bodyCursorLine]
+		if p.bodyCursorCol < len(line) {
+			p.bodyCursorCol++
+		} else if p.bodyCursorLine < len(p.bodyLines)-1 {
+			p.bodyCursorLine++
+			p.bodyCursorCol = 0
+		}
+		return p, nil
+
+	case tea.KeyUp:
+		if p.bodyCursorLine > 0 {
+			p.bodyCursorLine--
+			if p.bodyCursorCol > len(p.bodyLines[p.bodyCursorLine]) {
+				p.bodyCursorCol = len(p.bodyLines[p.bodyCursorLine])
+			}
+		}
+		return p, nil
+
+	case tea.KeyDown:
+		if p.bodyCursorLine < len(p.bodyLines)-1 {
+			p.bodyCursorLine++
+			if p.bodyCursorCol > len(p.bodyLines[p.bodyCursorLine]) {
+				p.bodyCursorCol = len(p.bodyLines[p.bodyCursorLine])
+			}
+		}
+		return p, nil
+
+	case tea.KeyRunes:
+		char := string(msg.Runes)
+		line := p.bodyLines[p.bodyCursorLine]
+		p.bodyLines[p.bodyCursorLine] = line[:p.bodyCursorCol] + char + line[p.bodyCursorCol:]
+		p.bodyCursorCol += len(char)
+		return p, nil
 	}
 
 	return p, nil
@@ -390,11 +673,17 @@ func (p *RequestPanel) View() string {
 }
 
 func (p *RequestPanel) renderURLBar() string {
-	if p.request == nil {
-		return ""
-	}
-
 	innerWidth := p.width - 2
+
+	// Empty state - no request selected
+	if p.request == nil {
+		emptyStyle := lipgloss.NewStyle().
+			Width(innerWidth).
+			Foreground(lipgloss.Color("243")).
+			Align(lipgloss.Center).
+			Italic(true)
+		return emptyStyle.Render("Select a request from Collections (press 1)")
+	}
 
 	// Check if in method edit mode
 	if p.editingMethod {
@@ -403,16 +692,20 @@ func (p *RequestPanel) renderURLBar() string {
 
 	// Method button style (Postman-like dropdown look)
 	method := p.request.Method()
-	methodStyle := p.methodStyle(method)
-	methodBtn := methodStyle.Render(method + " ▾")
+	methodBtnStyle := p.methodStyle(method).
+		Padding(0, 1)
+	methodBtn := methodBtnStyle.Render(method + " ▾")
 
-	// Send button
+	// Send button - brighter when focused on URL tab
 	sendStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("214")).
 		Foreground(lipgloss.Color("0")).
 		Bold(true).
 		Padding(0, 1)
-	sendBtn := sendStyle.Render("Send")
+	if p.focused && p.activeTab == TabURL {
+		sendStyle = sendStyle.Background(lipgloss.Color("208"))
+	}
+	sendBtn := sendStyle.Render("↵ Send")
 
 	// Calculate URL field width (method + spacing + url + spacing + send)
 	sendBtnWidth := lipgloss.Width(sendBtn)
@@ -422,8 +715,9 @@ func (p *RequestPanel) renderURLBar() string {
 		urlFieldWidth = 10
 	}
 
-	// URL content
+	// URL content with placeholder support
 	var urlContent string
+	var isPlaceholder bool
 	if p.editingURL {
 		// Show editable URL with cursor
 		url := p.urlInput
@@ -453,7 +747,10 @@ func (p *RequestPanel) renderURLBar() string {
 		}
 	} else {
 		urlContent = p.request.URL()
-		if len(urlContent) > urlFieldWidth {
+		if urlContent == "" {
+			urlContent = "Enter request URL..."
+			isPlaceholder = true
+		} else if len(urlContent) > urlFieldWidth {
 			urlContent = urlContent[:urlFieldWidth-3] + "..."
 		}
 	}
@@ -463,22 +760,43 @@ func (p *RequestPanel) renderURLBar() string {
 		urlContent += " "
 	}
 
-	// URL field style - simple background highlight instead of border
+	// URL field style with visual states
 	urlFieldStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("237")).
 		Foreground(lipgloss.Color("252")).
 		Padding(0, 1)
 
 	if p.editingURL {
+		// Editing: bright orange cursor, darker background
 		urlFieldStyle = urlFieldStyle.
 			Background(lipgloss.Color("238")).
-			Foreground(lipgloss.Color("214"))
+			Foreground(lipgloss.Color("229"))
+	} else if isPlaceholder {
+		// Placeholder: italic, muted
+		urlFieldStyle = urlFieldStyle.
+			Foreground(lipgloss.Color("243")).
+			Italic(true)
+	} else if p.focused && p.activeTab == TabURL {
+		// Focused: subtle highlight
+		urlFieldStyle = urlFieldStyle.
+			Background(lipgloss.Color("238"))
 	}
 
 	urlField := urlFieldStyle.Render(urlContent)
 
-	// Compose URL bar with proper spacing
-	return methodBtn + " " + urlField + " " + sendBtn
+	// Compose URL bar
+	urlBar := methodBtn + " " + urlField + " " + sendBtn
+
+	// Add hint line below when focused
+	if p.focused && p.activeTab == TabURL && !p.editingURL && !p.editingMethod {
+		hintStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Italic(true)
+		hint := hintStyle.Render("  Press e to edit URL, m to change method")
+		return urlBar + "\n" + hint
+	}
+
+	return urlBar
 }
 
 func (p *RequestPanel) renderMethodSelector() string {
@@ -634,22 +952,132 @@ func (p *RequestPanel) renderHeadersTab() []string {
 		return []string{"No headers"}
 	}
 
-	headers := p.request.Headers()
-	if len(headers) == 0 {
-		return []string{"No headers defined"}
+	p.syncHeaderKeys()
+	innerWidth := p.width - 4
+	keyWidth := innerWidth * 35 / 100
+	if keyWidth < 10 {
+		keyWidth = 10
+	}
+	valueWidth := innerWidth - keyWidth - 5
+	if valueWidth < 10 {
+		valueWidth = 10
 	}
 
 	var lines []string
-	i := 0
-	for key, value := range headers {
-		prefix := "  "
-		if i == p.cursor && p.focused {
-			prefix = "> "
-		}
-		lines = append(lines, fmt.Sprintf("%s%s: %s", prefix, key, value))
-		i++
+
+	// Header row
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245"))
+	lines = append(lines, headerStyle.Render(fmt.Sprintf("  %-*s │ %s", keyWidth, "Key", "Value")))
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render(strings.Repeat("─", innerWidth)))
+
+	// If adding new header, show it at the top
+	if p.editingHeader && p.headerIsNew {
+		lines = append(lines, p.renderHeaderEditRow(keyWidth, valueWidth))
 	}
+
+	// Existing headers
+	for i, key := range p.headerKeys {
+		value := p.request.GetHeader(key)
+		prefix := "  "
+
+		if i == p.cursor && p.focused {
+			if p.editingHeader && !p.headerIsNew {
+				// Show edit mode for this row
+				lines = append(lines, p.renderHeaderEditRow(keyWidth, valueWidth))
+			} else {
+				prefix = "> "
+				keyStr := key
+				if len(keyStr) > keyWidth {
+					keyStr = keyStr[:keyWidth-1] + "…"
+				}
+				valueStr := value
+				if len(valueStr) > valueWidth {
+					valueStr = valueStr[:valueWidth-1] + "…"
+				}
+				selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+				lines = append(lines, selectedStyle.Render(fmt.Sprintf("%s%-*s │ %s", prefix, keyWidth, keyStr, valueStr)))
+			}
+		} else {
+			keyStr := key
+			if len(keyStr) > keyWidth {
+				keyStr = keyStr[:keyWidth-1] + "…"
+			}
+			valueStr := value
+			if len(valueStr) > valueWidth {
+				valueStr = valueStr[:valueWidth-1] + "…"
+			}
+			lines = append(lines, fmt.Sprintf("%s%-*s │ %s", prefix, keyWidth, keyStr, valueStr))
+		}
+	}
+
+	// Empty state or hint
+	if len(p.headerKeys) == 0 && !p.editingHeader {
+		lines = append(lines, "")
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+		lines = append(lines, hintStyle.Render("  Press 'a' to add a header"))
+	}
+
+	// Editing hints
+	if p.editingHeader {
+		lines = append(lines, "")
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+		lines = append(lines, hintStyle.Render("  Tab: switch field │ Enter: save │ Esc: cancel"))
+	} else if p.focused {
+		lines = append(lines, "")
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+		lines = append(lines, hintStyle.Render("  a: add │ e: edit │ d: delete"))
+	}
+
 	return lines
+}
+
+// renderHeaderEditRow renders a single header row in edit mode.
+func (p *RequestPanel) renderHeaderEditRow(keyWidth, valueWidth int) string {
+	// Prepare key content with cursor
+	keyContent := p.headerKeyInput
+	if p.headerEditMode == "key" {
+		if p.headerKeyCursor >= len(keyContent) {
+			keyContent += "▌"
+		} else {
+			keyContent = keyContent[:p.headerKeyCursor] + "▌" + keyContent[p.headerKeyCursor:]
+		}
+	}
+	if len(keyContent) > keyWidth {
+		keyContent = keyContent[:keyWidth-1] + "…"
+	}
+
+	// Prepare value content with cursor
+	valueContent := p.headerValueInput
+	if p.headerEditMode == "value" {
+		if p.headerValueCursor >= len(valueContent) {
+			valueContent += "▌"
+		} else {
+			valueContent = valueContent[:p.headerValueCursor] + "▌" + valueContent[p.headerValueCursor:]
+		}
+	}
+	if len(valueContent) > valueWidth {
+		valueContent = valueContent[:valueWidth-1] + "…"
+	}
+
+	// Styling for active field
+	keyStyle := lipgloss.NewStyle().Background(lipgloss.Color("237"))
+	valueStyle := lipgloss.NewStyle().Background(lipgloss.Color("237"))
+
+	if p.headerEditMode == "key" {
+		keyStyle = keyStyle.Background(lipgloss.Color("238")).Foreground(lipgloss.Color("214"))
+	} else {
+		valueStyle = valueStyle.Background(lipgloss.Color("238")).Foreground(lipgloss.Color("214"))
+	}
+
+	// Pad to width
+	for len(keyContent) < keyWidth {
+		keyContent += " "
+	}
+	for len(valueContent) < valueWidth {
+		valueContent += " "
+	}
+
+	return fmt.Sprintf("> %s │ %s", keyStyle.Render(keyContent), valueStyle.Render(valueContent))
 }
 
 func (p *RequestPanel) renderQueryTab() []string {
@@ -680,12 +1108,62 @@ func (p *RequestPanel) renderBodyTab() []string {
 		return []string{"No body"}
 	}
 
-	body := p.request.Body()
-	if body == "" {
-		return []string{"No body defined"}
+	var lines []string
+	innerWidth := p.width - 4
+
+	if p.editingBody {
+		// Show editable body with cursor
+		for i, line := range p.bodyLines {
+			displayLine := line
+			if i == p.bodyCursorLine {
+				// Insert cursor at position
+				if p.bodyCursorCol >= len(displayLine) {
+					displayLine += "▌"
+				} else {
+					displayLine = displayLine[:p.bodyCursorCol] + "▌" + displayLine[p.bodyCursorCol:]
+				}
+			}
+			// Truncate if too long
+			if len(displayLine) > innerWidth {
+				displayLine = displayLine[:innerWidth-1] + "…"
+			}
+			// Highlight current line
+			if i == p.bodyCursorLine {
+				lineStyle := lipgloss.NewStyle().Background(lipgloss.Color("238"))
+				displayLine = lineStyle.Render(displayLine)
+			}
+			lines = append(lines, displayLine)
+		}
+
+		// Add hints
+		lines = append(lines, "")
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+		lines = append(lines, hintStyle.Render("  Esc: save and exit │ ↑↓←→: navigate │ Enter: new line"))
+	} else {
+		body := p.request.Body()
+		if body == "" {
+			lines = []string{""}
+			hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+			lines = append(lines, hintStyle.Render("  No body defined. Press 'e' to edit."))
+		} else {
+			bodyLines := strings.Split(body, "\n")
+			for _, line := range bodyLines {
+				if len(line) > innerWidth {
+					line = line[:innerWidth-1] + "…"
+				}
+				lines = append(lines, line)
+			}
+		}
+
+		// Add hint when focused
+		if p.focused {
+			lines = append(lines, "")
+			hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+			lines = append(lines, hintStyle.Render("  Press 'e' to edit body"))
+		}
 	}
 
-	return strings.Split(body, "\n")
+	return lines
 }
 
 func (p *RequestPanel) renderAuthTab() []string {
@@ -760,6 +1238,11 @@ func (p *RequestPanel) Focus() {
 // Blur removes focus.
 func (p *RequestPanel) Blur() {
 	p.focused = false
+}
+
+// IsEditing returns true if the panel is in any editing mode.
+func (p *RequestPanel) IsEditing() bool {
+	return p.editingURL || p.editingMethod || p.editingHeader || p.editingBody
 }
 
 // SetSize sets dimensions.
