@@ -1718,11 +1718,15 @@ func (p *RequestPanel) renderHeadersTab() []string {
 		lines = append(lines, hintStyle.Render("  Press 'a' to add a header"))
 	}
 
-	// Editing hints
+	// Editing hints with active field indicator
 	if p.editingHeader {
 		lines = append(lines, "")
 		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-		lines = append(lines, hintStyle.Render("  Tab: switch field │ Enter/Esc: save & exit"))
+		activeField := "Key"
+		if p.headerEditMode == "value" {
+			activeField = "Value"
+		}
+		lines = append(lines, hintStyle.Render(fmt.Sprintf("  Editing: %s │ Tab: switch │ Enter/Esc: save", activeField)))
 	} else if p.focused {
 		lines = append(lines, "")
 		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
@@ -1808,10 +1812,14 @@ func (p *RequestPanel) renderQueryTab() []string {
 				lines = append(lines, fmt.Sprintf("%s%s: %s", prefix, key, value))
 			}
 		}
-		// Add hints
+		// Add hints with active field indicator
 		lines = append(lines, "")
 		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-		lines = append(lines, hintStyle.Render("  Tab: key/value │ Enter/Esc: save & exit"))
+		activeField := "Key"
+		if p.queryEditMode == "value" {
+			activeField = "Value"
+		}
+		lines = append(lines, hintStyle.Render(fmt.Sprintf("  Editing: %s │ Tab: switch │ Enter/Esc: save", activeField)))
 	} else {
 		if len(p.queryKeys) == 0 {
 			lines = []string{"  No query parameters defined"}
@@ -1921,11 +1929,11 @@ func (p *RequestPanel) renderBodyTab() []string {
 			}
 		}
 
-		// Add hint when focused
+		// Add hint when focused (shows exit behavior before entering edit mode)
 		if p.focused {
 			lines = append(lines, "")
 			hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-			lines = append(lines, hintStyle.Render("  Press 'e' to edit body"))
+			lines = append(lines, hintStyle.Render("  Press 'e' to edit (Esc saves and exits)"))
 		}
 	}
 
