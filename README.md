@@ -14,6 +14,54 @@ A vim-modal TUI API client for developers and AI agents.
 
 ## Installation
 
+### Homebrew (macOS/Linux)
+
+```bash
+brew install artpar/tap/currier
+```
+
+### Go Install
+
+```bash
+go install github.com/artpar/currier/cmd/currier@latest
+```
+
+### Linux (Debian/Ubuntu)
+
+```bash
+# Download the .deb package
+curl -LO https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_linux_amd64.deb
+sudo dpkg -i currier_0.1.2_linux_amd64.deb
+```
+
+### Linux (RHEL/Fedora)
+
+```bash
+# Download the .rpm package
+curl -LO https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_linux_amd64.rpm
+sudo rpm -i currier_0.1.2_linux_amd64.rpm
+```
+
+### Linux (Alpine)
+
+```bash
+# Download the .apk package
+curl -LO https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_linux_amd64.apk
+sudo apk add --allow-untrusted currier_0.1.2_linux_amd64.apk
+```
+
+### Linux (Arch)
+
+```bash
+# Download the .pkg.tar.zst package
+curl -LO https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_linux_amd64.pkg.tar.zst
+sudo pacman -U currier_0.1.2_linux_amd64.pkg.tar.zst
+```
+
+### Windows
+
+Download the appropriate zip file from the [Releases](https://github.com/artpar/currier/releases) page and extract to your PATH.
+
 ### From Source
 
 ```bash
@@ -22,9 +70,9 @@ cd currier
 make build
 ```
 
-### Pre-built Binaries
+### Direct Binary Download
 
-Download from the [Releases](https://github.com/artpar/currier/releases) page.
+Download pre-built binaries for your platform from the [Releases](https://github.com/artpar/currier/releases) page.
 
 ## Usage
 
