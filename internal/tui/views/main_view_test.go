@@ -548,4 +548,46 @@ func TestMainView_NumberKeyFocus(t *testing.T) {
 
 		assert.Equal(t, PaneCollections, view.FocusedPane())
 	})
+
+	t.Run("2 focuses request pane", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+	})
+
+	t.Run("3 focuses response pane", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneResponse, view.FocusedPane())
+	})
+}
+
+
+func TestMainView_StatusBarEdgeCases(t *testing.T) {
+	t.Run("handles narrow width", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(40, 20) // Very narrow
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("shows help hint", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		output := view.View()
+		assert.Contains(t, output, "help")
+		assert.Contains(t, output, "quit")
+	})
 }
