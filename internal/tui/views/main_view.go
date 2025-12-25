@@ -469,6 +469,18 @@ func (v *MainView) renderStatusBar() string {
 		items = append(items, modeStyle.Render("NORMAL"))
 	}
 
+	// Show pending 'g' indicator for gg sequence
+	gPending := (v.focusedPane == PaneCollections && v.tree.GPressed()) ||
+		(v.focusedPane == PaneResponse && v.response.GPressed())
+	if gPending {
+		pendingStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color("214")).
+			Foreground(lipgloss.Color("0")).
+			Bold(true).
+			Padding(0, 1)
+		items = append(items, pendingStyle.Render("g-"))
+	}
+
 	// Focused pane indicator
 	paneStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("252")).

@@ -58,6 +58,7 @@ type ResponsePanel struct {
 	loading         bool
 	err             error
 	consoleMessages []ConsoleMessage
+	gPressed        bool // For gg sequence
 }
 
 // NewResponsePanel creates a new response panel.
@@ -118,6 +119,7 @@ func (p *ResponsePanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		if p.scrollOffset < 0 {
 			p.scrollOffset = 0
 		}
+		p.gPressed = false
 		return p, nil
 
 	case tea.KeyPgDown, tea.KeyCtrlD:
@@ -127,6 +129,7 @@ func (p *ResponsePanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		if p.scrollOffset > maxOffset {
 			p.scrollOffset = maxOffset
 		}
+		p.gPressed = false
 		return p, nil
 
 	case tea.KeyRunes:
@@ -162,9 +165,18 @@ func (p *ResponsePanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		case "G":
 			// Go to bottom
 			p.scrollOffset = p.maxScrollOffset()
+			p.gPressed = false
 		case "g":
-			// Go to top (gg sequence would need state tracking)
-			p.scrollOffset = 0
+			if p.gPressed {
+				// gg - go to top
+				p.scrollOffset = 0
+				p.gPressed = false
+			} else {
+				p.gPressed = true
+			}
+			return p, nil
+		default:
+			p.gPressed = false
 		}
 	}
 
@@ -851,4 +863,9 @@ func (p *ResponsePanel) ErrorString() string {
 		return ""
 	}
 	return p.err.Error()
+}
+
+// GPressed returns true if waiting for second 'g' in gg sequence.
+func (p *ResponsePanel) GPressed() bool {
+	return p.gPressed
 }

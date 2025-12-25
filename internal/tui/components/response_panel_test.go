@@ -385,16 +385,22 @@ func TestResponsePanel_GoToBottom(t *testing.T) {
 		assert.GreaterOrEqual(t, panel.ScrollOffset(), 0)
 	})
 
-	t.Run("g goes to top", func(t *testing.T) {
+	t.Run("gg goes to top", func(t *testing.T) {
 		panel := newTestResponsePanel(t)
 		panel.Focus()
 		panel.SetScrollOffset(10)
 
+		// Press 'g' twice for gg sequence
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
 		updated, _ := panel.Update(msg)
 		panel = updated.(*ResponsePanel)
+		assert.True(t, panel.GPressed()) // First g sets gPressed
+
+		updated, _ = panel.Update(msg)
+		panel = updated.(*ResponsePanel)
 
 		assert.Equal(t, 0, panel.ScrollOffset())
+		assert.False(t, panel.GPressed()) // Second g completes sequence
 	})
 }
 

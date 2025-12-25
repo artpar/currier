@@ -1239,3 +1239,8 @@ func (c *CollectionTree) SearchQuery() string {
 func (c *CollectionTree) HistoryEntries() []history.Entry {
 	return c.historyEntries
 }
+
+// GPressed returns true if waiting for second 'g' in gg sequence.
+func (c *CollectionTree) GPressed() bool {
+	return c.gPressed
+}
