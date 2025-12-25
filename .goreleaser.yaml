@@ -1,0 +1,228 @@
+version: 2
+project_name: currier
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: currier
+    main: ./cmd/currier
+    binary: currier
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -extldflags "-static"
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+      - openbsd
+      - netbsd
+    goarch:
+      - amd64
+      - arm64
+      - arm
+      - 386
+    goarm:
+      - 6
+      - 7
+    ignore:
+      - goos: darwin
+        goarch: 386
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+      - goos: freebsd
+        goarch: arm64
+      - goos: openbsd
+        goarch: arm
+      - goos: netbsd
+        goarch: arm
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    files:
+      - LICENSE*
+      - README*
+
+nfpms:
+  - id: packages
+    package_name: currier
+    vendor: artpar
+    homepage: https://github.com/artpar/currier
+    maintainer: artpar <artpar@gmail.com>
+    description: Vim-modal TUI API client for developers and AI agents
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+      - archlinux
+    bindir: /usr/bin
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/licenses/currier/LICENSE
+        file_info:
+          mode: 0644
+    deb:
+      lintian_overrides:
+        - statically-linked-binary
+    rpm:
+      group: Development/Tools
+
+# Snap packages (optional - requires SNAPCRAFT_STORE_CREDENTIALS secret)
+# snapcrafts:
+#   - id: snap
+#     name: currier
+#     publish: true
+#     summary: Vim-modal TUI API client
+#     description: |
+#       Currier is a vim-modal TUI API client for developers and AI agents.
+#       Features include vim-style navigation, multi-protocol support,
+#       collection management, and environment variables.
+#     grade: stable
+#     confinement: strict
+#     license: MIT
+#     base: core22
+#     apps:
+#       currier:
+#         command: currier
+#         plugs:
+#           - network
+#           - home
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+# GPG signing (optional - requires GPG_FINGERPRINT and GPG_PASSWORD secrets)
+# signs:
+#   - artifacts: checksum
+#     args:
+#       - "--batch"
+#       - "--local-user"
+#       - "{{ .Env.GPG_FINGERPRINT }}"
+#       - "--output"
+#       - "${signature}"
+#       - "--detach-sign"
+#       - "${artifact}"
+#     stdin: "{{ .Env.GPG_PASSWORD }}"
+
+sboms:
+  - artifacts: archive
+
+changelog:
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: artpar
+    name: currier
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  footer: |
+    ## Installation
+
+    ### Homebrew (macOS/Linux)
+    ```bash
+    brew install artpar/tap/currier
+    ```
+
+    ### Go install
+    ```bash
+    go install github.com/artpar/currier/cmd/currier@{{.Tag}}
+    ```
+
+    ### Download binary
+    Download the appropriate archive for your platform from the assets below.
+
+# Homebrew (optional - requires HOMEBREW_TAP_TOKEN and homebrew-tap repo)
+# brews:
+#   - repository:
+#       owner: artpar
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+#     homepage: https://github.com/artpar/currier
+#     description: "Vim-modal TUI API client for developers and AI agents"
+#     license: "MIT"
+#     install: |
+#       bin.install "currier"
+#     test: |
+#       system "#{bin}/currier", "--version"
+
+# Scoop (optional - requires SCOOP_BUCKET_TOKEN and scoop-bucket repo)
+# scoops:
+#   - repository:
+#       owner: artpar
+#       name: scoop-bucket
+#       token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+#     homepage: https://github.com/artpar/currier
+#     description: "Vim-modal TUI API client for developers and AI agents"
+#     license: MIT
+
+# AUR (optional - requires AUR_KEY secret and AUR account)
+# aurs:
+#   - name: currier-bin
+#     homepage: https://github.com/artpar/currier
+#     description: "Vim-modal TUI API client for developers and AI agents"
+#     maintainers:
+#       - 'artpar <artpar@gmail.com>'
+#     license: MIT
+#     private_key: '{{ .Env.AUR_KEY }}'
+#     git_url: 'ssh://aur@aur.archlinux.org/currier-bin.git'
+#     package: |-
+#       install -Dm755 "./currier" "${pkgdir}/usr/bin/currier"
+#       install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/currier/LICENSE"
+
+# Docker images (optional - requires DOCKERHUB credentials)
+# dockers:
+#   - image_templates:
+#       - "artpar/currier:{{ .Tag }}"
+#       - "artpar/currier:v{{ .Major }}"
+#       - "artpar/currier:v{{ .Major }}.{{ .Minor }}"
+#       - "artpar/currier:latest"
+#       - "ghcr.io/artpar/currier:{{ .Tag }}"
+#       - "ghcr.io/artpar/currier:latest"
+#     dockerfile: Dockerfile.goreleaser
+#     build_flag_templates:
+#       - "--pull"
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.title={{.ProjectName}}"
+#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}"
+#       - "--platform=linux/amd64"
+
+announce:
+  skip: true

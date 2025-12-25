@@ -7,7 +7,11 @@ import (
 	"github.com/artpar/currier/internal/cli"
 )
 
-var version = "dev"
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
 
 func main() {
 	cmd := cli.NewRootCommand(version)
