@@ -27,8 +27,8 @@ Examples:
 				return fmt.Errorf("no curl arguments provided")
 			}
 
-			// Reconstruct curl command from args
-			curlCmd := "curl " + strings.Join(args, " ")
+			// Reconstruct curl command from args, properly quoting args that need it
+			curlCmd := "curl " + quoteArgs(args)
 
 			// Parse using existing importer
 			curlImporter := importer.NewCurlImporter()
@@ -42,4 +42,21 @@ Examples:
 		},
 	}
 	return cmd
+}
+
+// quoteArgs properly quotes arguments that contain spaces, quotes, or other special chars
+func quoteArgs(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		// Check if arg needs quoting (contains space, quotes, or shell special chars)
+		needsQuotes := strings.ContainsAny(arg, " \t\n\"'\\{}[]<>|&;$`")
+		if needsQuotes {
+			// Escape any existing double quotes and wrap in double quotes
+			escaped := strings.ReplaceAll(arg, `"`, `\"`)
+			quoted[i] = `"` + escaped + `"`
+		} else {
+			quoted[i] = arg
+		}
+	}
+	return strings.Join(quoted, " ")
 }

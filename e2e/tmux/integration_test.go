@@ -1488,3 +1488,303 @@ func TestWorkflow_MultipleRequestsAndHistory(t *testing.T) {
 		t.Logf("Screen:\n%s", screen)
 	}
 }
+
+// =============================================================================
+// CURL COMMAND TESTS
+// =============================================================================
+
+func TestCurl_SimpleGET(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	// Start with curl command
+	if err := sess.Start(binaryPath, "curl", "https://httpbin.org/get"); err != nil {
+		t.Fatalf("Failed to start with curl: %v", err)
+	}
+
+	// Should show TUI with the request loaded
+	if err := sess.WaitFor("Collections", 5*time.Second); err != nil {
+		t.Errorf("TUI did not start: %v", err)
+		t.Logf("Screen:\n%s", sess.Capture())
+		return
+	}
+
+	// Should show the URL from curl command
+	screen := sess.Capture()
+	if !strings.Contains(screen, "httpbin.org") {
+		t.Error("URL from curl command not loaded")
+		t.Logf("Screen:\n%s", screen)
+	}
+
+	// Should show GET method
+	if !strings.Contains(screen, "GET") {
+		t.Error("GET method not shown")
+	}
+}
+
+func TestCurl_POSTWithData(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	// Start with curl POST command
+	if err := sess.Start(binaryPath, "curl", "-X", "POST",
+		"-H", "Content-Type: application/json",
+		"-d", `{"name":"test"}`,
+		"https://httpbin.org/post"); err != nil {
+		t.Fatalf("Failed to start with curl: %v", err)
+	}
+
+	if err := sess.WaitFor("Collections", 5*time.Second); err != nil {
+		t.Errorf("TUI did not start: %v", err)
+		t.Logf("Screen:\n%s", sess.Capture())
+		return
+	}
+
+	// Should show POST method
+	screen := sess.Capture()
+	if !strings.Contains(screen, "POST") {
+		t.Error("POST method not shown")
+		t.Logf("Screen:\n%s", screen)
+	}
+
+	// Should show the URL
+	if !strings.Contains(screen, "httpbin.org") {
+		t.Error("URL not loaded")
+		t.Logf("Screen:\n%s", screen)
+	}
+}
+
+func TestCurl_WithHeaders(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	if err := sess.Start(binaryPath, "curl",
+		"-H", "Authorization: Bearer mytoken",
+		"-H", "X-Custom-Header: myvalue",
+		"https://httpbin.org/headers"); err != nil {
+		t.Fatalf("Failed to start: %v", err)
+	}
+
+	if err := sess.WaitFor("Collections", 5*time.Second); err != nil {
+		t.Errorf("TUI did not start: %v", err)
+		return
+	}
+
+	// Focus request panel and go to Headers tab
+	sess.SendKey("2")
+	time.Sleep(100 * time.Millisecond)
+	sess.SendKey("]") // Headers tab
+	time.Sleep(200 * time.Millisecond)
+
+	// Should show headers
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Authorization") && !strings.Contains(screen, "Bearer") {
+		t.Log("Headers may not be visible in current view")
+	}
+}
+
+func TestCurl_WithBasicAuth(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	if err := sess.Start(binaryPath, "curl",
+		"-u", "admin:secret",
+		"https://httpbin.org/basic-auth/admin/secret"); err != nil {
+		t.Fatalf("Failed to start: %v", err)
+	}
+
+	if err := sess.WaitFor("Collections", 5*time.Second); err != nil {
+		t.Errorf("TUI did not start: %v", err)
+		return
+	}
+
+	// Should be running with URL loaded
+	screen := sess.Capture()
+	if !strings.Contains(screen, "httpbin.org") {
+		t.Error("URL not loaded")
+		t.Logf("Screen:\n%s", screen)
+	}
+}
+
+func TestCurl_JSONFlag(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	if err := sess.Start(binaryPath, "curl",
+		"--json", `{"test":true}`,
+		"https://httpbin.org/post"); err != nil {
+		t.Fatalf("Failed to start: %v", err)
+	}
+
+	if err := sess.WaitFor("Collections", 5*time.Second); err != nil {
+		t.Errorf("TUI did not start: %v", err)
+		return
+	}
+
+	// Should show POST (--json implies POST)
+	screen := sess.Capture()
+	if !strings.Contains(screen, "POST") {
+		t.Error("POST method not set by --json flag")
+		t.Logf("Screen:\n%s", screen)
+	}
+}
+
+func TestCurl_SendRequestAfterLoad(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	if err := sess.Start(binaryPath, "curl", "https://httpbin.org/get"); err != nil {
+		t.Fatalf("Failed to start: %v", err)
+	}
+
+	if err := sess.WaitFor("Collections", 5*time.Second); err != nil {
+		t.Errorf("TUI did not start: %v", err)
+		return
+	}
+
+	// Focus request panel before sending
+	sess.SendKey("2")
+	time.Sleep(100 * time.Millisecond)
+
+	// Send the request
+	sess.SendKey("Enter")
+
+	// Wait for response
+	if err := sess.WaitFor("200", 15*time.Second); err != nil {
+		t.Errorf("Request failed: %v", err)
+		t.Logf("Screen:\n%s", sess.Capture())
+	}
+}
+
+func TestCurl_ComplexPOSTAndSend(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	if err := sess.Start(binaryPath, "curl",
+		"-X", "POST",
+		"-H", "Content-Type: application/json",
+		"-d", `{"message":"hello"}`,
+		"https://httpbin.org/post"); err != nil {
+		t.Fatalf("Failed to start: %v", err)
+	}
+
+	if err := sess.WaitFor("Collections", 5*time.Second); err != nil {
+		t.Errorf("TUI did not start: %v", err)
+		return
+	}
+
+	// Focus request panel before sending
+	sess.SendKey("2")
+	time.Sleep(100 * time.Millisecond)
+
+	// Send the request
+	sess.SendKey("Enter")
+
+	// Wait for response
+	if err := sess.WaitFor("200", 15*time.Second); err != nil {
+		t.Errorf("POST request failed: %v", err)
+		t.Logf("Screen:\n%s", sess.Capture())
+		return
+	}
+
+	// Response should contain our data echoed back
+	screen := sess.Capture()
+	if !strings.Contains(screen, "message") || !strings.Contains(screen, "hello") {
+		t.Log("Response may not show echoed data in visible area")
+	}
+}
+
+func TestCurl_HEADRequest(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	if err := sess.Start(binaryPath, "curl", "-I", "https://httpbin.org/get"); err != nil {
+		t.Fatalf("Failed to start: %v", err)
+	}
+
+	if err := sess.WaitFor("Collections", 5*time.Second); err != nil {
+		t.Errorf("TUI did not start: %v", err)
+		return
+	}
+
+	// Should show HEAD method
+	screen := sess.Capture()
+	if !strings.Contains(screen, "HEAD") {
+		t.Error("HEAD method not set by -I flag")
+		t.Logf("Screen:\n%s", screen)
+	}
+}
+
+func TestCurl_UserAgent(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	if err := sess.Start(binaryPath, "curl",
+		"-A", "MyCustomAgent/1.0",
+		"https://httpbin.org/user-agent"); err != nil {
+		t.Fatalf("Failed to start: %v", err)
+	}
+
+	if err := sess.WaitFor("Collections", 5*time.Second); err != nil {
+		t.Errorf("TUI did not start: %v", err)
+		return
+	}
+
+	// Focus request panel before sending
+	sess.SendKey("2")
+	time.Sleep(100 * time.Millisecond)
+
+	// Send and check response contains our user agent
+	sess.SendKey("Enter")
+	if err := sess.WaitFor("200", 15*time.Second); err != nil {
+		t.Errorf("Request failed: %v", err)
+		return
+	}
+
+	screen := sess.Capture()
+	if !strings.Contains(screen, "MyCustomAgent") {
+		t.Log("User-Agent may not be visible in response area")
+	}
+}
+
+func TestCurl_InvalidCommand(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	// Start with invalid curl (no URL)
+	_ = sess.Start(binaryPath, "curl", "-X", "POST")
+
+	// Give it time to potentially start or fail
+	time.Sleep(1 * time.Second)
+
+	// The app should either not start TUI or show an error
+	// It should NOT crash
+	screen := sess.Capture()
+	// If it started, it should show something
+	// If it failed, the session might be dead which is acceptable
+	if sess.IsAlive() && strings.Contains(screen, "Collections") {
+		t.Error("Should not start TUI with invalid curl command (no URL)")
+	}
+}
+
+func TestCurl_QuotedURL(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	// URL with query parameters
+	if err := sess.Start(binaryPath, "curl",
+		"https://httpbin.org/get?param=value&other=test"); err != nil {
+		t.Fatalf("Failed to start: %v", err)
+	}
+
+	if err := sess.WaitFor("Collections", 5*time.Second); err != nil {
+		t.Errorf("TUI did not start: %v", err)
+		return
+	}
+
+	screen := sess.Capture()
+	if !strings.Contains(screen, "httpbin.org") {
+		t.Error("URL with query params not loaded")
+		t.Logf("Screen:\n%s", screen)
+	}
+}

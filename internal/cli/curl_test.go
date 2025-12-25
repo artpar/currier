@@ -194,3 +194,84 @@ func TestCurlParsing(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestQuoteArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		expected string
+	}{
+		{
+			name:     "simple args no quoting needed",
+			args:     []string{"-X", "POST", "https://example.com"},
+			expected: `-X POST https://example.com`,
+		},
+		{
+			name:     "header with colon and space needs quoting",
+			args:     []string{"-H", "Content-Type: application/json", "https://example.com"},
+			expected: `-H "Content-Type: application/json" https://example.com`,
+		},
+		{
+			name:     "json data with braces needs quoting",
+			args:     []string{"-d", `{"name":"test"}`, "https://example.com"},
+			expected: `-d "{\"name\":\"test\"}" https://example.com`,
+		},
+		{
+			name:     "multiple headers",
+			args:     []string{"-H", "Authorization: Bearer token", "-H", "Content-Type: application/json", "https://example.com"},
+			expected: `-H "Authorization: Bearer token" -H "Content-Type: application/json" https://example.com`,
+		},
+		{
+			name:     "URL with query params",
+			args:     []string{"https://example.com/api?foo=bar&baz=qux"},
+			expected: `"https://example.com/api?foo=bar&baz=qux"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := quoteArgs(tt.args)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestCurlCommand_QuotedArgsParseCorrectly(t *testing.T) {
+	curlImporter := importer.NewCurlImporter()
+
+	// Simulate what happens when CLI receives args from shell
+	// The shell has already parsed: currier curl -H "Content-Type: application/json" https://example.com
+	// Into args: ["-H", "Content-Type: application/json", "https://example.com"]
+	args := []string{"-H", "Content-Type: application/json", "https://example.com/api"}
+
+	// Reconstruct with quoting
+	curlCmd := "curl " + quoteArgs(args)
+
+	// This should parse correctly now
+	collection, err := curlImporter.Import(context.Background(), []byte(curlCmd))
+	require.NoError(t, err)
+
+	requests := collection.Requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "https://example.com/api", requests[0].URL())
+	assert.Equal(t, "application/json", requests[0].Headers()["Content-Type"])
+}
+
+func TestCurlCommand_ComplexArgsParseCorrectly(t *testing.T) {
+	curlImporter := importer.NewCurlImporter()
+
+	// Simulate: currier curl -X POST -H "Content-Type: application/json" -d '{"name":"test"}' https://httpbin.org/post
+	args := []string{"-X", "POST", "-H", "Content-Type: application/json", "-d", `{"name":"test"}`, "https://httpbin.org/post"}
+
+	curlCmd := "curl " + quoteArgs(args)
+
+	collection, err := curlImporter.Import(context.Background(), []byte(curlCmd))
+	require.NoError(t, err)
+
+	requests := collection.Requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "POST", requests[0].Method())
+	assert.Equal(t, "https://httpbin.org/post", requests[0].URL())
+	assert.Equal(t, "application/json", requests[0].Headers()["Content-Type"])
+	assert.Equal(t, `{"name":"test"}`, requests[0].Body())
+}

@@ -46,7 +46,7 @@ func (s *Session) Start(binary string, args ...string) error {
 	// Build the command to run inside tmux
 	cmd := binary
 	if len(args) > 0 {
-		cmd = binary + " " + strings.Join(args, " ")
+		cmd = binary + " " + shellQuoteArgs(args)
 	}
 
 	// Create new detached session with specific size
@@ -181,4 +181,21 @@ func mapKey(key string) string {
 	default:
 		return key
 	}
+}
+
+// shellQuoteArgs quotes arguments for shell execution.
+// Args containing spaces, quotes, or special characters are wrapped in single quotes.
+func shellQuoteArgs(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		// Use single quotes for shell safety, escape existing single quotes
+		if strings.ContainsAny(arg, " \t\n\"'\\{}[]<>|&;$`()") {
+			// Replace single quotes with '\'' (end quote, escaped quote, start quote)
+			escaped := strings.ReplaceAll(arg, "'", `'\''`)
+			quoted[i] = "'" + escaped + "'"
+		} else {
+			quoted[i] = arg
+		}
+	}
+	return strings.Join(quoted, " ")
 }
