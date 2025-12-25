@@ -1,13 +1,24 @@
 package components
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
+	"github.com/artpar/currier/internal/history"
 	"github.com/artpar/currier/internal/tui"
+)
+
+// ViewMode represents what the collection tree is displaying.
+type ViewMode int
+
+const (
+	ViewCollections ViewMode = iota
+	ViewHistory
 )
 
 // TreeItem represents an item in the collection tree.
@@ -38,6 +49,11 @@ type SelectionMsg struct {
 	Request *core.RequestDefinition
 }
 
+// SelectHistoryItemMsg is sent when a history item is selected.
+type SelectHistoryItemMsg struct {
+	Entry history.Entry
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -53,6 +69,16 @@ type CollectionTree struct {
 	search        string
 	searching     bool // True when in search mode
 	gPressed      bool // For gg sequence
+
+	// View mode (Collections or History)
+	viewMode ViewMode
+
+	// History support
+	historyStore   history.Store
+	historyEntries []history.Entry
+	historyCursor  int
+	historyOffset  int
+	historySearch  string
 }
 
 // NewCollectionTree creates a new collection tree component.
@@ -105,6 +131,11 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return c.handleSearchInput(msg)
 	}
 
+	// Handle history view mode
+	if c.viewMode == ViewHistory {
+		return c.handleHistoryKeyMsg(msg)
+	}
+
 	switch msg.Type {
 	case tea.KeyEsc:
 		// Clear search filter when not in search mode
@@ -130,6 +161,11 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.expandCurrent()
 		case "h":
 			c.collapseCurrent()
+		case "H":
+			// Switch to History view
+			c.viewMode = ViewHistory
+			c.loadHistory()
+			return c, nil
 		case "G":
 			c.cursor = len(c.getDisplayItems()) - 1
 			c.gPressed = false
@@ -153,7 +189,144 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	return c, nil
 }
 
+func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Clear search filter
+		if c.historySearch != "" {
+			c.historySearch = ""
+			c.loadHistory()
+		}
+		return c, nil
+
+	case tea.KeyRunes:
+		switch string(msg.Runes) {
+		case "/":
+			c.searching = true
+			c.historySearch = ""
+			return c, nil
+		case "j":
+			c.moveHistoryCursor(1)
+		case "k":
+			c.moveHistoryCursor(-1)
+		case "C":
+			// Switch back to Collections view
+			c.viewMode = ViewCollections
+			return c, nil
+		case "G":
+			if len(c.historyEntries) > 0 {
+				c.historyCursor = len(c.historyEntries) - 1
+			}
+			c.gPressed = false
+		case "g":
+			if c.gPressed {
+				c.historyCursor = 0
+				c.historyOffset = 0
+				c.gPressed = false
+			} else {
+				c.gPressed = true
+			}
+			return c, nil
+		case "r":
+			// Refresh history
+			c.loadHistory()
+			return c, nil
+		default:
+			c.gPressed = false
+		}
+
+	case tea.KeyEnter:
+		return c.handleHistoryEnter()
+	}
+
+	c.gPressed = false
+	return c, nil
+}
+
+func (c *CollectionTree) moveHistoryCursor(delta int) {
+	c.historyCursor += delta
+	if c.historyCursor < 0 {
+		c.historyCursor = 0
+	}
+	if c.historyCursor >= len(c.historyEntries) {
+		c.historyCursor = len(c.historyEntries) - 1
+	}
+	if c.historyCursor < 0 {
+		c.historyCursor = 0
+	}
+
+	// Adjust scroll offset
+	visibleHeight := c.contentHeight()
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+
+	if c.historyCursor < c.historyOffset {
+		c.historyOffset = c.historyCursor
+	}
+	if c.historyCursor >= c.historyOffset+visibleHeight {
+		c.historyOffset = c.historyCursor - visibleHeight + 1
+	}
+}
+
+func (c *CollectionTree) handleHistoryEnter() (tui.Component, tea.Cmd) {
+	if c.historyCursor < 0 || c.historyCursor >= len(c.historyEntries) {
+		return c, nil
+	}
+
+	entry := c.historyEntries[c.historyCursor]
+	return c, func() tea.Msg {
+		return SelectHistoryItemMsg{Entry: entry}
+	}
+}
+
+func (c *CollectionTree) loadHistory() {
+	if c.historyStore == nil {
+		c.historyEntries = nil
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	opts := history.QueryOptions{
+		Limit:     100, // Load last 100 entries
+		SortBy:    "timestamp",
+		SortOrder: "DESC",
+	}
+
+	if c.historySearch != "" {
+		entries, err := c.historyStore.Search(ctx, c.historySearch, opts)
+		if err == nil {
+			c.historyEntries = entries
+		}
+	} else {
+		entries, err := c.historyStore.List(ctx, opts)
+		if err == nil {
+			c.historyEntries = entries
+		}
+	}
+
+	c.historyCursor = 0
+	c.historyOffset = 0
+}
+
 func (c *CollectionTree) handleSearchInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	// Determine which search string to modify based on view mode
+	getSearch := func() string {
+		if c.viewMode == ViewHistory {
+			return c.historySearch
+		}
+		return c.search
+	}
+	setSearch := func(s string) {
+		if c.viewMode == ViewHistory {
+			c.historySearch = s
+		} else {
+			c.search = s
+		}
+	}
+
 	switch msg.Type {
 	case tea.KeyEsc:
 		// Exit search mode but keep filter
@@ -161,26 +334,52 @@ func (c *CollectionTree) handleSearchInput(msg tea.KeyMsg) (tui.Component, tea.C
 		return c, nil
 
 	case tea.KeyEnter:
-		// Exit search mode and keep filter
+		// Exit search mode and apply filter
 		c.searching = false
+		if c.viewMode == ViewHistory {
+			c.loadHistory()
+		}
 		return c, nil
 
 	case tea.KeyBackspace:
-		if len(c.search) > 0 {
-			c.search = c.search[:len(c.search)-1]
-			c.applyFilter()
+		s := getSearch()
+		if len(s) > 0 {
+			setSearch(s[:len(s)-1])
+			if c.viewMode == ViewHistory {
+				c.loadHistory()
+			} else {
+				c.applyFilter()
+			}
 		}
 		return c, nil
 
 	case tea.KeyCtrlU:
 		// Clear search
-		c.search = ""
-		c.applyFilter()
+		setSearch("")
+		if c.viewMode == ViewHistory {
+			c.loadHistory()
+		} else {
+			c.applyFilter()
+		}
+		return c, nil
+
+	case tea.KeySpace:
+		// Insert space character
+		setSearch(getSearch() + " ")
+		if c.viewMode == ViewHistory {
+			c.loadHistory()
+		} else {
+			c.applyFilter()
+		}
 		return c, nil
 
 	case tea.KeyRunes:
-		c.search += string(msg.Runes)
-		c.applyFilter()
+		setSearch(getSearch() + string(msg.Runes))
+		if c.viewMode == ViewHistory {
+			c.loadHistory()
+		} else {
+			c.applyFilter()
+		}
 		return c, nil
 	}
 
@@ -338,6 +537,12 @@ func (c *CollectionTree) View() string {
 		innerHeight = 1
 	}
 
+	// Determine title based on view mode
+	displayTitle := c.title
+	if c.viewMode == ViewHistory {
+		displayTitle = "History"
+	}
+
 	// Title takes 1 line
 	titleStyle := lipgloss.NewStyle().
 		Width(innerWidth).
@@ -354,41 +559,46 @@ func (c *CollectionTree) View() string {
 			Background(lipgloss.Color("238"))
 	}
 
-	title := titleStyle.Render(c.title)
+	title := titleStyle.Render(displayTitle)
 
 	// Search bar (if searching or has active filter) - takes 1 line
 	var searchBar string
 	searchLines := 0
-	if c.searching || c.search != "" {
+	searchQuery := c.search
+	if c.viewMode == ViewHistory {
+		searchQuery = c.historySearch
+	}
+	if c.searching || searchQuery != "" {
 		searchBar = c.renderSearchBar()
 		searchLines = 1
 	}
 
-	// Content height = inner height - title (1) - search bar (0 or 1)
-	contentHeight := innerHeight - 1 - searchLines
+	// Mode indicator (shows H for history, C for collections switch hint)
+	var modeIndicator string
+	if c.viewMode == ViewHistory {
+		modeIndicator = c.renderModeIndicator("C→Collections", innerWidth)
+	} else {
+		modeIndicator = c.renderModeIndicator("H→History", innerWidth)
+	}
+	modeLines := 1
+
+	// Content height = inner height - title (1) - search bar (0 or 1) - mode indicator (1)
+	contentHeight := innerHeight - 1 - searchLines - modeLines
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
 
-	displayItems := c.getDisplayItems()
-	var lines []string
-	for i := c.offset; i < len(displayItems) && len(lines) < contentHeight; i++ {
-		item := displayItems[i]
-		line := c.renderItem(item, i == c.cursor)
-		lines = append(lines, line)
+	var content string
+	if c.viewMode == ViewHistory {
+		content = c.renderHistoryContent(innerWidth, contentHeight)
+	} else {
+		content = c.renderCollectionContent(innerWidth, contentHeight)
 	}
-
-	// Pad with empty lines if needed
-	emptyLine := strings.Repeat(" ", innerWidth)
-	for len(lines) < contentHeight {
-		lines = append(lines, emptyLine)
-	}
-
-	content := strings.Join(lines, "\n")
 
 	// Combine all parts
 	var parts []string
 	parts = append(parts, title)
+	parts = append(parts, modeIndicator)
 	if searchBar != "" {
 		parts = append(parts, searchBar)
 	}
@@ -407,17 +617,176 @@ func (c *CollectionTree) View() string {
 	return borderStyle.Render(strings.Join(parts, "\n"))
 }
 
+func (c *CollectionTree) renderModeIndicator(hint string, width int) string {
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Width(width)
+	return style.Render(hint)
+}
+
+func (c *CollectionTree) renderCollectionContent(innerWidth, contentHeight int) string {
+	displayItems := c.getDisplayItems()
+	var lines []string
+	for i := c.offset; i < len(displayItems) && len(lines) < contentHeight; i++ {
+		item := displayItems[i]
+		line := c.renderItem(item, i == c.cursor)
+		lines = append(lines, line)
+	}
+
+	// Pad with empty lines if needed
+	emptyLine := strings.Repeat(" ", innerWidth)
+	for len(lines) < contentHeight {
+		lines = append(lines, emptyLine)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (c *CollectionTree) renderHistoryContent(innerWidth, contentHeight int) string {
+	var lines []string
+
+	if len(c.historyEntries) == 0 {
+		emptyMsg := "No history entries"
+		if c.historyStore == nil {
+			emptyMsg = "History not available"
+		}
+		emptyStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Width(innerWidth).
+			Align(lipgloss.Center)
+		lines = append(lines, emptyStyle.Render(emptyMsg))
+	} else {
+		for i := c.historyOffset; i < len(c.historyEntries) && len(lines) < contentHeight; i++ {
+			entry := c.historyEntries[i]
+			line := c.renderHistoryItem(entry, i == c.historyCursor, innerWidth)
+			lines = append(lines, line)
+		}
+	}
+
+	// Pad with empty lines if needed
+	emptyLine := strings.Repeat(" ", innerWidth)
+	for len(lines) < contentHeight {
+		lines = append(lines, emptyLine)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (c *CollectionTree) renderHistoryItem(entry history.Entry, selected bool, width int) string {
+	// Format: [METHOD] URL - status - time ago
+	methodBadge := c.methodBadge(entry.RequestMethod)
+
+	// Truncate URL to fit
+	url := entry.RequestURL
+	// Remove protocol for display
+	url = strings.TrimPrefix(url, "https://")
+	url = strings.TrimPrefix(url, "http://")
+
+	// Status badge
+	statusStyle := lipgloss.NewStyle().Bold(true)
+	switch {
+	case entry.ResponseStatus >= 200 && entry.ResponseStatus < 300:
+		statusStyle = statusStyle.Foreground(lipgloss.Color("34")) // Green
+	case entry.ResponseStatus >= 300 && entry.ResponseStatus < 400:
+		statusStyle = statusStyle.Foreground(lipgloss.Color("214")) // Orange
+	case entry.ResponseStatus >= 400:
+		statusStyle = statusStyle.Foreground(lipgloss.Color("160")) // Red
+	}
+	statusStr := statusStyle.Render(fmt.Sprintf("%d", entry.ResponseStatus))
+
+	// Time ago
+	timeAgo := c.formatTimeAgo(entry.Timestamp)
+	timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	timeStr := timeStyle.Render(timeAgo)
+
+	// Calculate available width for URL
+	// methodBadge is ~6 chars, status ~3 chars, time ~10 chars, spaces ~5 chars
+	availableWidth := width - 25
+	if availableWidth < 10 {
+		availableWidth = 10
+	}
+	if len(url) > availableWidth {
+		url = url[:availableWidth-3] + "..."
+	}
+
+	line := fmt.Sprintf("%s %s %s %s", methodBadge, url, statusStr, timeStr)
+
+	// Pad to full width
+	if len(line) < width {
+		line += strings.Repeat(" ", width-lipgloss.Width(line))
+	}
+
+	// Apply selection styling
+	style := lipgloss.NewStyle()
+	if selected && c.focused {
+		style = style.
+			Background(lipgloss.Color("62")).
+			Foreground(lipgloss.Color("229"))
+	}
+
+	return style.Render(line)
+}
+
+func (c *CollectionTree) formatTimeAgo(t time.Time) string {
+	diff := time.Since(t)
+	switch {
+	case diff < time.Minute:
+		return "just now"
+	case diff < time.Hour:
+		mins := int(diff.Minutes())
+		return fmt.Sprintf("%dm ago", mins)
+	case diff < 24*time.Hour:
+		hours := int(diff.Hours())
+		return fmt.Sprintf("%dh ago", hours)
+	case diff < 7*24*time.Hour:
+		days := int(diff.Hours() / 24)
+		return fmt.Sprintf("%dd ago", days)
+	default:
+		return t.Format("Jan 2")
+	}
+}
+
 func (c *CollectionTree) renderSearchBar() string {
 	width := c.width - 2 // Account for borders only
 
 	// Search icon and input
 	searchIcon := "🔍 "
 	query := c.search
+	if c.viewMode == ViewHistory {
+		query = c.historySearch
+	}
 
 	// Cursor indicator when in search mode
 	cursor := ""
 	if c.searching {
 		cursor = "▌"
+	}
+
+	// Calculate result count for feedback
+	var resultCount int
+	if c.viewMode == ViewHistory {
+		resultCount = len(c.historyEntries)
+	} else {
+		if c.search != "" {
+			resultCount = len(c.filteredItems)
+		} else {
+			resultCount = len(c.items)
+		}
+	}
+
+	// Build result feedback string
+	var resultFeedback string
+	if query != "" && !c.searching {
+		// Show results count after search is done (not while typing)
+		if resultCount == 0 {
+			resultFeedback = " (No matches)"
+		} else {
+			resultFeedback = fmt.Sprintf(" (%d result", resultCount)
+			if resultCount != 1 {
+				resultFeedback += "s"
+			}
+			resultFeedback += ")"
+		}
 	}
 
 	// Style based on search state
@@ -434,14 +803,34 @@ func (c *CollectionTree) renderSearchBar() string {
 	// Build search bar content
 	content := searchIcon + query + cursor
 
+	// Add result feedback with different color
+	if resultFeedback != "" {
+		// Calculate available space
+		contentWidth := lipgloss.Width(content)
+		feedbackWidth := len(resultFeedback)
+
+		if contentWidth+feedbackWidth <= width {
+			// Style the feedback differently
+			var feedbackStyle lipgloss.Style
+			if resultCount == 0 {
+				feedbackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("160")) // Red for no matches
+			} else {
+				feedbackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("34")) // Green for results
+			}
+			content += feedbackStyle.Render(resultFeedback)
+		}
+	}
+
 	// Truncate if too long
-	if len(content) > width {
+	contentWidth := lipgloss.Width(content)
+	if contentWidth > width {
 		content = content[:width-3] + "..."
 	}
 
 	// Pad to full width
-	if len(content) < width {
-		content += strings.Repeat(" ", width-len(content))
+	contentWidth = lipgloss.Width(content)
+	if contentWidth < width {
+		content += strings.Repeat(" ", width-contentWidth)
 	}
 
 	return style.Render(content)
@@ -479,7 +868,15 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 	// Name
 	name := item.Name
 	availableWidth := width - len(indent) - len(indicator) - len(icon) - 2
-	if len(name) > availableWidth {
+	if availableWidth <= 0 {
+		// Not enough space for name at all
+		name = ""
+	} else if availableWidth < 4 {
+		// Not enough space for truncation with "...", just cut
+		if len(name) > availableWidth {
+			name = name[:availableWidth]
+		}
+	} else if len(name) > availableWidth {
 		name = name[:availableWidth-3] + "..."
 	}
 
@@ -595,6 +992,60 @@ func (c *CollectionTree) SetCollections(collections []*core.Collection) {
 	c.collections = collections
 	c.rebuildItems()
 	c.cursor = 0
+}
+
+// Collections returns the current collections.
+func (c *CollectionTree) Collections() []*core.Collection {
+	return c.collections
+}
+
+// AddRequest adds a new request to the specified collection (or first collection if nil).
+// Returns true if the request was added successfully.
+func (c *CollectionTree) AddRequest(req *core.RequestDefinition, collection *core.Collection) bool {
+	if req == nil {
+		return false
+	}
+
+	// Use specified collection or find a suitable one
+	var targetCollection *core.Collection
+	if collection != nil {
+		targetCollection = collection
+	} else if len(c.collections) > 0 {
+		targetCollection = c.collections[0]
+	} else {
+		// No collections exist - create a default one
+		targetCollection = core.NewCollection("Default")
+		c.collections = append(c.collections, targetCollection)
+	}
+
+	// Add request to collection
+	targetCollection.AddRequest(req)
+
+	// Expand the collection so the new request is visible
+	c.expanded[targetCollection.ID()] = true
+
+	// Rebuild tree to show the new request
+	c.rebuildItems()
+
+	// Find and select the new request
+	for i, item := range c.items {
+		if item.Type == ItemRequest && item.Request != nil && item.Request.ID() == req.ID() {
+			c.cursor = i
+			break
+		}
+	}
+
+	return true
+}
+
+// SetHistoryStore sets the history store for browsing request history.
+func (c *CollectionTree) SetHistoryStore(store history.Store) {
+	c.historyStore = store
+}
+
+// ViewMode returns the current view mode.
+func (c *CollectionTree) ViewMode() ViewMode {
+	return c.viewMode
 }
 
 // ItemCount returns the total number of items.
@@ -759,4 +1210,24 @@ func (c *CollectionTree) addFolderItems(folder *core.Folder, level int) {
 			})
 		}
 	}
+}
+
+// --- State accessors for E2E testing ---
+
+// ViewModeName returns the view mode as a string.
+func (c *CollectionTree) ViewModeName() string {
+	if c.viewMode == ViewHistory {
+		return "history"
+	}
+	return "collections"
+}
+
+// SearchQuery returns the current search query.
+func (c *CollectionTree) SearchQuery() string {
+	return c.search
+}
+
+// HistoryEntries returns the current history entries.
+func (c *CollectionTree) HistoryEntries() []history.Entry {
+	return c.historyEntries
 }

@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-integration test-e2e e2e e2e-cli e2e-tui e2e-update coverage clean
+.PHONY: build test test-unit test-integration test-e2e e2e e2e-cli e2e-tui e2e-tmux e2e-update coverage clean
 
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo "dev")
 LDFLAGS := -X main.version=$(VERSION)
@@ -33,6 +33,10 @@ e2e-cli:
 # Run TUI E2E tests only
 e2e-tui:
 	go test -v -timeout 5m ./e2e/tui/...
+
+# Run tmux integration tests (real binary testing)
+e2e-tmux:
+	go test -v -timeout 10m ./e2e/tmux/...
 
 # Update golden files
 e2e-update:
