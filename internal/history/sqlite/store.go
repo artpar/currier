@@ -11,7 +11,7 @@ import (
 
 	"github.com/artpar/currier/internal/history"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Store implements history.Store using SQLite.
@@ -23,7 +23,7 @@ type Store struct {
 
 // New creates a new SQLite-based history store.
 func New(dbPath string) (*Store, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -39,7 +39,7 @@ func New(dbPath string) (*Store, error) {
 
 // NewInMemory creates a new in-memory SQLite store (useful for testing).
 func NewInMemory() (*Store, error) {
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open in-memory database: %w", err)
 	}
