@@ -8,7 +8,7 @@ Set FontSize 14
 Set Width 1200
 Set Height 600
 Set Theme "Catppuccin Mocha"
-Set PlaybackSpeed 2
+Set PlaybackSpeed 1
 
 Type "currier"
 Enter
