@@ -1058,3 +1058,46 @@ func TestRequestDefinition_QueryParams(t *testing.T) {
 		assert.Equal(t, "", req.GetQueryParam("key3"))
 	})
 }
+
+func TestRequestDefinition_SetURL(t *testing.T) {
+	t.Run("parses query params from URL", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "")
+		req.SetURL("https://api.example.com/users?page=1&limit=10")
+
+		assert.Equal(t, "https://api.example.com/users", req.URL())
+		assert.Equal(t, "1", req.GetQueryParam("page"))
+		assert.Equal(t, "10", req.GetQueryParam("limit"))
+	})
+
+	t.Run("handles URL without query params", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "")
+		req.SetURL("https://api.example.com/users")
+
+		assert.Equal(t, "https://api.example.com/users", req.URL())
+		assert.Empty(t, req.QueryParams())
+	})
+
+	t.Run("handles URL with multiple values for same param", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "")
+		req.SetURL("https://api.example.com/search?tag=go&tag=rust")
+
+		assert.Equal(t, "https://api.example.com/search", req.URL())
+		// Only first value is used
+		assert.Equal(t, "go", req.GetQueryParam("tag"))
+	})
+
+	t.Run("handles invalid URL gracefully", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "")
+		req.SetURL("://invalid")
+
+		// Should store raw URL when parsing fails
+		assert.Equal(t, "://invalid", req.URL())
+	})
+
+	t.Run("handles URL with empty query string", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "")
+		req.SetURL("https://api.example.com/users?")
+
+		assert.Equal(t, "https://api.example.com/users", req.URL())
+	})
+}

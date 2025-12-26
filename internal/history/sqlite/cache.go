@@ -19,22 +19,6 @@ type CacheStore struct {
 	missCount int64
 }
 
-// NewCacheStore creates a new SQLite-based cache store.
-func NewCacheStore(dbPath string) (*CacheStore, error) {
-	store, err := New(dbPath)
-	if err != nil {
-		return nil, err
-	}
-
-	cs := &CacheStore{Store: store}
-	if err := cs.initializeCache(); err != nil {
-		store.Close()
-		return nil, fmt.Errorf("failed to initialize cache: %w", err)
-	}
-
-	return cs, nil
-}
-
 // NewInMemoryCacheStore creates a new in-memory cache store (useful for testing).
 func NewInMemoryCacheStore() (*CacheStore, error) {
 	store, err := NewInMemory()

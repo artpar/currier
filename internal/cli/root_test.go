@@ -129,3 +129,45 @@ func TestTuiModel(t *testing.T) {
 		assert.NotEmpty(t, output)
 	})
 }
+
+func TestNewRootCommand_HasCurlSubcommand(t *testing.T) {
+	cmd := NewRootCommand("1.0.0")
+	curlCmd, _, err := cmd.Find([]string{"curl"})
+	require.NoError(t, err)
+	assert.Contains(t, curlCmd.Use, "curl")
+}
+
+func TestLoadCollections_MultipleFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create two collection files
+	collection1 := filepath.Join(tmpDir, "collection1.json")
+	content1 := `{
+		"info": {
+			"name": "Collection 1",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		},
+		"item": []
+	}`
+	err := os.WriteFile(collection1, []byte(content1), 0644)
+	require.NoError(t, err)
+
+	collection2 := filepath.Join(tmpDir, "collection2.json")
+	content2 := `{
+		"info": {
+			"name": "Collection 2",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		},
+		"item": []
+	}`
+	err = os.WriteFile(collection2, []byte(content2), 0644)
+	require.NoError(t, err)
+
+	collections, err := loadCollections([]string{collection1, collection2})
+	require.NoError(t, err)
+	require.Len(t, collections, 2)
+
+	names := []string{collections[0].Name(), collections[1].Name()}
+	assert.Contains(t, names, "Collection 1")
+	assert.Contains(t, names, "Collection 2")
+}

@@ -363,6 +363,61 @@ func TestScope_SendRequest(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "function", result)
 	})
+
+	t.Run("sendRequest returns nil when no sender set", func(t *testing.T) {
+		scope := NewScope()
+
+		result, err := scope.Execute(context.Background(), `currier.sendRequest({url: "https://api.example.com"})`)
+
+		require.NoError(t, err)
+		assert.Nil(t, result)
+	})
+
+	t.Run("sendRequest calls sender with options", func(t *testing.T) {
+		scope := NewScope()
+		var capturedOptions map[string]interface{}
+		scope.SetRequestSender(func(options map[string]interface{}) (map[string]interface{}, error) {
+			capturedOptions = options
+			return map[string]interface{}{
+				"status": 200,
+				"body":   `{"result": "success"}`,
+			}, nil
+		})
+
+		_, err := scope.Execute(context.Background(), `currier.sendRequest({url: "https://api.example.com", method: "POST"})`)
+
+		require.NoError(t, err)
+		assert.NotNil(t, capturedOptions)
+		assert.Equal(t, "https://api.example.com", capturedOptions["url"])
+		assert.Equal(t, "POST", capturedOptions["method"])
+	})
+
+	t.Run("sendRequest returns sender result", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetRequestSender(func(options map[string]interface{}) (map[string]interface{}, error) {
+			return map[string]interface{}{
+				"status": 200,
+				"body":   `{"id": 123}`,
+			}, nil
+		})
+
+		result, err := scope.Execute(context.Background(), `currier.sendRequest({url: "https://api.example.com"}).status`)
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(200), result)
+	})
+
+	t.Run("sendRequest returns nil on sender error", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetRequestSender(func(options map[string]interface{}) (map[string]interface{}, error) {
+			return nil, assert.AnError
+		})
+
+		result, err := scope.Execute(context.Background(), `currier.sendRequest({url: "https://api.example.com"})`)
+
+		require.NoError(t, err)
+		assert.Nil(t, result)
+	})
 }
 
 func TestScope_CompleteFlow(t *testing.T) {

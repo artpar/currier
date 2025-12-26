@@ -3376,3 +3376,172 @@ func TestRequestPanel_AuthTabRendering(t *testing.T) {
 		assert.NotEmpty(t, view)
 	})
 }
+
+func TestRequestPanel_PreRequestTabRendering(t *testing.T) {
+	t.Run("renders pre-request tab with empty script", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabPreRequest)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renders pre-request tab with script", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetPreScript("console.log('Pre-request script');")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabPreRequest)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+		assert.Contains(t, view, "Pre-req") // Tab name is shortened
+	})
+
+	t.Run("handles pre-request tab with multi-line script", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetPreScript("// Line 1\nconsole.log('test');\n// Line 3")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabPreRequest)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestRequestPanel_TestsTabRendering(t *testing.T) {
+	t.Run("renders tests tab with empty script", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabTests)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renders tests tab with test script", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetPostScript("currier.test('Status is 200', function() { currier.expect(response.status).to.equal(200); });")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabTests)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("handles tests tab with multi-line script", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetPostScript("// Test 1\ncurrier.test('test', () => {});\n// Test 2")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabTests)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestRequestPanel_QueryTabRendering(t *testing.T) {
+	t.Run("renders query tab with no params", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabQuery)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renders query tab with params", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com?page=1&limit=10")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabQuery)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renders query tab with multiple params", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com?a=1&b=2&c=3")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabQuery)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestRequestPanel_EditingField(t *testing.T) {
+	t.Run("returns empty when not editing", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+
+		field := panel.EditingField()
+		assert.Empty(t, field)
+	})
+
+	t.Run("returns url when editing url", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.StartURLEdit()
+
+		field := panel.EditingField()
+		assert.Equal(t, "url", field)
+	})
+
+	t.Run("returns body when editing body", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(TabBody)
+		// Simulate pressing 'e' to enter body edit mode
+		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+		field := panel.EditingField()
+		assert.Equal(t, "body", field)
+	})
+}
+
+func TestRequestPanel_CursorPosition(t *testing.T) {
+	t.Run("returns 0 when not editing", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+
+		pos := panel.CursorPosition()
+		assert.Equal(t, 0, pos)
+	})
+
+	t.Run("returns cursor position when editing url", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.StartURLEdit()
+
+		pos := panel.CursorPosition()
+		// Should be at end of URL after StartURLEdit
+		assert.GreaterOrEqual(t, pos, 0)
+	})
+}

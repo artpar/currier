@@ -629,3 +629,387 @@ func TestOpenAPIImporter_Import_FormURLEncoded(t *testing.T) {
 	assert.Contains(t, req.Body(), "username=")
 	assert.Contains(t, req.Body(), "password=")
 }
+
+func TestOpenAPIImporter_Import_WithParameterRef(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"servers": [{"url": "https://api.example.com"}],
+		"paths": {
+			"/users": {
+				"get": {
+					"summary": "List users",
+					"parameters": [
+						{"$ref": "#/components/parameters/PageParam"},
+						{"$ref": "#/components/parameters/LimitParam"}
+					]
+				}
+			}
+		},
+		"components": {
+			"parameters": {
+				"PageParam": {
+					"name": "page",
+					"in": "query",
+					"schema": {"type": "integer"},
+					"example": 1
+				},
+				"LimitParam": {
+					"name": "limit",
+					"in": "query",
+					"schema": {"type": "integer"},
+					"example": 10
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	req := coll.Requests()[0]
+	assert.Contains(t, req.URL(), "page=1")
+	assert.Contains(t, req.URL(), "limit=10")
+}
+
+func TestOpenAPIImporter_Import_WithRequestBodyRef(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"paths": {
+			"/users": {
+				"post": {
+					"summary": "Create user",
+					"requestBody": {
+						"$ref": "#/components/requestBodies/UserBody"
+					}
+				}
+			}
+		},
+		"components": {
+			"requestBodies": {
+				"UserBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"name": {"type": "string"},
+									"age": {"type": "integer"}
+								}
+							},
+							"example": {"name": "Jane", "age": 25}
+						}
+					}
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	req := coll.Requests()[0]
+	assert.Contains(t, req.Body(), "Jane")
+	assert.Contains(t, req.Body(), "25")
+}
+
+func TestOpenAPIImporter_Import_SchemaTypes(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	t.Run("generates string formats", func(t *testing.T) {
+		content := []byte(`{
+			"openapi": "3.0.0",
+			"info": {"title": "Test", "version": "1.0"},
+			"paths": {
+				"/test": {
+					"post": {
+						"requestBody": {
+							"content": {
+								"application/json": {
+									"schema": {
+										"type": "object",
+										"properties": {
+											"date": {"type": "string", "format": "date"},
+											"datetime": {"type": "string", "format": "date-time"},
+											"email": {"type": "string", "format": "email"},
+											"uuid": {"type": "string", "format": "uuid"}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`)
+
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		body := coll.Requests()[0].Body()
+		assert.Contains(t, body, "2024-01-01")
+		assert.Contains(t, body, "user@example.com")
+		assert.Contains(t, body, "550e8400")
+	})
+
+	t.Run("generates primitive types", func(t *testing.T) {
+		content := []byte(`{
+			"openapi": "3.0.0",
+			"info": {"title": "Test", "version": "1.0"},
+			"paths": {
+				"/test": {
+					"post": {
+						"requestBody": {
+							"content": {
+								"application/json": {
+									"schema": {
+										"type": "object",
+										"properties": {
+											"count": {"type": "integer"},
+											"price": {"type": "number"},
+											"active": {"type": "boolean"},
+											"name": {"type": "string"}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`)
+
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		body := coll.Requests()[0].Body()
+		assert.Contains(t, body, "count")
+		assert.Contains(t, body, "price")
+		assert.Contains(t, body, "active")
+	})
+
+	t.Run("generates array types", func(t *testing.T) {
+		content := []byte(`{
+			"openapi": "3.0.0",
+			"info": {"title": "Test", "version": "1.0"},
+			"paths": {
+				"/test": {
+					"post": {
+						"requestBody": {
+							"content": {
+								"application/json": {
+									"schema": {
+										"type": "object",
+										"properties": {
+											"tags": {
+												"type": "array",
+												"items": {"type": "string"}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`)
+
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		body := coll.Requests()[0].Body()
+		assert.Contains(t, body, "tags")
+	})
+
+	t.Run("generates enum values", func(t *testing.T) {
+		content := []byte(`{
+			"openapi": "3.0.0",
+			"info": {"title": "Test", "version": "1.0"},
+			"paths": {
+				"/test": {
+					"post": {
+						"requestBody": {
+							"content": {
+								"application/json": {
+									"schema": {
+										"type": "object",
+										"properties": {
+											"status": {
+												"type": "string",
+												"enum": ["active", "inactive", "pending"]
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`)
+
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		body := coll.Requests()[0].Body()
+		assert.Contains(t, body, "active")
+	})
+
+	t.Run("uses default value", func(t *testing.T) {
+		content := []byte(`{
+			"openapi": "3.0.0",
+			"info": {"title": "Test", "version": "1.0"},
+			"paths": {
+				"/test": {
+					"get": {
+						"parameters": [
+							{
+								"name": "sort",
+								"in": "query",
+								"schema": {"type": "string", "default": "created_at"}
+							}
+						]
+					}
+				}
+			}
+		}`)
+
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		url := coll.Requests()[0].URL()
+		assert.Contains(t, url, "sort=created_at")
+	})
+}
+
+func TestOpenAPIImporter_Import_NestedObjects(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"paths": {
+			"/test": {
+				"post": {
+					"requestBody": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"user": {
+											"type": "object",
+											"properties": {
+												"profile": {
+													"type": "object",
+													"properties": {
+														"bio": {"type": "string"}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	body := coll.Requests()[0].Body()
+	assert.Contains(t, body, "user")
+	assert.Contains(t, body, "profile")
+	assert.Contains(t, body, "bio")
+}
+
+func TestOpenAPIImporter_Import_PathLevelParameters(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"servers": [{"url": "https://api.example.com"}],
+		"paths": {
+			"/users/{userId}/posts/{postId}": {
+				"parameters": [
+					{
+						"name": "userId",
+						"in": "path",
+						"required": true,
+						"schema": {"type": "integer"},
+						"example": 42
+					}
+				],
+				"get": {
+					"summary": "Get post",
+					"parameters": [
+						{
+							"name": "postId",
+							"in": "path",
+							"required": true,
+							"schema": {"type": "integer"},
+							"example": 123
+						}
+					]
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	req := coll.Requests()[0]
+	assert.Contains(t, req.URL(), "42")
+	assert.Contains(t, req.URL(), "123")
+}
+
+func TestOpenAPIImporter_Import_MultipleContentTypes(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"paths": {
+			"/upload": {
+				"post": {
+					"requestBody": {
+						"content": {
+							"multipart/form-data": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"file": {"type": "string", "format": "binary"}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	req := coll.Requests()[0]
+	assert.Equal(t, "multipart/form-data", req.GetHeader("Content-Type"))
+}

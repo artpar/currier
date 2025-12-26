@@ -478,3 +478,79 @@ func TestScope_InterpolateMap(t *testing.T) {
 		assert.Empty(t, result)
 	})
 }
+
+func TestScope_ClearLevelExtended(t *testing.T) {
+	t.Run("clears global level with variable set", func(t *testing.T) {
+		scope := NewScope()
+		scope.Global().Set("key", "value")
+		assert.Equal(t, "value", scope.Get("key"))
+
+		scope.ClearLevel(LevelGlobal)
+		assert.Empty(t, scope.Get("key"))
+	})
+
+	t.Run("clears environment level with variable set", func(t *testing.T) {
+		scope := NewScope()
+		vs := NewVariableSet()
+		vs.Set("env_key", "env_value")
+		scope.SetEnvironment(vs)
+		assert.Equal(t, "env_value", scope.Get("env_key"))
+
+		scope.ClearLevel(LevelEnvironment)
+		assert.Empty(t, scope.Get("env_key"))
+	})
+
+	t.Run("clears collection level with variable set", func(t *testing.T) {
+		scope := NewScope()
+		vs := NewVariableSet()
+		vs.Set("col_key", "col_value")
+		scope.SetCollection(vs)
+		assert.Equal(t, "col_value", scope.Get("col_key"))
+
+		scope.ClearLevel(LevelCollection)
+		assert.Empty(t, scope.Get("col_key"))
+	})
+
+	t.Run("clears request level with variable set", func(t *testing.T) {
+		scope := NewScope()
+		vs := NewVariableSet()
+		vs.Set("req_key", "req_value")
+		scope.SetRequest(vs)
+		assert.Equal(t, "req_value", scope.Get("req_key"))
+
+		scope.ClearLevel(LevelRequest)
+		assert.Empty(t, scope.Get("req_key"))
+	})
+}
+
+func TestScope_SetAtExtended(t *testing.T) {
+	t.Run("sets at global level with value", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelGlobal, "key", "global_value")
+		assert.Equal(t, "global_value", scope.Get("key"))
+	})
+
+	t.Run("sets at environment level with value", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelEnvironment, "key", "env_value")
+		assert.Equal(t, "env_value", scope.Get("key"))
+	})
+
+	t.Run("sets at collection level with value", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelCollection, "key", "col_value")
+		assert.Equal(t, "col_value", scope.Get("key"))
+	})
+
+	t.Run("sets at request level with value", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelRequest, "key", "req_value")
+		assert.Equal(t, "req_value", scope.Get("key"))
+	})
+
+	t.Run("invalid level does nothing", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(Level(99), "key", "value")
+		assert.Empty(t, scope.Get("key"))
+	})
+}
