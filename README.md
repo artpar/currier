@@ -30,49 +30,50 @@ go install github.com/artpar/currier/cmd/currier@latest
 
 ```bash
 # Apple Silicon (M1/M2/M3)
-curl -L https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_darwin_arm64.tar.gz | tar xz
+curl -L https://github.com/artpar/currier/releases/latest/download/currier_darwin_arm64.tar.gz | tar xz
 sudo mv currier /usr/local/bin/
 
 # Intel Mac
-curl -L https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_darwin_amd64.tar.gz | tar xz
+curl -L https://github.com/artpar/currier/releases/latest/download/currier_darwin_amd64.tar.gz | tar xz
 sudo mv currier /usr/local/bin/
 ```
 
 ### Linux (Debian/Ubuntu)
 
 ```bash
-# Download the .deb package
-curl -LO https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_linux_amd64.deb
-sudo dpkg -i currier_0.1.2_linux_amd64.deb
+curl -LO https://github.com/artpar/currier/releases/latest/download/currier_linux_amd64.deb
+sudo dpkg -i currier_linux_amd64.deb
 ```
 
 ### Linux (RHEL/Fedora)
 
 ```bash
-# Download the .rpm package
-curl -LO https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_linux_amd64.rpm
-sudo rpm -i currier_0.1.2_linux_amd64.rpm
+curl -LO https://github.com/artpar/currier/releases/latest/download/currier_linux_amd64.rpm
+sudo rpm -i currier_linux_amd64.rpm
 ```
 
 ### Linux (Alpine)
 
 ```bash
-# Download the .apk package
-curl -LO https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_linux_amd64.apk
-sudo apk add --allow-untrusted currier_0.1.2_linux_amd64.apk
+curl -LO https://github.com/artpar/currier/releases/latest/download/currier_linux_amd64.apk
+sudo apk add --allow-untrusted currier_linux_amd64.apk
 ```
 
 ### Linux (Arch)
 
 ```bash
-# Download the .pkg.tar.zst package
-curl -LO https://github.com/artpar/currier/releases/latest/download/currier_0.1.2_linux_amd64.pkg.tar.zst
-sudo pacman -U currier_0.1.2_linux_amd64.pkg.tar.zst
+curl -LO https://github.com/artpar/currier/releases/latest/download/currier_linux_amd64.pkg.tar.zst
+sudo pacman -U currier_linux_amd64.pkg.tar.zst
 ```
 
-### Windows
+### Windows (Scoop)
 
-Download the appropriate zip file from the [Releases](https://github.com/artpar/currier/releases) page and extract to your PATH.
+```powershell
+scoop bucket add artpar https://github.com/artpar/scoop-bucket
+scoop install currier
+```
+
+Or download from [Releases](https://github.com/artpar/currier/releases).
 
 ### From Source
 

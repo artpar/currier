@@ -34,7 +34,7 @@ archives:
       - goos: windows
         formats:
           - zip
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE*
       - README*
@@ -42,6 +42,7 @@ archives:
 nfpms:
   - id: packages
     package_name: currier
+    file_name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     vendor: artpar
     homepage: https://github.com/artpar/currier
     maintainer: artpar <artpar@gmail.com>
