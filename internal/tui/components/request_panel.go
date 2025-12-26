@@ -1783,15 +1783,6 @@ func (p *RequestPanel) renderURLBar() string {
 	// Compose URL bar
 	urlBar := methodBtn + " " + urlField + " " + sendBtn
 
-	// Add hint line below when focused
-	if p.focused && p.activeTab == TabURL && !p.editingURL && !p.editingMethod {
-		hintStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("243")).
-			Italic(true)
-		hint := hintStyle.Render("  Press e to edit URL, m to change method")
-		return urlBar + "\n" + hint
-	}
-
 	return urlBar
 }
 
