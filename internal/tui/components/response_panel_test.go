@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/interfaces"
+	"github.com/artpar/currier/internal/script"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -856,6 +857,289 @@ func TestResponsePanel_StatusStyles(t *testing.T) {
 
 		resp := core.NewResponse("req-123", "http", core.NewStatus(404, "Not Found"))
 		panel.SetResponse(resp)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestResponsePanel_AdditionalGetters(t *testing.T) {
+	t.Run("HasResponse returns true with response", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		assert.True(t, panel.HasResponse())
+	})
+
+	t.Run("HasResponse returns false without response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		assert.False(t, panel.HasResponse())
+	})
+
+	t.Run("StatusCode returns code from response", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		assert.Equal(t, 200, panel.StatusCode())
+	})
+
+	t.Run("StatusCode returns 0 without response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		assert.Equal(t, 0, panel.StatusCode())
+	})
+
+	t.Run("StatusText returns text from response", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		assert.Equal(t, "OK", panel.StatusText())
+	})
+
+	t.Run("StatusText returns empty without response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		assert.Equal(t, "", panel.StatusText())
+	})
+
+	t.Run("ResponseTime returns duration", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		duration := panel.ResponseTime()
+		assert.True(t, duration >= 0)
+	})
+
+	t.Run("ResponseTime returns 0 without response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		assert.Equal(t, int64(0), panel.ResponseTime())
+	})
+
+	t.Run("BodySize returns size", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		size := panel.BodySize()
+		assert.True(t, size >= 0)
+	})
+
+	t.Run("BodySize returns 0 without response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		assert.Equal(t, int64(0), panel.BodySize())
+	})
+
+	t.Run("BodyPreview returns preview", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		preview := panel.BodyPreview(50)
+		assert.NotEmpty(t, preview)
+	})
+
+	t.Run("BodyPreview returns empty without response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		preview := panel.BodyPreview(50)
+		assert.Equal(t, "", preview)
+	})
+
+	t.Run("ActiveTabName returns tab name", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetActiveTab(ResponseTabBody)
+		assert.Equal(t, "Body", panel.ActiveTabName())
+	})
+
+	t.Run("ErrorString returns error message", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetError(assert.AnError)
+		assert.NotEmpty(t, panel.ErrorString())
+	})
+
+	t.Run("ErrorString returns empty without error", func(t *testing.T) {
+		panel := NewResponsePanel()
+		assert.Equal(t, "", panel.ErrorString())
+	})
+}
+
+func TestResponsePanel_PrettyPrint(t *testing.T) {
+	t.Run("IsPrettyPrint returns default true", func(t *testing.T) {
+		panel := NewResponsePanel()
+		assert.True(t, panel.IsPrettyPrint())
+	})
+
+	t.Run("SetPrettyPrint updates state", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetPrettyPrint(false)
+		assert.False(t, panel.IsPrettyPrint())
+		panel.SetPrettyPrint(true)
+		assert.True(t, panel.IsPrettyPrint())
+	})
+
+	t.Run("DetectedType returns type", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		// Trigger format detection by rendering
+		panel.View()
+		// Type should be detected
+		detectedType := panel.DetectedType()
+		assert.NotEmpty(t, detectedType)
+	})
+}
+
+func TestResponsePanel_TestResults(t *testing.T) {
+	t.Run("SetTestResults updates results", func(t *testing.T) {
+		panel := NewResponsePanel()
+		results := []script.TestResult{
+			{Name: "Test 1", Passed: true},
+			{Name: "Test 2", Passed: false, Error: "failed"},
+		}
+		panel.SetTestResults(results)
+
+		assert.Equal(t, results, panel.TestResults())
+	})
+
+	t.Run("TestSummary returns summary", func(t *testing.T) {
+		panel := NewResponsePanel()
+		results := []script.TestResult{
+			{Name: "Test 1", Passed: true},
+			{Name: "Test 2", Passed: false},
+		}
+		panel.SetTestResults(results)
+
+		summary := panel.TestSummary()
+		assert.Equal(t, 1, summary.Passed)
+		assert.Equal(t, 2, summary.Total)
+	})
+
+	t.Run("renders Tests tab with results", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		results := []script.TestResult{
+			{Name: "Test 1", Passed: true},
+			{Name: "Test 2", Passed: false, Error: "assertion failed"},
+		}
+		panel.SetTestResults(results)
+		panel.SetActiveTab(ResponseTabTests)
+
+		view := panel.View()
+		assert.Contains(t, view, "Test")
+	})
+}
+
+func TestResponsePanel_ConsoleMessages(t *testing.T) {
+	t.Run("SetConsoleMessages updates messages", func(t *testing.T) {
+		panel := NewResponsePanel()
+		messages := []ConsoleMessage{
+			{Level: "log", Message: "hello"},
+			{Level: "log", Message: "world"},
+		}
+		panel.SetConsoleMessages(messages)
+
+		// Check it was set (indirectly through console tab)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabConsole)
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("AddConsoleMessage appends message", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.AddConsoleMessage("log", "first")
+		panel.AddConsoleMessage("log", "second")
+
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabConsole)
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestResponsePanel_TogglePrettyPrint(t *testing.T) {
+	t.Run("p key toggles pretty print", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.Focus()
+		panel.SetActiveTab(ResponseTabBody)
+
+		assert.True(t, panel.IsPrettyPrint())
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		assert.False(t, panel.IsPrettyPrint())
+
+		updated, _ = panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		assert.True(t, panel.IsPrettyPrint())
+	})
+}
+
+func TestResponsePanel_CookieParsing(t *testing.T) {
+	t.Run("parses simple cookie", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		headers := core.NewHeaders()
+		headers.Set("Set-Cookie", "name=value")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithHeaders(headers)
+		panel.SetResponse(resp)
+		panel.SetActiveTab(ResponseTabCookies)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("parses cookie with all attributes", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		headers := core.NewHeaders()
+		headers.Set("Set-Cookie", "session=abc123; Path=/; Domain=.example.com; Secure; HttpOnly; SameSite=Strict; Max-Age=3600; Expires=Wed, 01 Jan 2025 00:00:00 GMT")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithHeaders(headers)
+		panel.SetResponse(resp)
+		panel.SetActiveTab(ResponseTabCookies)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+		assert.Contains(t, view, "session")
+	})
+
+	t.Run("parses multiple cookies", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		headers := core.NewHeaders()
+		headers.Add("Set-Cookie", "cookie1=value1")
+		headers.Add("Set-Cookie", "cookie2=value2")
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK")).WithHeaders(headers)
+		panel.SetResponse(resp)
+		panel.SetActiveTab(ResponseTabCookies)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestResponsePanel_TestsTabRendering(t *testing.T) {
+	t.Run("renders Tests tab with passing tests", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		results := []script.TestResult{
+			{Name: "Status is 200", Passed: true},
+			{Name: "Body contains data", Passed: true},
+		}
+		panel.SetTestResults(results)
+		panel.SetActiveTab(ResponseTabTests)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+		assert.Contains(t, view, "Status is 200")
+	})
+
+	t.Run("renders Tests tab with failing tests", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		results := []script.TestResult{
+			{Name: "Status is 200", Passed: false, Error: "Expected 200 but got 404"},
+		}
+		panel.SetTestResults(results)
+		panel.SetActiveTab(ResponseTabTests)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+		assert.Contains(t, view, "Status is 200")
+	})
+
+	t.Run("renders empty Tests tab", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabTests)
 
 		view := panel.View()
 		assert.NotEmpty(t, view)

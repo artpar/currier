@@ -3202,3 +3202,95 @@ func newTestRequestPanel(t *testing.T) *RequestPanel {
 	panel.SetRequest(req)
 	return panel
 }
+
+func TestRequestPanel_Scripts(t *testing.T) {
+	t.Run("PreRequestScript returns empty without request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		assert.Equal(t, "", panel.PreRequestScript())
+	})
+
+	t.Run("PreRequestScript returns script from request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetPreScript("console.log('pre')")
+		panel.SetRequest(req)
+
+		assert.Equal(t, "console.log('pre')", panel.PreRequestScript())
+	})
+
+	t.Run("SetPreRequestScript updates request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+
+		panel.SetPreRequestScript("console.log('hello')")
+
+		assert.Equal(t, "console.log('hello')", panel.PreRequestScript())
+	})
+
+	t.Run("SetPreRequestScript does nothing without request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetPreRequestScript("console.log('hello')")
+		// Should not panic
+	})
+
+	t.Run("TestScript returns empty without request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		assert.Equal(t, "", panel.TestScript())
+	})
+
+	t.Run("TestScript returns script from request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetPostScript("pm.test('works')")
+		panel.SetRequest(req)
+
+		assert.Equal(t, "pm.test('works')", panel.TestScript())
+	})
+
+	t.Run("SetTestScript updates request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+
+		panel.SetTestScript("pm.test('test')")
+
+		assert.Equal(t, "pm.test('test')", panel.TestScript())
+	})
+
+	t.Run("SetTestScript does nothing without request", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetTestScript("pm.test('test')")
+		// Should not panic
+	})
+}
+
+func TestRequestPanel_PreRequestTab(t *testing.T) {
+	t.Run("renders Pre-req tab", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetPreScript("console.log('pre-request')")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabPreRequest)
+
+		view := panel.View()
+
+		assert.NotEmpty(t, view)
+		assert.Contains(t, view, "Pre-req")
+	})
+
+	t.Run("renders Tests tab", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetPostScript("pm.test('works')")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabTests)
+
+		view := panel.View()
+
+		assert.NotEmpty(t, view)
+		assert.Contains(t, view, "Tests")
+	})
+}
