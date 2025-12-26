@@ -513,7 +513,7 @@ func (p *ResponsePanel) renderBodyTab() []string {
 	switch p.detectedType {
 	case "json":
 		highlighter := NewJSONHighlighter()
-		return highlighter.HighlightLines(content)
+		return highlighter.FormatLines(content)
 	case "xml":
 		formatter := NewXMLFormatter()
 		return formatter.FormatLines(content)

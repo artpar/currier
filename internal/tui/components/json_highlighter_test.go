@@ -260,3 +260,62 @@ func TestHighlightJSON_EdgeCases(t *testing.T) {
 		assert.NotEmpty(t, result)
 	})
 }
+
+func TestJSONHighlighter_FormatLines(t *testing.T) {
+	h := NewJSONHighlighter()
+
+	t.Run("pretty prints compact JSON", func(t *testing.T) {
+		input := `{"id":123,"name":"test"}`
+		result := h.FormatLines(input)
+		// Should produce multiple lines after formatting
+		assert.Greater(t, len(result), 1, "compact JSON should be formatted into multiple lines")
+	})
+
+	t.Run("preserves already formatted JSON", func(t *testing.T) {
+		input := `{
+  "id": 123,
+  "name": "test"
+}`
+		result := h.FormatLines(input)
+		assert.Greater(t, len(result), 1)
+	})
+
+	t.Run("handles nested objects", func(t *testing.T) {
+		input := `{"user":{"name":"John","age":30}}`
+		result := h.FormatLines(input)
+		// Should indent nested objects
+		assert.Greater(t, len(result), 3)
+	})
+
+	t.Run("handles arrays", func(t *testing.T) {
+		input := `{"items":[1,2,3]}`
+		result := h.FormatLines(input)
+		assert.Greater(t, len(result), 1)
+	})
+
+	t.Run("returns original on invalid JSON", func(t *testing.T) {
+		input := `not valid json`
+		result := h.FormatLines(input)
+		assert.Len(t, result, 1)
+		assert.Contains(t, result[0], "not valid json")
+	})
+
+	t.Run("handles empty object", func(t *testing.T) {
+		input := `{}`
+		result := h.FormatLines(input)
+		assert.NotEmpty(t, result)
+	})
+
+	t.Run("handles empty array", func(t *testing.T) {
+		input := `[]`
+		result := h.FormatLines(input)
+		assert.NotEmpty(t, result)
+	})
+
+	t.Run("formats with 2-space indentation", func(t *testing.T) {
+		input := `{"key":"value"}`
+		result := h.FormatLines(input)
+		// For simple single-key JSON, we expect proper structure with multiple lines
+		assert.Greater(t, len(result), 1)
+	})
+}

@@ -1,6 +1,8 @@
 package components
 
 import (
+	"bytes"
+	"encoding/json"
 	"regexp"
 	"strings"
 
@@ -44,8 +46,8 @@ func (h *JSONHighlighter) Highlight(json string) string {
 }
 
 // HighlightLines applies syntax highlighting and returns lines.
-func (h *JSONHighlighter) HighlightLines(json string) []string {
-	lines := strings.Split(json, "\n")
+func (h *JSONHighlighter) HighlightLines(jsonContent string) []string {
+	lines := strings.Split(jsonContent, "\n")
 	var result []string
 
 	for _, line := range lines {
@@ -53,6 +55,26 @@ func (h *JSONHighlighter) HighlightLines(json string) []string {
 	}
 
 	return result
+}
+
+// FormatLines pretty-prints JSON with indentation and syntax highlighting.
+func (h *JSONHighlighter) FormatLines(content string) []string {
+	// First, try to pretty-print the JSON
+	formatted := h.prettyPrint(content)
+
+	// Then apply syntax highlighting
+	return h.HighlightLines(formatted)
+}
+
+// prettyPrint reformats JSON with proper indentation.
+func (h *JSONHighlighter) prettyPrint(content string) string {
+	var out bytes.Buffer
+	err := json.Indent(&out, []byte(content), "", "  ")
+	if err != nil {
+		// If JSON is invalid, return original content
+		return content
+	}
+	return out.String()
 }
 
 func (h *JSONHighlighter) highlightLine(line string) string {
