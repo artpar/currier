@@ -1404,7 +1404,7 @@ func TestRequestPanel_URLBar(t *testing.T) {
 		assert.Contains(t, view, "Press n")
 	})
 
-	t.Run("shows hint when focused on URL tab", func(t *testing.T) {
+	t.Run("shows URL info when focused on URL tab", func(t *testing.T) {
 		panel := NewRequestPanel()
 		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
 		panel.SetRequest(req)
@@ -1413,7 +1413,8 @@ func TestRequestPanel_URLBar(t *testing.T) {
 		panel.SetActiveTab(TabURL)
 
 		view := panel.View()
-		assert.Contains(t, view, "edit")
+		assert.Contains(t, view, "URL:")
+		assert.Contains(t, view, "Method:")
 	})
 }
 

@@ -1929,10 +1929,6 @@ func (p *RequestPanel) renderURLTab() []string {
 	return []string{
 		fmt.Sprintf("URL: %s", p.request.FullURL()),
 		fmt.Sprintf("Method: %s", p.request.Method()),
-		"",
-		"Press m to change method",
-		"Press e to edit URL",
-		"Press Enter to send request",
 	}
 }
 

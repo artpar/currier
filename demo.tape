@@ -13,40 +13,38 @@ Type "currier"
 Enter
 Sleep 2s
 
-# Show the main interface
+# Show the main interface with stacked History/Collections
 Sleep 1s
 
-# Navigate to History
+# Focus History section
 Type "H"
 Sleep 1s
 
 # Navigate through history items
 Type "j"
-Sleep 500ms
+Sleep 400ms
 Type "j"
-Sleep 500ms
-Type "j"
-Sleep 500ms
+Sleep 400ms
 
 # Select a history item
 Enter
 Sleep 1s
 
-# Switch to Collections
+# Focus Collections section
 Type "1"
-Sleep 500ms
+Sleep 400ms
 Type "C"
 Sleep 1s
 
 # Create a new request
 Type "n"
-Sleep 1s
+Sleep 800ms
 
 # Type a URL
 Type "https://httpbin.org/get"
-Sleep 500ms
+Sleep 400ms
 Enter
-Sleep 1s
+Sleep 800ms
 
 # Send the request
 Enter
@@ -54,15 +52,15 @@ Sleep 3s
 
 # Show response tabs
 Type "]"
-Sleep 500ms
+Sleep 400ms
 Type "]"
-Sleep 500ms
+Sleep 400ms
 
 # Show help
 Type "?"
 Sleep 2s
 Type "?"
-Sleep 500ms
+Sleep 400ms
 
 # Quit
 Type "q"
