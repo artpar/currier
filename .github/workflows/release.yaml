@@ -51,9 +51,8 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional secrets for package managers (uncomment when configured):
-          # HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          # SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
           # AUR_KEY: ${{ secrets.AUR_KEY }}
           # GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
           # GPG_PASSWORD: ${{ secrets.GPG_PASSWORD }}
