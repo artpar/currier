@@ -555,13 +555,14 @@ func (v *MainView) renderHelpBar() string {
 		if v.request.IsEditing() {
 			hints = []string{
 				keyStyle.Render("Enter/Esc") + descStyle.Render(" Save"),
+				keyStyle.Render("Alt+Enter") + descStyle.Render(" Send"),
 				keyStyle.Render("Ctrl+U") + descStyle.Render(" Clear"),
 			}
 		} else {
 			hints = []string{
 				keyStyle.Render("e") + descStyle.Render(" Edit URL"),
 				keyStyle.Render("m") + descStyle.Render(" Method"),
-				keyStyle.Render("Enter") + descStyle.Render(" Send"),
+				keyStyle.Render("Enter/Alt+Enter") + descStyle.Render(" Send"),
 				keyStyle.Render("[/]") + descStyle.Render(" Switch tab"),
 			}
 		}
@@ -760,7 +761,7 @@ func (v *MainView) renderHelp() string {
 		"│    e                  Edit URL/header/body              │",
 		"│    a                  Add header/query param            │",
 		"│    d                  Delete header/query param         │",
-		"│    Enter              Send request                      │",
+		"│    Enter/Alt+Enter    Send request                      │",
 		"│                                                          │",
 		"│  Response Pane                                           │",
 		"│    [ / ]              Switch tabs (Body/Headers/etc)    │",
@@ -771,6 +772,7 @@ func (v *MainView) renderHelp() string {
 		"│                                                          │",
 		"│  Edit Mode (vim-like)                                    │",
 		"│    Enter / Esc        Save and exit                     │",
+		"│    Alt+Enter          Send request (while editing)      │",
 		"│    Tab                Switch key/value (Headers/Query)  │",
 		"│    Ctrl+U             Clear current field               │",
 		"│    Ctrl+A / Ctrl+E    Jump to start/end                 │",

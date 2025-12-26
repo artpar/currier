@@ -156,6 +156,25 @@ func (p *RequestPanel) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 }
 
 func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	// Alt+Enter sends request from anywhere (even in edit mode)
+	if msg.Type == tea.KeyEnter && msg.Alt {
+		if p.request != nil {
+			// Save any pending edits before sending
+			if p.editingURL && p.urlInput != "" {
+				p.request.SetURL(p.urlInput)
+				p.editingURL = false
+			}
+			if p.editingBody {
+				p.request.SetBody(strings.Join(p.bodyLines, "\n"))
+				p.editingBody = false
+			}
+			return p, func() tea.Msg {
+				return SendRequestMsg{Request: p.request}
+			}
+		}
+		return p, nil
+	}
+
 	// Handle URL editing mode
 	if p.editingURL {
 		return p.handleURLEditInput(msg)
