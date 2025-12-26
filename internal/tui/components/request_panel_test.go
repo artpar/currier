@@ -3294,3 +3294,85 @@ func TestRequestPanel_PreRequestTab(t *testing.T) {
 		assert.Contains(t, view, "Tests")
 	})
 }
+
+func TestRequestPanel_UpdateEdgeCases(t *testing.T) {
+	t.Run("handles Tab key when unfocused", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Blur()
+
+		msg := tea.KeyMsg{Type: tea.KeyTab}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("handles Escape when editing URL", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.StartURLEdit()
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		assert.False(t, panel.IsEditing())
+	})
+
+	t.Run("handles window resize message", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+
+		msg := tea.WindowSizeMsg{Width: 100, Height: 50}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("handles G key for end of list", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.Focus()
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		assert.NotNil(t, panel)
+	})
+}
+
+func TestRequestPanel_AuthTabRendering(t *testing.T) {
+	t.Run("renders Auth tab with no auth", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabAuth)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renders Auth tab with basic auth", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetAuth(core.NewBasicAuth("user", "pass"))
+		panel.SetRequest(req)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(TabAuth)
+
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}

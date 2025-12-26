@@ -1145,3 +1145,68 @@ func TestResponsePanel_TestsTabRendering(t *testing.T) {
 		assert.NotEmpty(t, view)
 	})
 }
+
+func TestResponsePanel_UpdateEdgeCases(t *testing.T) {
+	t.Run("handles g then up key for gg", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabBody)
+
+		// Press g
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		panel.Update(msg)
+
+		// Press g again
+		panel.Update(msg)
+
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("handles shift+g for end", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabBody)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+		panel.Update(msg)
+
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("handles y for yank mode", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabBody)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+		panel.Update(msg)
+
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("handles ] key cycling when at last tab", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(ResponseTabTests)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		assert.Equal(t, ResponseTabBody, panel.ActiveTab())
+	})
+
+	t.Run("handles [ key cycling when at first tab", func(t *testing.T) {
+		panel := newTestResponsePanel(t)
+		panel.SetSize(80, 30)
+		panel.Focus()
+		panel.SetActiveTab(ResponseTabBody)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*ResponsePanel)
+
+		assert.Equal(t, ResponseTabTests, panel.ActiveTab())
+	})
+}

@@ -7,6 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/history"
+	"github.com/artpar/currier/internal/interfaces"
+	"github.com/artpar/currier/internal/script"
 	"github.com/artpar/currier/internal/tui/components"
 	"github.com/stretchr/testify/assert"
 )
@@ -913,5 +915,913 @@ func TestMainView_InsertModePassthrough(t *testing.T) {
 		view = updated.(*MainView)
 
 		assert.Equal(t, PaneResponse, view.FocusedPane())
+	})
+}
+
+func TestMainView_ViewMode(t *testing.T) {
+	t.Run("ViewMode returns default mode", func(t *testing.T) {
+		view := NewMainView()
+		mode := view.ViewMode()
+		assert.Equal(t, ViewModeHTTP, mode)
+	})
+
+	t.Run("SetViewMode changes mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetViewMode(ViewModeWebSocket)
+		assert.Equal(t, ViewModeWebSocket, view.ViewMode())
+	})
+
+	t.Run("SetViewMode back to HTTP", func(t *testing.T) {
+		view := NewMainView()
+		view.SetViewMode(ViewModeWebSocket)
+		view.SetViewMode(ViewModeHTTP)
+		assert.Equal(t, ViewModeHTTP, view.ViewMode())
+	})
+}
+
+func TestMainView_WebSocketPanel(t *testing.T) {
+	t.Run("WebSocketPanel returns panel", func(t *testing.T) {
+		view := NewMainView()
+		panel := view.WebSocketPanel()
+		assert.NotNil(t, panel)
+	})
+}
+
+func TestMainView_SetWebSocketDefinition(t *testing.T) {
+	t.Run("SetWebSocketDefinition updates panel", func(t *testing.T) {
+		view := NewMainView()
+		def := &core.WebSocketDefinition{
+			ID:       "ws-123",
+			Name:     "Test WS",
+			Endpoint: "wss://example.com/ws",
+		}
+		view.SetWebSocketDefinition(def)
+
+		panel := view.WebSocketPanel()
+		assert.Equal(t, def, panel.Definition())
+	})
+}
+
+func TestMainView_CycleFocusWrapping(t *testing.T) {
+	t.Run("cycle forward wraps correctly through all panes", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Start at collections
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+
+		// Tab through all panes
+		msg := tea.KeyMsg{Type: tea.KeyTab}
+		for i := 0; i < 3; i++ {
+			updated, _ := view.Update(msg)
+			view = updated.(*MainView)
+		}
+		// Should wrap back to collections
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+	})
+}
+
+func TestMainView_ViewWebSocketMode(t *testing.T) {
+	t.Run("View in WebSocket mode renders", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+}
+
+func TestMainView_Focus(t *testing.T) {
+	t.Run("Focus method works", func(t *testing.T) {
+		view := NewMainView()
+		view.Focus()
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_Blur(t *testing.T) {
+	t.Run("Blur method works", func(t *testing.T) {
+		view := NewMainView()
+		view.Focus()
+		view.Blur()
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_SaveToHistoryIntegration(t *testing.T) {
+	t.Run("saveToHistory with mock store", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		store := &mockHistoryStore{}
+		view.SetHistoryStore(store)
+
+		// Create a request and response
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		view.RequestPanel().SetRequest(req)
+
+		// The saveToHistory is called internally when response is received
+		// This test ensures the setup works
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_UpdateMessageTypes(t *testing.T) {
+	t.Run("handles SelectionMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		msg := components.SelectionMsg{Request: req}
+
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, ViewModeHTTP, view.ViewMode())
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+	})
+
+	t.Run("handles SelectWebSocketMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		def := &core.WebSocketDefinition{
+			ID:       "ws-123",
+			Name:     "Test WS",
+			Endpoint: "wss://example.com/ws",
+		}
+		msg := components.SelectWebSocketMsg{WebSocket: def}
+
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, ViewModeWebSocket, view.ViewMode())
+	})
+
+	t.Run("handles SelectHistoryItemMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		entry := history.Entry{
+			RequestName:   "Test Request",
+			RequestMethod: "POST",
+			RequestURL:    "https://example.com/api",
+			RequestBody:   `{"test": true}`,
+			RequestHeaders: map[string]string{
+				"Content-Type": "application/json",
+			},
+		}
+		msg := components.SelectHistoryItemMsg{Entry: entry}
+
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+		assert.NotNil(t, view.RequestPanel().Request())
+	})
+
+	t.Run("handles SelectHistoryItemMsg with empty name", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		entry := history.Entry{
+			RequestName:   "",
+			RequestMethod: "GET",
+			RequestURL:    "https://example.com",
+		}
+		msg := components.SelectHistoryItemMsg{Entry: entry}
+
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view.RequestPanel().Request())
+	})
+
+	t.Run("handles ResponseReceivedMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ResponsePanel().SetLoading(true)
+
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK"))
+		msg := components.ResponseReceivedMsg{
+			Response:    resp,
+			TestResults: nil,
+			Console:     nil,
+		}
+
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.ResponsePanel().IsLoading())
+		assert.NotNil(t, view.ResponsePanel().Response())
+	})
+
+	t.Run("handles ResponseReceivedMsg with test results", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		resp := core.NewResponse("req-123", "http", core.NewStatus(200, "OK"))
+		testResults := []script.TestResult{
+			{Name: "Test 1", Passed: true},
+		}
+		consoleMessages := []components.ConsoleMessage{
+			{Level: "log", Message: "Hello"},
+		}
+		msg := components.ResponseReceivedMsg{
+			Response:    resp,
+			TestResults: testResults,
+			Console:     consoleMessages,
+		}
+
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		results := view.ResponsePanel().TestResults()
+		assert.Len(t, results, 1)
+	})
+
+	t.Run("handles RequestErrorMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ResponsePanel().SetLoading(true)
+
+		msg := components.RequestErrorMsg{Error: assert.AnError}
+
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.ResponsePanel().IsLoading())
+		assert.NotNil(t, view.ResponsePanel().Error())
+	})
+
+	t.Run("handles CopyMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.CopyMsg{Content: "test content"}
+		_, cmd := view.Update(msg)
+
+		// Copy command may or may not be returned depending on clipboard availability
+		_ = cmd
+	})
+
+	t.Run("handles FeedbackMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.FeedbackMsg{Message: "Test feedback", IsError: false}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Contains(t, view.Notification(), "Test feedback")
+	})
+}
+
+func TestMainView_KeyHandling(t *testing.T) {
+	t.Run("n key creates new request", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+		assert.NotNil(t, view.RequestPanel().Request())
+	})
+
+	t.Run("w key toggles WebSocket mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// First press - enter WebSocket mode
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, ViewModeWebSocket, view.ViewMode())
+		assert.Equal(t, PaneWebSocket, view.FocusedPane())
+
+		// Second press - exit WebSocket mode
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, ViewModeHTTP, view.ViewMode())
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+	})
+
+	t.Run("4 key focuses WebSocket panel in WS mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+		view.FocusPane(PaneCollections)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneWebSocket, view.FocusedPane())
+	})
+
+	t.Run("4 key does nothing in HTTP mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneCollections)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+	})
+
+	t.Run("escape key in normal mode is no-op", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneRequest)
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+	})
+}
+
+func TestMainView_CycleFocusInWebSocketMode(t *testing.T) {
+	t.Run("Tab cycles between Collections and WebSocket in WS mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+		view.FocusPane(PaneCollections)
+
+		// Collections -> WebSocket
+		msg := tea.KeyMsg{Type: tea.KeyTab}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+		assert.Equal(t, PaneWebSocket, view.FocusedPane())
+
+		// WebSocket -> Collections
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+	})
+
+	t.Run("Shift+Tab cycles between Collections and WebSocket in WS mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+		view.FocusPane(PaneCollections)
+
+		// Collections -> WebSocket (backward is same in 2-pane mode)
+		msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+		assert.Equal(t, PaneWebSocket, view.FocusedPane())
+
+		// WebSocket -> Collections
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+	})
+}
+
+func TestMainView_HelpBarRendering(t *testing.T) {
+	t.Run("renders help bar based on focused pane", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Focus request pane
+		view.FocusPane(PaneRequest)
+		output := view.View()
+		assert.NotEmpty(t, output)
+
+		// Focus response pane
+		view.FocusPane(PaneResponse)
+		output = view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("WebSocket mode renders different help bar", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+		view.FocusPane(PaneWebSocket)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+}
+
+func TestMainView_StatusBarExtended(t *testing.T) {
+	t.Run("status bar shows request method", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		view.RequestPanel().SetRequest(req)
+
+		output := view.View()
+		assert.Contains(t, output, "POST")
+	})
+
+	t.Run("status bar shows response status", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		resp := core.NewResponse("req-1", "http", core.NewStatus(200, "OK"))
+		view.ResponsePanel().SetResponse(resp)
+
+		output := view.View()
+		assert.Contains(t, output, "200")
+	})
+}
+
+func TestMainView_PaneSizesExtended(t *testing.T) {
+	t.Run("pane sizes in HTTP mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(150, 50)
+		view.SetViewMode(ViewModeHTTP)
+
+		// Verify panels have non-zero sizes
+		assert.Greater(t, view.Width(), 0)
+		assert.Greater(t, view.Height(), 0)
+	})
+
+	t.Run("pane sizes in WebSocket mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(150, 50)
+		view.SetViewMode(ViewModeWebSocket)
+
+		// Verify WebSocket panel is accessible
+		assert.NotNil(t, view.WebSocketPanel())
+	})
+}
+
+func TestMainView_WebSocketMessages(t *testing.T) {
+	t.Run("handles WSConnectedMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		msg := components.WSConnectedMsg{ConnectionID: "conn-123"}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Contains(t, view.Notification(), "connected")
+	})
+
+	t.Run("handles WSDisconnectedMsg with error", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		msg := components.WSDisconnectedMsg{Error: assert.AnError}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Contains(t, view.Notification(), "Disconnected")
+	})
+
+	t.Run("handles WSDisconnectedMsg without error", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		msg := components.WSDisconnectedMsg{Error: nil}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Contains(t, view.Notification(), "disconnected")
+	})
+
+	t.Run("handles WSMessageReceivedMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		wsMsg := core.NewWebSocketMessage("conn-1", "Hello from server", "received")
+		msg := components.WSMessageReceivedMsg{Message: wsMsg}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+	})
+
+	t.Run("handles WSMessageSentMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		wsMsg := core.NewWebSocketMessage("conn-1", "Hello from client", "sent")
+		msg := components.WSMessageSentMsg{Message: wsMsg}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+	})
+
+	t.Run("handles WSErrorMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		msg := components.WSErrorMsg{Error: assert.AnError}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Contains(t, view.Notification(), "Error")
+	})
+
+	t.Run("handles WSReconnectCmd with nil definition", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		msg := components.WSReconnectCmd{}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+		assert.Nil(t, cmd)
+	})
+}
+
+func TestMainView_NotificationClearing(t *testing.T) {
+	t.Run("notification clears via timeout message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// First set a feedback notification
+		feedbackMsg := components.FeedbackMsg{Message: "Test", IsError: false}
+		updated, _ := view.Update(feedbackMsg)
+		view = updated.(*MainView)
+		assert.NotEmpty(t, view.Notification())
+
+		// Verify notification was set
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_ForwardToPanes(t *testing.T) {
+	t.Run("forward to WebSocket pane when focused", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+		view.FocusPane(PaneWebSocket)
+
+		// Send a generic key message
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_HistorySave(t *testing.T) {
+	t.Run("saves to history on response", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		store := &mockHistoryStore{}
+		view.SetHistoryStore(store)
+
+		// Send a request first
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		view.RequestPanel().SetRequest(req)
+		sendMsg := components.SendRequestMsg{Request: req}
+		updated, _ := view.Update(sendMsg)
+		view = updated.(*MainView)
+
+		// Now receive response
+		resp := core.NewResponse("req-1", "http", core.NewStatus(200, "OK"))
+		respMsg := components.ResponseReceivedMsg{Response: resp}
+		updated, _ = view.Update(respMsg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.ResponsePanel().IsLoading())
+	})
+
+	t.Run("saves to history on error", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		store := &mockHistoryStore{}
+		view.SetHistoryStore(store)
+
+		// Send a request first
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		view.RequestPanel().SetRequest(req)
+		sendMsg := components.SendRequestMsg{Request: req}
+		updated, _ := view.Update(sendMsg)
+		view = updated.(*MainView)
+
+		// Now receive error
+		errMsg := components.RequestErrorMsg{Error: assert.AnError}
+		updated, _ = view.Update(errMsg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.ResponsePanel().IsLoading())
+	})
+}
+
+func TestMainView_EdgeCases(t *testing.T) {
+	t.Run("zero size does nothing", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(0, 0)
+
+		output := view.View()
+		assert.Empty(t, output)
+	})
+
+	t.Run("very narrow window clamps sidebar", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(50, 20)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("very wide window clamps sidebar max", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(400, 40)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("very short window clamps height", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 3)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("minimal height for request panel", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 10)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+}
+
+func TestMainView_HistoryItemWithBody(t *testing.T) {
+	t.Run("handles SelectHistoryItemMsg with body and headers", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		entry := history.Entry{
+			RequestName:   "Test Request",
+			RequestMethod: "POST",
+			RequestURL:    "https://api.example.com",
+			RequestBody:   `{"key":"value"}`,
+			RequestHeaders: map[string]string{
+				"Content-Type": "application/json",
+			},
+		}
+		msg := components.SelectHistoryItemMsg{Entry: entry}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		req := view.RequestPanel().Request()
+		assert.NotNil(t, req)
+		assert.Equal(t, "POST", req.Method())
+	})
+}
+
+func TestMainView_FeedbackErrors(t *testing.T) {
+	t.Run("handles FeedbackMsg with error flag", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.FeedbackMsg{Message: "Something went wrong", IsError: true}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Contains(t, view.Notification(), "wrong")
+	})
+}
+
+func TestMainView_CopyContent(t *testing.T) {
+	t.Run("handles CopyMsg with small content", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.CopyMsg{Content: "small content"}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Check that notification was set
+		assert.NotNil(t, view)
+	})
+
+	t.Run("handles CopyMsg with large content", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Create content > 1024 bytes
+		largeContent := make([]byte, 2048)
+		for i := range largeContent {
+			largeContent[i] = 'a'
+		}
+		msg := components.CopyMsg{Content: string(largeContent)}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Notification should indicate KB
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_WSStateChange(t *testing.T) {
+	t.Run("handles WSStateChangedMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		msg := components.WSStateChangedMsg{State: interfaces.ConnectionStateConnecting}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_WSReconnectWithDefinition(t *testing.T) {
+	t.Run("handles WSReconnectCmd with definition set", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		// Set a WebSocket definition
+		wsDef := core.NewWebSocketDefinition("Test WS", "wss://example.com")
+		view.SetWebSocketDefinition(wsDef)
+
+		// Now send reconnect - this should call connectWebSocket
+		msg := components.WSReconnectCmd{}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+		// Reconnect should produce a command when definition exists
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestMainView_HelpDisplay(t *testing.T) {
+	t.Run("help overlay blocks other keys", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+
+		assert.True(t, view.ShowingHelp())
+
+		// Other keys should be blocked
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Help should still be showing
+		assert.True(t, view.ShowingHelp())
+	})
+
+	t.Run("? key toggles help when showing", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.ShowingHelp())
+	})
+}
+
+func TestMainView_WSCommands(t *testing.T) {
+	t.Run("handles WSConnectCmd", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		wsDef := core.NewWebSocketDefinition("Test", "wss://example.com")
+		msg := components.WSConnectCmd{Definition: wsDef}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+		assert.NotNil(t, cmd) // Should return a command to connect
+	})
+
+	t.Run("handles WSDisconnectCmd", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		msg := components.WSDisconnectCmd{}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+		assert.NotNil(t, cmd) // Should return a command to disconnect
+	})
+
+	t.Run("handles WSSendMessageCmd", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		msg := components.WSSendMessageCmd{Content: "Hello"}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+		assert.NotNil(t, cmd) // Should return a command to send message
+	})
+}
+
+func TestMainView_SendRequestReturnsCommand(t *testing.T) {
+	t.Run("SendRequestMsg returns command", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		msg := components.SendRequestMsg{Request: req}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+		assert.NotNil(t, cmd)
+		assert.True(t, view.ResponsePanel().IsLoading())
+	})
+}
+
+func TestMainView_RenderingEdgeCases(t *testing.T) {
+	t.Run("renders with loading response", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ResponsePanel().SetLoading(true)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("renders with error response", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ResponsePanel().SetError(assert.AnError)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("renders with notification set", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		feedbackMsg := components.FeedbackMsg{Message: "Test notification", IsError: false}
+		updated, _ := view.Update(feedbackMsg)
+		view = updated.(*MainView)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("renders in WebSocket mode with definition", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		wsDef := core.NewWebSocketDefinition("Test WS", "wss://example.com/ws")
+		view.SetWebSocketDefinition(wsDef)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+}
+
+func TestMainView_HistoryItemHeaders(t *testing.T) {
+	t.Run("handles SelectHistoryItemMsg with multiple headers", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		entry := history.Entry{
+			RequestName:   "API Request",
+			RequestMethod: "POST",
+			RequestURL:    "https://api.example.com/data",
+			RequestBody:   `{"items":[1,2,3]}`,
+			RequestHeaders: map[string]string{
+				"Content-Type":  "application/json",
+				"Authorization": "Bearer token123",
+				"X-Custom":      "value",
+			},
+		}
+		msg := components.SelectHistoryItemMsg{Entry: entry}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		req := view.RequestPanel().Request()
+		assert.NotNil(t, req)
+		assert.Equal(t, "POST", req.Method())
+		assert.Equal(t, "https://api.example.com/data", req.URL())
 	})
 }

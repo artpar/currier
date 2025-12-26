@@ -185,3 +185,52 @@ func TestParseHeaders(t *testing.T) {
 
 // Ensure context is respected
 var _ context.Context
+
+func TestSendCommandAdvanced(t *testing.T) {
+	t.Run("sends POST with body using default content-type", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "POST", r.Method)
+			w.WriteHeader(http.StatusCreated)
+		}))
+		defer server.Close()
+
+		out := &bytes.Buffer{}
+		cmd := NewSendCommand()
+		cmd.SetOut(out)
+		cmd.SetArgs([]string{"POST", server.URL, "--body", "plain text body"})
+
+		err := cmd.Execute()
+		require.NoError(t, err)
+	})
+
+	t.Run("sends request with custom timeout", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		out := &bytes.Buffer{}
+		cmd := NewSendCommand()
+		cmd.SetOut(out)
+		cmd.SetArgs([]string{"GET", server.URL, "--timeout", "5s"})
+
+		err := cmd.Execute()
+		require.NoError(t, err)
+	})
+
+	t.Run("sends PUT request", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "PUT", r.Method)
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		out := &bytes.Buffer{}
+		cmd := NewSendCommand()
+		cmd.SetOut(out)
+		cmd.SetArgs([]string{"PUT", server.URL, "--body", `{"id":1}`, "--header", "Content-Type:application/json"})
+
+		err := cmd.Execute()
+		require.NoError(t, err)
+	})
+}
