@@ -165,27 +165,31 @@ func TestTUI_ComprehensiveE2E(t *testing.T) {
 		session := h.TUI().StartWithCollections(t, []*core.Collection{coll})
 		defer session.Quit()
 
-		// Both History and Collections are now visible in stacked layout
+		// Initial state should show Collections view with hint to switch
 		output := session.Output()
+		assert := harness.NewAssertions(t)
+		assert.OutputContains(output, "Collections")
+		assert.OutputContains(output, "H→History")
 
-		// Should show both "History" and "Collections" headers
-		if !strings.Contains(output, "History") {
-			t.Errorf("BUG: Should show History section header")
-		}
-		if !strings.Contains(output, "Collections") {
-			t.Errorf("BUG: Should show Collections section header")
-		}
-
-		// Press H to switch focus to History section
+		// Press H to switch to History view
 		session.SendKey("H")
 		output = session.Output()
 
-		// Both sections should still be visible
+		// Should now show History view with hint to switch back
 		if !strings.Contains(output, "History") {
-			t.Errorf("BUG: H key should keep History section visible")
+			t.Errorf("BUG: H key should switch to History view")
 		}
-		if !strings.Contains(output, "Collections") {
-			t.Errorf("BUG: H key should keep Collections section visible")
+		if !strings.Contains(output, "C→Collections") {
+			t.Errorf("BUG: History view should show C→Collections hint")
+		}
+
+		// Press C to switch back to Collections view
+		session.SendKey("C")
+		output = session.Output()
+
+		// Should be back to Collections view
+		if !strings.Contains(output, "H→History") {
+			t.Errorf("BUG: C key should switch back to Collections view")
 		}
 	})
 

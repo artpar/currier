@@ -154,12 +154,6 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		}
 		return c, nil
 
-	case tea.KeyTab:
-		// Switch to History section
-		c.viewMode = ViewHistory
-		c.loadHistory()
-		return c, nil
-
 	case tea.KeyRunes:
 		switch string(msg.Runes) {
 		case "/":
@@ -212,11 +206,6 @@ func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea
 			return c, nil
 		}
 		// Otherwise, switch to Collections section
-		c.viewMode = ViewCollections
-		return c, nil
-
-	case tea.KeyTab:
-		// Switch to Collections section
 		c.viewMode = ViewCollections
 		return c, nil
 
@@ -571,76 +560,72 @@ func (c *CollectionTree) View() string {
 		innerHeight = 1
 	}
 
-	// Header style for section titles
-	headerStyle := lipgloss.NewStyle().
-		Width(innerWidth).
-		Bold(true).
-		Foreground(lipgloss.Color("243"))
+	// Determine title based on view mode
+	displayTitle := c.title
+	if c.viewMode == ViewHistory {
+		displayTitle = "History"
+	}
 
-	activeHeaderStyle := lipgloss.NewStyle().
+	// Title takes 1 line
+	titleStyle := lipgloss.NewStyle().
 		Width(innerWidth).
+		Align(lipgloss.Center).
 		Bold(true)
 
 	if c.focused {
-		activeHeaderStyle = activeHeaderStyle.
+		titleStyle = titleStyle.
 			Foreground(lipgloss.Color("229")).
 			Background(lipgloss.Color("62"))
 	} else {
-		activeHeaderStyle = activeHeaderStyle.
+		titleStyle = titleStyle.
 			Foreground(lipgloss.Color("252")).
 			Background(lipgloss.Color("238"))
 	}
 
-	// Check if we're in search mode
-	searchLines := 0
+	title := titleStyle.Render(displayTitle)
+
+	// Search bar (if searching or has active filter) - takes 1 line
 	var searchBar string
-	if c.searching {
+	searchLines := 0
+	searchQuery := c.search
+	if c.viewMode == ViewHistory {
+		searchQuery = c.historySearch
+	}
+	if c.searching || searchQuery != "" {
 		searchBar = c.renderSearchBar()
 		searchLines = 1
 	}
 
-	// Calculate heights: History gets ~30%, Collections gets ~70%
-	// Headers take 2 lines total (1 each), plus search bar if active
-	availableHeight := innerHeight - 2 - searchLines
-	historyHeight := availableHeight * 3 / 10
-	if historyHeight < 2 {
-		historyHeight = 2
+	// Mode indicator (shows H for history, C for collections switch hint)
+	var modeIndicator string
+	if c.viewMode == ViewHistory {
+		modeIndicator = c.renderModeIndicator("C→Collections", innerWidth)
+	} else {
+		modeIndicator = c.renderModeIndicator("H→History", innerWidth)
 	}
-	collectionHeight := availableHeight - historyHeight
-	if collectionHeight < 2 {
-		collectionHeight = 2
+	modeLines := 1
+
+	// Content height = inner height - title (1) - search bar (0 or 1) - mode indicator (1)
+	contentHeight := innerHeight - 1 - searchLines - modeLines
+	if contentHeight < 1 {
+		contentHeight = 1
 	}
 
+	var content string
+	if c.viewMode == ViewHistory {
+		content = c.renderHistoryContent(innerWidth, contentHeight)
+	} else {
+		content = c.renderCollectionContent(innerWidth, contentHeight)
+	}
+
+	// Combine all parts
 	var parts []string
-
-	// Search bar (if in search mode)
+	parts = append(parts, title)
+	parts = append(parts, modeIndicator)
 	if searchBar != "" {
 		parts = append(parts, searchBar)
 	}
-
-	// History section header
-	historyHeader := "History"
-	if c.viewMode == ViewHistory {
-		parts = append(parts, activeHeaderStyle.Render(historyHeader))
-	} else {
-		parts = append(parts, headerStyle.Render(historyHeader))
-	}
-
-	// History content
-	historyContent := c.renderHistoryContent(innerWidth, historyHeight)
-	parts = append(parts, historyContent)
-
-	// Collections section header
-	collectionsHeader := "Collections"
-	if c.viewMode == ViewCollections {
-		parts = append(parts, activeHeaderStyle.Render(collectionsHeader))
-	} else {
-		parts = append(parts, headerStyle.Render(collectionsHeader))
-	}
-
-	// Collections content
-	collectionsContent := c.renderCollectionContent(innerWidth, collectionHeight)
-	parts = append(parts, collectionsContent)
+	parts = append(parts, content)
 
 	// Border style without explicit dimensions
 	borderStyle := lipgloss.NewStyle().
