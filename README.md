@@ -12,17 +12,31 @@ A vim-modal TUI API client for developers and AI agents.
 - **Import/Export** - Support for Postman, cURL, HAR, and OpenAPI formats
 - **CLI mode** - Execute requests directly from the command line
 
-## Demo
+## Demos
 
-![Currier TUI Demo](demo.gif)
+### Overview - Navigation & Layout
+![Overview Demo](demos/demo-overview.gif)
+*Stacked History/Collections • H/C to switch • Tab/1/2/3 for panes • ? for help*
 
-### Key Features
+### Creating & Sending Requests
+![Request Demo](demos/demo-request.gif)
+*n for new request • Type URL • Alt+Enter to send while editing*
 
-- **Vim-style navigation**: Use `j/k` to move, `h/l` to collapse/expand, `gg/G` to jump
-- **Tab switching**: Use `[` and `]` to switch between tabs within panels
-- **Pane focus**: Use `1/2/3` or `Tab` to switch between Collections, Request, and Response
-- **Search**: Press `/` to search collections or history
-- **Selection indicators**: `→` for collections, `▶` for history items
+### Request History
+![History Demo](demos/demo-history.gif)
+*H to focus history • j/k to navigate • Enter to load • Replay requests*
+
+### Editing Requests
+![Editing Demo](demos/demo-editing.gif)
+*e to edit URL • [ ] to switch tabs • a to add headers • Tab between fields*
+
+### Viewing Responses
+![Response Demo](demos/demo-response.gif)
+*j/k to scroll • G/gg for top/bottom • [ ] for tabs • y to copy*
+
+### Search
+![Search Demo](demos/demo-search.gif)
+*/ to search • Filter history/collections • Enter to select*
 
 ## Installation
 
