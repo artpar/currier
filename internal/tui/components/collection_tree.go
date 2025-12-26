@@ -544,7 +544,7 @@ func (c *CollectionTree) collapseCurrent() {
 	}
 }
 
-// View renders the component.
+// View renders the component with stacked History and Collections.
 func (c *CollectionTree) View() string {
 	if c.width == 0 || c.height == 0 {
 		return ""
@@ -560,81 +560,79 @@ func (c *CollectionTree) View() string {
 		innerHeight = 1
 	}
 
-	// Determine title based on view mode
-	displayTitle := c.title
-	if c.viewMode == ViewHistory {
-		displayTitle = "History"
-	}
-
-	// Title takes 1 line
-	titleStyle := lipgloss.NewStyle().
+	// Section header styles
+	activeHeaderStyle := lipgloss.NewStyle().
 		Width(innerWidth).
-		Align(lipgloss.Center).
 		Bold(true)
+	inactiveHeaderStyle := lipgloss.NewStyle().
+		Width(innerWidth).
+		Foreground(lipgloss.Color("243"))
 
 	if c.focused {
-		titleStyle = titleStyle.
+		activeHeaderStyle = activeHeaderStyle.
 			Foreground(lipgloss.Color("229")).
 			Background(lipgloss.Color("62"))
 	} else {
-		titleStyle = titleStyle.
+		activeHeaderStyle = activeHeaderStyle.
 			Foreground(lipgloss.Color("252")).
 			Background(lipgloss.Color("238"))
 	}
 
-	title := titleStyle.Render(displayTitle)
-
-	// Search bar (if searching or has active filter) - takes 1 line
-	var searchBar string
+	// Check for search bar
 	searchLines := 0
-	searchQuery := c.search
-	if c.viewMode == ViewHistory {
-		searchQuery = c.historySearch
-	}
-	if c.searching || searchQuery != "" {
+	var searchBar string
+	if c.searching {
 		searchBar = c.renderSearchBar()
 		searchLines = 1
 	}
 
-	// Mode indicator (shows H for history, C for collections switch hint)
-	var modeIndicator string
-	if c.viewMode == ViewHistory {
-		modeIndicator = c.renderModeIndicator("C→Collections", innerWidth)
-	} else {
-		modeIndicator = c.renderModeIndicator("H→History", innerWidth)
+	// Calculate heights: 2 headers + search (if any) + content
+	// History gets ~30%, Collections gets ~70%
+	availableHeight := innerHeight - 2 - searchLines // subtract headers and search
+	if availableHeight < 2 {
+		availableHeight = 2
 	}
-	modeLines := 1
-
-	// Content height = inner height - title (1) - search bar (0 or 1) - mode indicator (1)
-	contentHeight := innerHeight - 1 - searchLines - modeLines
-	if contentHeight < 1 {
-		contentHeight = 1
+	historyHeight := availableHeight * 3 / 10
+	if historyHeight < 1 {
+		historyHeight = 1
 	}
-
-	var content string
-	if c.viewMode == ViewHistory {
-		content = c.renderHistoryContent(innerWidth, contentHeight)
-	} else {
-		content = c.renderCollectionContent(innerWidth, contentHeight)
+	collectionHeight := availableHeight - historyHeight
+	if collectionHeight < 1 {
+		collectionHeight = 1
 	}
 
-	// Combine all parts
 	var parts []string
-	parts = append(parts, title)
-	parts = append(parts, modeIndicator)
+
+	// Search bar at top if searching
 	if searchBar != "" {
 		parts = append(parts, searchBar)
 	}
-	parts = append(parts, content)
 
-	// Border style without explicit dimensions
+	// History section
+	if c.viewMode == ViewHistory {
+		parts = append(parts, activeHeaderStyle.Render("History"))
+	} else {
+		parts = append(parts, inactiveHeaderStyle.Render("History (H)"))
+	}
+	historyContent := c.renderHistoryContent(innerWidth, historyHeight)
+	parts = append(parts, historyContent)
+
+	// Collections section
+	if c.viewMode == ViewCollections {
+		parts = append(parts, activeHeaderStyle.Render("Collections"))
+	} else {
+		parts = append(parts, inactiveHeaderStyle.Render("Collections (C)"))
+	}
+	collectionsContent := c.renderCollectionContent(innerWidth, collectionHeight)
+	parts = append(parts, collectionsContent)
+
+	// Border style
 	borderStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder())
 
 	if c.focused {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
 	} else {
-		// Use brighter color (244 instead of 240) for better visibility
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("244"))
 	}
 
