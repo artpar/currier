@@ -1063,6 +1063,62 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		assert.Contains(t, view, "GET")
 	})
 
+	t.Run("renders selected history item when focused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://api.example.com/users"},
+				{ID: "2", RequestMethod: "POST", RequestURL: "https://api.example.com/posts"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.True(t, tree.Focused())
+		assert.Equal(t, 0, tree.HistoryCursor())
+
+		view := tree.View()
+		assert.Contains(t, view, "GET")
+		assert.Contains(t, view, "POST")
+	})
+
+	t.Run("renders selected history item when unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		store := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://api.example.com/users"},
+				{ID: "2", RequestMethod: "POST", RequestURL: "https://api.example.com/posts"},
+			},
+		}
+		tree.SetHistoryStore(store)
+
+		// Switch to history
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Blur the tree (unfocus)
+		tree.Blur()
+
+		assert.False(t, tree.Focused())
+		assert.Equal(t, 0, tree.HistoryCursor())
+
+		view := tree.View()
+		// Both items should render even when unfocused
+		assert.Contains(t, view, "GET")
+		assert.Contains(t, view, "POST")
+	})
+
 	t.Run("clears search with Escape in history", func(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
