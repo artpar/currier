@@ -738,10 +738,17 @@ func (c *CollectionTree) renderHistoryItem(entry history.Entry, selected bool, w
 
 	// Apply selection styling
 	style := lipgloss.NewStyle()
-	if selected && c.focused {
-		style = style.
-			Background(lipgloss.Color("62")).
-			Foreground(lipgloss.Color("229"))
+	if selected {
+		if c.focused {
+			style = style.
+				Background(lipgloss.Color("62")).
+				Foreground(lipgloss.Color("229"))
+		} else {
+			// Dimmer highlight when unfocused but still selected
+			style = style.
+				Background(lipgloss.Color("238")).
+				Foreground(lipgloss.Color("252"))
+		}
 	}
 
 	return style.Render(line)
@@ -909,10 +916,17 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 
 	// Apply selection styling
 	style := lipgloss.NewStyle()
-	if selected && c.focused {
-		style = style.
-			Background(lipgloss.Color("62")).
-			Foreground(lipgloss.Color("229"))
+	if selected {
+		if c.focused {
+			style = style.
+				Background(lipgloss.Color("62")).
+				Foreground(lipgloss.Color("229"))
+		} else {
+			// Dimmer highlight when unfocused but still selected
+			style = style.
+				Background(lipgloss.Color("238")).
+				Foreground(lipgloss.Color("252"))
+		}
 	}
 
 	return style.Render(line)
