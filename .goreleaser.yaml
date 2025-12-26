@@ -148,29 +148,29 @@ release:
     ### Download binary
     Download the appropriate archive for your platform from the assets below.
 
-# Homebrew (optional - requires HOMEBREW_TAP_TOKEN and homebrew-tap repo)
-# brews:
-#   - repository:
-#       owner: artpar
-#       name: homebrew-tap
-#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-#     homepage: https://github.com/artpar/currier
-#     description: "Vim-modal TUI API client for developers and AI agents"
-#     license: "MIT"
-#     install: |
-#       bin.install "currier"
-#     test: |
-#       system "#{bin}/currier", "--version"
+# Homebrew (requires HOMEBREW_TAP_TOKEN secret and homebrew-tap repo)
+brews:
+  - repository:
+      owner: artpar
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/artpar/currier
+    description: "Vim-modal TUI API client for developers and AI agents"
+    license: "MIT"
+    install: |
+      bin.install "currier"
+    test: |
+      system "#{bin}/currier", "--version"
 
-# Scoop (optional - requires SCOOP_BUCKET_TOKEN and scoop-bucket repo)
-# scoops:
-#   - repository:
-#       owner: artpar
-#       name: scoop-bucket
-#       token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
-#     homepage: https://github.com/artpar/currier
-#     description: "Vim-modal TUI API client for developers and AI agents"
-#     license: MIT
+# Scoop (requires SCOOP_BUCKET_TOKEN secret and scoop-bucket repo)
+scoops:
+  - repository:
+      owner: artpar
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    homepage: https://github.com/artpar/currier
+    description: "Vim-modal TUI API client for developers and AI agents"
+    license: MIT
 
 # AUR (optional - requires AUR_KEY secret and AUR account)
 # aurs:
