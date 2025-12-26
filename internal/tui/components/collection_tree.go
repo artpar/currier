@@ -154,6 +154,12 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		}
 		return c, nil
 
+	case tea.KeyTab:
+		// Switch to History section
+		c.viewMode = ViewHistory
+		c.loadHistory()
+		return c, nil
+
 	case tea.KeyRunes:
 		switch string(msg.Runes) {
 		case "/":
@@ -169,7 +175,7 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		case "h":
 			c.collapseCurrent()
 		case "H":
-			// Switch to History view
+			// Switch to History section
 			c.viewMode = ViewHistory
 			c.loadHistory()
 			return c, nil
@@ -205,7 +211,12 @@ func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea
 			c.loadHistory()
 			return c, nil
 		}
-		// Otherwise, exit History view and return to Collections
+		// Otherwise, switch to Collections section
+		c.viewMode = ViewCollections
+		return c, nil
+
+	case tea.KeyTab:
+		// Switch to Collections section
 		c.viewMode = ViewCollections
 		return c, nil
 
@@ -219,8 +230,12 @@ func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea
 			c.moveHistoryCursor(1)
 		case "k":
 			c.moveHistoryCursor(-1)
-		case "C", "H":
-			// Switch back to Collections view (H toggles, C explicit)
+		case "C":
+			// Switch to Collections section
+			c.viewMode = ViewCollections
+			return c, nil
+		case "H":
+			// Toggle - switch to Collections section
 			c.viewMode = ViewCollections
 			return c, nil
 		case "h", "l":
@@ -556,72 +571,76 @@ func (c *CollectionTree) View() string {
 		innerHeight = 1
 	}
 
-	// Determine title based on view mode
-	displayTitle := c.title
-	if c.viewMode == ViewHistory {
-		displayTitle = "History"
-	}
-
-	// Title takes 1 line
-	titleStyle := lipgloss.NewStyle().
+	// Header style for section titles
+	headerStyle := lipgloss.NewStyle().
 		Width(innerWidth).
-		Align(lipgloss.Center).
+		Bold(true).
+		Foreground(lipgloss.Color("243"))
+
+	activeHeaderStyle := lipgloss.NewStyle().
+		Width(innerWidth).
 		Bold(true)
 
 	if c.focused {
-		titleStyle = titleStyle.
+		activeHeaderStyle = activeHeaderStyle.
 			Foreground(lipgloss.Color("229")).
 			Background(lipgloss.Color("62"))
 	} else {
-		titleStyle = titleStyle.
+		activeHeaderStyle = activeHeaderStyle.
 			Foreground(lipgloss.Color("252")).
 			Background(lipgloss.Color("238"))
 	}
 
-	title := titleStyle.Render(displayTitle)
-
-	// Search bar (if searching or has active filter) - takes 1 line
-	var searchBar string
+	// Check if we're in search mode
 	searchLines := 0
-	searchQuery := c.search
-	if c.viewMode == ViewHistory {
-		searchQuery = c.historySearch
-	}
-	if c.searching || searchQuery != "" {
+	var searchBar string
+	if c.searching {
 		searchBar = c.renderSearchBar()
 		searchLines = 1
 	}
 
-	// Mode indicator (shows H for history, C for collections switch hint)
-	var modeIndicator string
-	if c.viewMode == ViewHistory {
-		modeIndicator = c.renderModeIndicator("C→Collections", innerWidth)
-	} else {
-		modeIndicator = c.renderModeIndicator("H→History", innerWidth)
+	// Calculate heights: History gets ~30%, Collections gets ~70%
+	// Headers take 2 lines total (1 each), plus search bar if active
+	availableHeight := innerHeight - 2 - searchLines
+	historyHeight := availableHeight * 3 / 10
+	if historyHeight < 2 {
+		historyHeight = 2
 	}
-	modeLines := 1
-
-	// Content height = inner height - title (1) - search bar (0 or 1) - mode indicator (1)
-	contentHeight := innerHeight - 1 - searchLines - modeLines
-	if contentHeight < 1 {
-		contentHeight = 1
+	collectionHeight := availableHeight - historyHeight
+	if collectionHeight < 2 {
+		collectionHeight = 2
 	}
 
-	var content string
-	if c.viewMode == ViewHistory {
-		content = c.renderHistoryContent(innerWidth, contentHeight)
-	} else {
-		content = c.renderCollectionContent(innerWidth, contentHeight)
-	}
-
-	// Combine all parts
 	var parts []string
-	parts = append(parts, title)
-	parts = append(parts, modeIndicator)
+
+	// Search bar (if in search mode)
 	if searchBar != "" {
 		parts = append(parts, searchBar)
 	}
-	parts = append(parts, content)
+
+	// History section header
+	historyHeader := "History"
+	if c.viewMode == ViewHistory {
+		parts = append(parts, activeHeaderStyle.Render(historyHeader))
+	} else {
+		parts = append(parts, headerStyle.Render(historyHeader))
+	}
+
+	// History content
+	historyContent := c.renderHistoryContent(innerWidth, historyHeight)
+	parts = append(parts, historyContent)
+
+	// Collections section header
+	collectionsHeader := "Collections"
+	if c.viewMode == ViewCollections {
+		parts = append(parts, activeHeaderStyle.Render(collectionsHeader))
+	} else {
+		parts = append(parts, headerStyle.Render(collectionsHeader))
+	}
+
+	// Collections content
+	collectionsContent := c.renderCollectionContent(innerWidth, collectionHeight)
+	parts = append(parts, collectionsContent)
 
 	// Border style without explicit dimensions
 	borderStyle := lipgloss.NewStyle().
@@ -693,7 +712,13 @@ func (c *CollectionTree) renderHistoryContent(innerWidth, contentHeight int) str
 }
 
 func (c *CollectionTree) renderHistoryItem(entry history.Entry, selected bool, width int) string {
-	// Format: [METHOD] URL - status - time ago
+	// Selection indicator prefix
+	prefix := "  "
+	if selected {
+		prefix = "▶ "
+	}
+
+	// Format: [PREFIX][METHOD] URL - status - time ago
 	methodBadge := c.methodBadge(entry.RequestMethod)
 
 	// Truncate URL to fit
@@ -720,8 +745,8 @@ func (c *CollectionTree) renderHistoryItem(entry history.Entry, selected bool, w
 	timeStr := timeStyle.Render(timeAgo)
 
 	// Calculate available width for URL
-	// methodBadge is ~6 chars, status ~3 chars, time ~10 chars, spaces ~5 chars
-	availableWidth := width - 25
+	// prefix ~2 chars, methodBadge ~6 chars, status ~3 chars, time ~10 chars, spaces ~5 chars
+	availableWidth := width - 27
 	if availableWidth < 10 {
 		availableWidth = 10
 	}
@@ -729,7 +754,7 @@ func (c *CollectionTree) renderHistoryItem(entry history.Entry, selected bool, w
 		url = url[:availableWidth-3] + "..."
 	}
 
-	line := fmt.Sprintf("%s %s %s %s", methodBadge, url, statusStr, timeStr)
+	line := fmt.Sprintf("%s%s %s %s %s", prefix, methodBadge, url, statusStr, timeStr)
 
 	// Pad to full width
 	if len(line) < width {
@@ -866,6 +891,12 @@ func (c *CollectionTree) renderSearchBar() string {
 func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 	width := c.width - 2 // Account for borders only
 
+	// Selection indicator prefix
+	selPrefix := " "
+	if selected {
+		selPrefix = "→"
+	}
+
 	// Indentation
 	indent := strings.Repeat("  ", item.Level)
 
@@ -894,7 +925,7 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 
 	// Name
 	name := item.Name
-	availableWidth := width - len(indent) - len(indicator) - len(icon) - 2
+	availableWidth := width - len(selPrefix) - len(indent) - len(indicator) - len(icon) - 2
 	if availableWidth <= 0 {
 		// Not enough space for name at all
 		name = ""
@@ -907,7 +938,7 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 		name = name[:availableWidth-3] + "..."
 	}
 
-	line := indent + indicator + icon + name
+	line := selPrefix + indent + indicator + icon + name
 
 	// Pad to full width
 	if len(line) < width {

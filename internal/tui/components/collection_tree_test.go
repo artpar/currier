@@ -1087,6 +1087,8 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		view := tree.View()
 		assert.Contains(t, view, "GET")
 		assert.Contains(t, view, "POST")
+		// Selected item should have arrow prefix
+		assert.Contains(t, view, "▶", "selected history item should have arrow prefix")
 	})
 
 	t.Run("renders selected history item when unfocused", func(t *testing.T) {
@@ -1117,6 +1119,23 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		// Both items should render even when unfocused
 		assert.Contains(t, view, "GET")
 		assert.Contains(t, view, "POST")
+		// Selected item should still have arrow prefix when unfocused
+		assert.Contains(t, view, "▶", "selected history item should have arrow prefix even when unfocused")
+	})
+
+	t.Run("renders selected collection item with arrow prefix", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		c := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Get Users", "GET", "/users")
+		c.AddRequest(req)
+		tree.SetCollections([]*core.Collection{c})
+
+		view := tree.View()
+		// Selected collection item should have arrow prefix
+		assert.Contains(t, view, "→", "selected collection item should have arrow prefix")
 	})
 
 	t.Run("clears search with Escape in history", func(t *testing.T) {
