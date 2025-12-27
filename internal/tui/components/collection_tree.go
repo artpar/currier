@@ -174,7 +174,15 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.loadHistory()
 			return c, nil
 		case "G":
-			c.cursor = len(c.getDisplayItems()) - 1
+			displayItems := c.getDisplayItems()
+			if len(displayItems) > 0 {
+				c.cursor = len(displayItems) - 1
+				// Adjust offset to ensure cursor is visible
+				visibleHeight := c.contentHeight()
+				if c.cursor >= c.offset+visibleHeight {
+					c.offset = c.cursor - visibleHeight + 1
+				}
+			}
 			c.gPressed = false
 		case "g":
 			if c.gPressed {
@@ -233,6 +241,11 @@ func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea
 		case "G":
 			if len(c.historyEntries) > 0 {
 				c.historyCursor = len(c.historyEntries) - 1
+				// Adjust offset to ensure cursor is visible
+				visibleHeight := c.historyContentHeight()
+				if c.historyCursor >= c.historyOffset+visibleHeight {
+					c.historyOffset = c.historyCursor - visibleHeight + 1
+				}
 			}
 			c.gPressed = false
 		case "g":
