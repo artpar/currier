@@ -37,13 +37,9 @@ Sleep 200ms
 Escape
 Sleep 200ms
 
-# Change method
+# Change method (m cycles: GET → POST)
 Type "m"
 Sleep 300ms
-Type "j"
-Sleep 200ms
-Enter
-Sleep 200ms
 
 # Send
 Enter

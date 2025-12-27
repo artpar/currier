@@ -180,11 +180,6 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return p.handleURLEditInput(msg)
 	}
 
-	// Handle method editing mode
-	if p.editingMethod {
-		return p.handleMethodEditInput(msg)
-	}
-
 	// Handle header editing mode
 	if p.editingHeader {
 		return p.handleHeaderEditInput(msg)
@@ -376,25 +371,36 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 				}
 			}
 		case "m":
-			// Enter method edit mode
+			// Cycle to next HTTP method (inline, no dropdown)
 			if p.request == nil {
 				return p, nil
 			}
-			if p.activeTab != TabURL {
-				return p, func() tea.Msg {
-					return FeedbackMsg{Message: "Switch to URL tab to change method (press [)", IsError: false}
-				}
-			}
-			p.editingMethod = true
-			// Find current method index
 			currentMethod := strings.ToUpper(p.request.Method())
-			p.methodIndex = 0
+			currentIndex := 0
 			for i, m := range httpMethods {
 				if m == currentMethod {
-					p.methodIndex = i
+					currentIndex = i
 					break
 				}
 			}
+			nextIndex := (currentIndex + 1) % len(httpMethods)
+			p.request.SetMethod(httpMethods[nextIndex])
+			return p, nil
+		case "M":
+			// Cycle to previous HTTP method
+			if p.request == nil {
+				return p, nil
+			}
+			currentMethod := strings.ToUpper(p.request.Method())
+			currentIndex := 0
+			for i, m := range httpMethods {
+				if m == currentMethod {
+					currentIndex = i
+					break
+				}
+			}
+			prevIndex := (currentIndex - 1 + len(httpMethods)) % len(httpMethods)
+			p.request.SetMethod(httpMethods[prevIndex])
 			return p, nil
 		case "[":
 			// Switch to previous tab
@@ -1518,65 +1524,6 @@ func (p *RequestPanel) handleURLEditInput(msg tea.KeyMsg) (tui.Component, tea.Cm
 	return p, nil
 }
 
-func (p *RequestPanel) handleMethodEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyTab:
-		// Capture Tab to prevent pane switching during method selection
-		return p, nil
-
-	case tea.KeyEsc:
-		// Save method and exit edit mode (vim-like behavior)
-		if p.request != nil {
-			p.request.SetMethod(httpMethods[p.methodIndex])
-		}
-		p.editingMethod = false
-		return p, nil
-
-	case tea.KeyEnter:
-		// Save method and exit edit mode
-		if p.request != nil {
-			p.request.SetMethod(httpMethods[p.methodIndex])
-		}
-		p.editingMethod = false
-		return p, nil
-
-	case tea.KeyUp, tea.KeyLeft:
-		// Previous method
-		p.methodIndex--
-		if p.methodIndex < 0 {
-			p.methodIndex = len(httpMethods) - 1
-		}
-		return p, nil
-
-	case tea.KeyDown, tea.KeyRight:
-		// Next method
-		p.methodIndex++
-		if p.methodIndex >= len(httpMethods) {
-			p.methodIndex = 0
-		}
-		return p, nil
-
-	case tea.KeyRunes:
-		switch string(msg.Runes) {
-		case "j", "l":
-			// Next method
-			p.methodIndex++
-			if p.methodIndex >= len(httpMethods) {
-				p.methodIndex = 0
-			}
-		case "k", "h":
-			// Previous method
-			p.methodIndex--
-			if p.methodIndex < 0 {
-				p.methodIndex = len(httpMethods) - 1
-			}
-		}
-		return p, nil
-	}
-
-	return p, nil
-}
-
 func (p *RequestPanel) nextTab() {
 	p.activeTab = RequestTab((int(p.activeTab) + 1) % len(tabNames))
 	p.cursor = 0
@@ -1700,16 +1647,11 @@ func (p *RequestPanel) renderURLBar() string {
 		return emptyStyle.Render("Press n to create a new request, or select from Collections (1)")
 	}
 
-	// Check if in method edit mode
-	if p.editingMethod {
-		return p.renderMethodSelector()
-	}
-
-	// Method button style (Postman-like dropdown look)
+	// Method badge (press m to cycle)
 	method := p.request.Method()
 	methodBtnStyle := p.methodStyle(method).
 		Padding(0, 1)
-	methodBtn := methodBtnStyle.Render(method + " ▾")
+	methodBtn := methodBtnStyle.Render(method)
 
 	// Send button - brighter when focused on URL tab
 	sendStyle := lipgloss.NewStyle().
@@ -1803,52 +1745,6 @@ func (p *RequestPanel) renderURLBar() string {
 	urlBar := methodBtn + " " + urlField + " " + sendBtn
 
 	return urlBar
-}
-
-func (p *RequestPanel) renderMethodSelector() string {
-	innerWidth := p.width - 2
-
-	// Build dropdown-style method selector
-	var methods []string
-
-	for i, m := range httpMethods {
-		if i == p.methodIndex {
-			// Selected method - colored badge with arrow
-			style := p.methodStyle(m)
-			methods = append(methods, style.Render("▸ "+m))
-		} else {
-			// Other methods - muted
-			style := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("245")).
-				Padding(0, 1)
-			methods = append(methods, style.Render("  "+m))
-		}
-	}
-
-	// Dropdown box styling
-	dropdownStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("214")).
-		Padding(0, 1)
-
-	methodList := strings.Join(methods, "\n")
-	dropdown := dropdownStyle.Render(methodList)
-
-	// Hints below dropdown
-	hintStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245")).
-		Italic(true)
-	hints := hintStyle.Render("↑/↓ j/k Select   Enter/Esc: save & exit")
-
-	// Pad to fill width
-	lines := strings.Split(dropdown, "\n")
-	for i, line := range lines {
-		if len(line) < innerWidth {
-			lines[i] = line + strings.Repeat(" ", innerWidth-lipgloss.Width(line))
-		}
-	}
-
-	return strings.Join(lines, "\n") + "\n" + hints
 }
 
 func (p *RequestPanel) renderTabBar() string {
@@ -2563,7 +2459,7 @@ func (p *RequestPanel) Blur() {
 
 // IsEditing returns true if the panel is in any editing mode.
 func (p *RequestPanel) IsEditing() bool {
-	return p.editingURL || p.editingMethod || p.editingHeader || p.editingQuery || p.editingBody || p.editingAuth || p.editingPreScript || p.editingTestScript
+	return p.editingURL || p.editingHeader || p.editingQuery || p.editingBody || p.editingAuth || p.editingPreScript || p.editingTestScript
 }
 
 // SetSize sets dimensions.
@@ -2701,7 +2597,7 @@ func (p *RequestPanel) ActiveTabName() string {
 
 // IsEditingMethod returns true if in method edit mode.
 func (p *RequestPanel) IsEditingMethod() bool {
-	return p.editingMethod
+	return false // Method selection is now inline cycling, no edit mode
 }
 
 // EditingField returns which field is being edited.

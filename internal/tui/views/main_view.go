@@ -757,7 +757,7 @@ func (v *MainView) renderHelp() string {
 		"│                                                          │",
 		"│  Request Pane                                            │",
 		"│    [ / ]              Switch tabs (URL/Headers/etc)     │",
-		"│    m                  Change HTTP method (URL tab)      │",
+		"│    m / M              Cycle HTTP method (next/prev)     │",
 		"│    e                  Edit URL/header/body              │",
 		"│    a                  Add header/query param            │",
 		"│    d                  Delete header/query param         │",

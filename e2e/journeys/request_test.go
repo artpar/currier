@@ -58,15 +58,14 @@ func TestJourney_ChangeMethod(t *testing.T) {
 			SendKey("Escape").
 			ExpectMethod("GET").
 
-		Step("Enter method selector").
+		Step("Cycle method with m (GET -> POST)").
 			SendKey("m").
-			ExpectEditingField("method").
-
-		Step("Navigate to POST").
-			SendKey("j"). // Move down to POST
-			SendKey("Enter").
 			ExpectMethod("POST").
-			ExpectEditingField(""). // No longer editing
+			ExpectEditingField(""). // Method cycling is inline, no edit mode
+
+		Step("Cycle method again (POST -> PUT)").
+			SendKey("m").
+			ExpectMethod("PUT").
 
 		Run()
 }

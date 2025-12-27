@@ -355,68 +355,62 @@ func TestRequestPanel_URLEditing(t *testing.T) {
 }
 
 func TestRequestPanel_MethodEditing(t *testing.T) {
-	t.Run("m key enters method edit mode", func(t *testing.T) {
+	t.Run("m key cycles to next method", func(t *testing.T) {
 		panel := newTestRequestPanel(t)
 		panel.Focus()
 		panel.SetActiveTab(TabURL)
 
+		// Initial method is GET
+		assert.Equal(t, "GET", panel.Request().Method())
+
+		// Press m to cycle to next method
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
 		updated, _ := panel.Update(msg)
 		panel = updated.(*RequestPanel)
 
-		panel.SetSize(80, 30)
-		view := panel.View()
-		// Should show method selector with multiple methods
-		assert.Contains(t, view, "POST")
-		assert.Contains(t, view, "PUT")
-	})
-
-	t.Run("arrow keys cycle through methods", func(t *testing.T) {
-		panel := newTestRequestPanel(t)
-		panel.Focus()
-		panel.SetActiveTab(TabURL)
-
-		// Enter method edit mode
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
-		updated, _ := panel.Update(msg)
-		panel = updated.(*RequestPanel)
-
-		// Press down arrow
-		msg = tea.KeyMsg{Type: tea.KeyDown}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
-
-		// Press Enter to save
-		msg = tea.KeyMsg{Type: tea.KeyEnter}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
-
-		// Method should have changed
-		assert.NotEqual(t, "GET", panel.Request().Method())
-	})
-
-	t.Run("Escape saves method edit (vim-like)", func(t *testing.T) {
-		panel := newTestRequestPanel(t)
-		panel.Focus()
-		panel.SetActiveTab(TabURL)
-
-		// Enter method edit mode
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
-		updated, _ := panel.Update(msg)
-		panel = updated.(*RequestPanel)
-
-		// Change method (Down selects next: POST)
-		msg = tea.KeyMsg{Type: tea.KeyDown}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
-
-		// Save with Escape (vim-like: Esc saves and exits edit mode)
-		msg = tea.KeyMsg{Type: tea.KeyEsc}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
-
-		// Method should be changed to POST (Escape now saves)
+		// Should cycle to POST
 		assert.Equal(t, "POST", panel.Request().Method())
+	})
+
+	t.Run("m key cycles through all methods", func(t *testing.T) {
+		panel := newTestRequestPanel(t)
+		panel.Focus()
+		panel.SetActiveTab(TabURL)
+
+		methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+
+		for i, expected := range methods {
+			if i > 0 {
+				// Cycle to next method
+				msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
+				updated, _ := panel.Update(msg)
+				panel = updated.(*RequestPanel)
+			}
+			assert.Equal(t, expected, panel.Request().Method())
+		}
+
+		// One more cycle should wrap to GET
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.Equal(t, "GET", panel.Request().Method())
+	})
+
+	t.Run("M key cycles to previous method", func(t *testing.T) {
+		panel := newTestRequestPanel(t)
+		panel.Focus()
+		panel.SetActiveTab(TabURL)
+
+		// Initial method is GET
+		assert.Equal(t, "GET", panel.Request().Method())
+
+		// Press M to cycle to previous method (wraps to OPTIONS)
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+
+		// Should cycle to OPTIONS (last in list)
+		assert.Equal(t, "OPTIONS", panel.Request().Method())
 	})
 }
 
@@ -2752,7 +2746,7 @@ func TestRequestPanel_Accessors(t *testing.T) {
 		assert.Equal(t, "Tests", panel.ActiveTabName())
 	})
 
-	t.Run("IsEditingMethod returns correct state", func(t *testing.T) {
+	t.Run("IsEditingMethod returns false (method is inline cycling)", func(t *testing.T) {
 		panel := NewRequestPanel()
 		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
 		panel.SetRequest(req)
@@ -2760,11 +2754,15 @@ func TestRequestPanel_Accessors(t *testing.T) {
 		panel.Focus()
 		panel.SetActiveTab(TabURL)
 
+		// Method selection is now inline cycling, no edit mode
 		assert.False(t, panel.IsEditingMethod())
 
-		// Enter method edit mode with 'm'
+		// Press 'm' to cycle method - still not in edit mode
 		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
-		assert.True(t, panel.IsEditingMethod())
+		assert.False(t, panel.IsEditingMethod())
+
+		// Method should have changed
+		assert.Equal(t, "POST", panel.Request().Method())
 	})
 
 	t.Run("EditingField returns correct field name", func(t *testing.T) {
@@ -2785,9 +2783,9 @@ func TestRequestPanel_Accessors(t *testing.T) {
 		// Exit URL edit mode
 		panel.Update(tea.KeyMsg{Type: tea.KeyEsc})
 
-		// Enter method edit mode
+		// Method cycling doesn't enter edit mode, so field should be empty
 		panel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
-		assert.Equal(t, "method", panel.EditingField())
+		assert.Equal(t, "", panel.EditingField())
 	})
 
 	t.Run("CursorPosition returns correct position", func(t *testing.T) {

@@ -162,11 +162,9 @@ func TestFullWorkflow_SendPOSTRequest(t *testing.T) {
 	session.Type("https://httpbin.org/post")
 	session.SendKey("Escape")
 
-	// Change method to POST
+	// Change method to POST (m cycles: GET -> POST)
 	t.Log("Changing method to POST")
-	session.SendKey("m")     // Enter method selector
-	session.SendKey("j")     // Move to POST
-	session.SendKey("Enter") // Confirm
+	session.SendKey("m") // Cycle to POST
 
 	state := session.State()
 	if state.Request.Method != "POST" {

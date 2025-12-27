@@ -578,17 +578,12 @@ func (c *CollectionTree) View() string {
 			Background(lipgloss.Color("238"))
 	}
 
-	// Check for search bar
-	searchLines := 0
-	var searchBar string
-	if c.searching {
-		searchBar = c.renderSearchBar()
-		searchLines = 1
-	}
+	// Always reserve 1 line for search bar (prevents layout jump)
+	searchBar := c.renderSearchBar()
 
-	// Calculate heights: 2 headers + search (if any) + content
+	// Calculate heights: 2 headers + search bar (always 1) + content
 	// History gets ~30%, Collections gets ~70%
-	availableHeight := innerHeight - 2 - searchLines // subtract headers and search
+	availableHeight := innerHeight - 3 // subtract headers (2) and search bar (1)
 	if availableHeight < 2 {
 		availableHeight = 2
 	}
@@ -603,10 +598,8 @@ func (c *CollectionTree) View() string {
 
 	var parts []string
 
-	// Search bar at top if searching
-	if searchBar != "" {
-		parts = append(parts, searchBar)
-	}
+	// Search bar always at top (space always reserved)
+	parts = append(parts, searchBar)
 
 	// History section
 	if c.viewMode == ViewHistory {
@@ -785,10 +778,16 @@ func (c *CollectionTree) renderSearchBar() string {
 	width := c.width - 2 // Account for borders only
 
 	// Search icon and input
-	searchIcon := "🔍 "
+	searchIcon := "/ "
 	query := c.search
 	if c.viewMode == ViewHistory {
 		query = c.historySearch
+	}
+
+	// When not searching and no query, show placeholder hint
+	placeholder := ""
+	if !c.searching && query == "" {
+		placeholder = "search..."
 	}
 
 	// Cursor indicator when in search mode
@@ -836,7 +835,14 @@ func (c *CollectionTree) renderSearchBar() string {
 	}
 
 	// Build search bar content
-	content := searchIcon + query + cursor
+	var content string
+	if placeholder != "" {
+		// Show dimmed placeholder when not searching
+		placeholderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+		content = searchIcon + placeholderStyle.Render(placeholder)
+	} else {
+		content = searchIcon + query + cursor
+	}
 
 	// Add result feedback with different color
 	if resultFeedback != "" {
