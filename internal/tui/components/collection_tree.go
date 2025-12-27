@@ -786,12 +786,13 @@ func (c *CollectionTree) renderHistoryItem(entry history.Entry, selected bool, w
 	// Apply selection styling
 	style := lipgloss.NewStyle()
 	if selected {
-		if c.focused {
+		// Only show bright highlight if focused AND this section (history) is active
+		if c.focused && c.viewMode == ViewHistory {
 			style = style.
 				Background(lipgloss.Color("62")).
 				Foreground(lipgloss.Color("229"))
 		} else {
-			// Dimmer highlight when unfocused but still selected
+			// Dimmer highlight when unfocused or section is inactive
 			style = style.
 				Background(lipgloss.Color("238")).
 				Foreground(lipgloss.Color("252"))
@@ -983,12 +984,13 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 	// Apply selection styling
 	style := lipgloss.NewStyle()
 	if selected {
-		if c.focused {
+		// Only show bright highlight if focused AND this section (collections) is active
+		if c.focused && c.viewMode == ViewCollections {
 			style = style.
 				Background(lipgloss.Color("62")).
 				Foreground(lipgloss.Color("229"))
 		} else {
-			// Dimmer highlight when unfocused but still selected
+			// Dimmer highlight when unfocused or section is inactive
 			style = style.
 				Background(lipgloss.Color("238")).
 				Foreground(lipgloss.Color("252"))
