@@ -273,8 +273,8 @@ func (c *CollectionTree) moveHistoryCursor(delta int) {
 		c.historyCursor = maxCursor
 	}
 
-	// Adjust scroll offset
-	visibleHeight := c.contentHeight()
+	// Adjust scroll offset - use history-specific height
+	visibleHeight := c.historyContentHeight()
 	if visibleHeight < 1 {
 		visibleHeight = 1
 	}
@@ -509,15 +509,36 @@ func (c *CollectionTree) applyFilter() {
 
 // contentHeight returns the height available for content.
 func (c *CollectionTree) contentHeight() int {
-	// height - 2 (borders) - 1 (title) - 1 (mode indicator) - search bar if present
-	height := c.height - 4
-	if c.searching || c.search != "" {
-		height-- // Search bar
+	// In stacked layout: borders (2) + search (1) + history header (1) + collections header (1)
+	// History gets ~30%, Collections gets ~70% of remaining
+	innerHeight := c.height - 2
+	availableHeight := innerHeight - 3 // headers (2) + search bar (1)
+	if availableHeight < 2 {
+		availableHeight = 2
 	}
-	if height < 1 {
-		height = 1
+	historyHeight := availableHeight * 3 / 10
+	if historyHeight < 1 {
+		historyHeight = 1
 	}
-	return height
+	collectionHeight := availableHeight - historyHeight
+	if collectionHeight < 1 {
+		collectionHeight = 1
+	}
+	return collectionHeight
+}
+
+// historyContentHeight returns the height available for history content.
+func (c *CollectionTree) historyContentHeight() int {
+	innerHeight := c.height - 2
+	availableHeight := innerHeight - 3 // headers (2) + search bar (1)
+	if availableHeight < 2 {
+		availableHeight = 2
+	}
+	historyHeight := availableHeight * 3 / 10
+	if historyHeight < 1 {
+		historyHeight = 1
+	}
+	return historyHeight
 }
 
 func (c *CollectionTree) expandCurrent() {
