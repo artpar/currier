@@ -159,6 +159,55 @@ func TestCollectionTree_Navigation(t *testing.T) {
 
 		assert.Equal(t, 0, tree.Cursor())
 	})
+
+	t.Run("g then search resets gPressed state", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.SetCursor(5)
+
+		// Press first g
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		assert.True(t, tree.gPressed, "gPressed should be true after first g")
+
+		// Enter search mode with /
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		assert.False(t, tree.gPressed, "gPressed should be reset when entering search")
+
+		// Exit search with Esc
+		msg = tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Now a single g should NOT trigger gg
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.NotEqual(t, 0, tree.Cursor(), "single g after search should not go to top")
+		assert.True(t, tree.gPressed, "gPressed should be true waiting for second g")
+	})
+
+	t.Run("g then mode switch resets gPressed state", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.SetCursor(3)
+
+		// Press first g in collections mode
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		assert.True(t, tree.gPressed, "gPressed should be true after first g")
+
+		// Switch to history mode with H
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		assert.False(t, tree.gPressed, "gPressed should be reset when switching modes")
+	})
 }
 
 func TestCollectionTree_Expand(t *testing.T) {

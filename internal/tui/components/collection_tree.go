@@ -152,6 +152,7 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.cursor = 0
 			c.offset = 0
 		}
+		c.gPressed = false
 		return c, nil
 
 	case tea.KeyRunes:
@@ -159,6 +160,7 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		case "/":
 			c.searching = true
 			c.search = ""
+			c.gPressed = false
 			return c, nil
 		case "j":
 			c.moveCursor(1)
@@ -172,6 +174,7 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Switch to History section
 			c.viewMode = ViewHistory
 			c.loadHistory()
+			c.gPressed = false
 			return c, nil
 		case "G":
 			displayItems := c.getDisplayItems()
@@ -198,6 +201,7 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		}
 
 	case tea.KeyEnter:
+		c.gPressed = false
 		return c.handleEnter()
 	}
 
@@ -208,6 +212,7 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
+		c.gPressed = false
 		// If searching, clear search filter first
 		if c.historySearch != "" {
 			c.historySearch = ""
@@ -223,6 +228,7 @@ func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea
 		case "/":
 			c.searching = true
 			c.historySearch = ""
+			c.gPressed = false
 			return c, nil
 		case "j":
 			c.moveHistoryCursor(1)
@@ -231,13 +237,16 @@ func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea
 		case "C":
 			// Switch to Collections section
 			c.viewMode = ViewCollections
+			c.gPressed = false
 			return c, nil
 		case "H":
 			// Toggle - switch to Collections section
 			c.viewMode = ViewCollections
+			c.gPressed = false
 			return c, nil
 		case "h", "l":
 			// No-op in history view (no expand/collapse) but handle gracefully
+			c.gPressed = false
 			return c, nil
 		case "G":
 			if len(c.historyEntries) > 0 {
@@ -261,12 +270,14 @@ func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea
 		case "r":
 			// Refresh history
 			c.loadHistory()
+			c.gPressed = false
 			return c, nil
 		default:
 			c.gPressed = false
 		}
 
 	case tea.KeyEnter:
+		c.gPressed = false
 		return c.handleHistoryEnter()
 	}
 
