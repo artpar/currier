@@ -1094,6 +1094,7 @@ func (c *CollectionTree) SetCollections(collections []*core.Collection) {
 	c.collections = collections
 	c.rebuildItems()
 	c.cursor = 0
+	c.offset = 0
 }
 
 // Collections returns the current collections.
@@ -1133,6 +1134,17 @@ func (c *CollectionTree) AddRequest(req *core.RequestDefinition, collection *cor
 	for i, item := range c.items {
 		if item.Type == ItemRequest && item.Request != nil && item.Request.ID() == req.ID() {
 			c.cursor = i
+			// Ensure cursor is visible by adjusting offset
+			visibleHeight := c.contentHeight()
+			if visibleHeight < 1 {
+				visibleHeight = 1
+			}
+			if c.cursor < c.offset {
+				c.offset = c.cursor
+			}
+			if c.cursor >= c.offset+visibleHeight {
+				c.offset = c.cursor - visibleHeight + 1
+			}
 			break
 		}
 	}
