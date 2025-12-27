@@ -1095,6 +1095,7 @@ func (c *CollectionTree) AddRequest(req *core.RequestDefinition, collection *cor
 // SetHistoryStore sets the history store for browsing request history.
 func (c *CollectionTree) SetHistoryStore(store history.Store) {
 	c.historyStore = store
+	c.loadHistory() // Load history immediately when store is set
 }
 
 // ViewMode returns the current view mode.
