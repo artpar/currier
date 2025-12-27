@@ -15,27 +15,27 @@ A vim-modal TUI API client for developers and AI agents.
 ## Demos
 
 ### Overview - Navigation & Layout
-![Overview Demo](demos/demo-overview.gif)
+![Overview Demo](demos/demo-overview.gif?v=0.1.15)
 *Stacked History/Collections • H/C to switch • Tab/1/2/3 for panes • ? for help*
 
 ### Creating & Sending Requests
-![Request Demo](demos/demo-request.gif)
+![Request Demo](demos/demo-request.gif?v=0.1.15)
 *n for new request • Type URL • Alt+Enter to send while editing*
 
 ### Request History
-![History Demo](demos/demo-history.gif)
+![History Demo](demos/demo-history.gif?v=0.1.15)
 *H to focus history • j/k to navigate • Enter to load • Replay requests*
 
 ### Editing Requests
-![Editing Demo](demos/demo-editing.gif)
+![Editing Demo](demos/demo-editing.gif?v=0.1.15)
 *e to edit URL • [ ] to switch tabs • a to add headers • Tab between fields*
 
 ### Viewing Responses
-![Response Demo](demos/demo-response.gif)
+![Response Demo](demos/demo-response.gif?v=0.1.15)
 *j/k to scroll • G/gg for top/bottom • [ ] for tabs • y to copy*
 
 ### Search
-![Search Demo](demos/demo-search.gif)
+![Search Demo](demos/demo-search.gif?v=0.1.15)
 */ to search • Filter history/collections • Enter to select*
 
 ## Installation
