@@ -65,9 +65,8 @@ func TestEdgeCases(t *testing.T) {
 		view = updated.(*views.MainView)
 		
 		// Try to send without request - should not crash
-		updated, cmd := view.Update(tea.KeyMsg{Type: tea.KeyEnter})
-		view = updated.(*views.MainView)
-		
+		_, cmd := view.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
 		t.Logf("Send without request - cmd: %v", cmd != nil)
 	})
 	

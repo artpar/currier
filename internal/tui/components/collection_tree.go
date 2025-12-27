@@ -286,30 +286,9 @@ func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea
 }
 
 func (c *CollectionTree) moveHistoryCursor(delta int) {
-	c.historyCursor += delta
-	if c.historyCursor < 0 {
-		c.historyCursor = 0
-	}
-	maxCursor := len(c.historyEntries) - 1
-	if maxCursor < 0 {
-		maxCursor = 0
-	}
-	if c.historyCursor > maxCursor {
-		c.historyCursor = maxCursor
-	}
-
-	// Adjust scroll offset - use history-specific height
-	visibleHeight := c.historyContentHeight()
-	if visibleHeight < 1 {
-		visibleHeight = 1
-	}
-
-	if c.historyCursor < c.historyOffset {
-		c.historyOffset = c.historyCursor
-	}
-	if c.historyCursor >= c.historyOffset+visibleHeight {
-		c.historyOffset = c.historyCursor - visibleHeight + 1
-	}
+	// Use pure functions - explicit state changes
+	c.historyCursor = MoveCursor(c.historyCursor, delta, len(c.historyEntries))
+	c.historyOffset = AdjustOffset(c.historyCursor, c.historyOffset, c.historyContentHeight())
 }
 
 func (c *CollectionTree) handleHistoryEnter() (tui.Component, tea.Cmd) {
@@ -439,14 +418,14 @@ func (c *CollectionTree) handleEnter() (tui.Component, tea.Cmd) {
 
 	switch item.Type {
 	case ItemCollection, ItemFolder:
-		// Toggle expand/collapse
-		if item.Expanded {
-			c.expanded[item.ID] = false
-		} else {
-			c.expanded[item.ID] = true
-		}
+		// Toggle expand/collapse using pure function
+		c.expanded = ToggleExpand(c.expanded, item.ID, !item.Expanded)
 		c.rebuildItems()
-		c.applyFilter()
+		// Only refilter if search is active
+		if c.search != "" {
+			c.filteredItems = FilterItemsBySearch(c.items, c.search)
+		}
+		// cursor/offset unchanged - explicit
 	case ItemRequest:
 		// Select request
 		return c, func() tea.Msg {
@@ -464,29 +443,9 @@ func (c *CollectionTree) handleEnter() (tui.Component, tea.Cmd) {
 
 func (c *CollectionTree) moveCursor(delta int) {
 	displayItems := c.getDisplayItems()
-	c.cursor += delta
-	if c.cursor < 0 {
-		c.cursor = 0
-	}
-	if c.cursor >= len(displayItems) {
-		c.cursor = len(displayItems) - 1
-	}
-	if c.cursor < 0 {
-		c.cursor = 0
-	}
-
-	// Adjust scroll offset
-	visibleHeight := c.contentHeight()
-	if visibleHeight < 1 {
-		visibleHeight = 1
-	}
-
-	if c.cursor < c.offset {
-		c.offset = c.cursor
-	}
-	if c.cursor >= c.offset+visibleHeight {
-		c.offset = c.cursor - visibleHeight + 1
-	}
+	// Use pure functions - explicit state changes
+	c.cursor = MoveCursor(c.cursor, delta, len(displayItems))
+	c.offset = AdjustOffset(c.cursor, c.offset, c.contentHeight())
 }
 
 // getDisplayItems returns the items to display (filtered or all).
@@ -498,36 +457,17 @@ func (c *CollectionTree) getDisplayItems() []TreeItem {
 }
 
 // applyFilter filters items based on search query.
+// Note: Only resets cursor/offset when search is active (filter changes visible items).
+// When search is empty, cursor/offset are preserved (items unchanged).
 func (c *CollectionTree) applyFilter() {
 	if c.search == "" {
 		c.filteredItems = nil
-		c.cursor = 0
-		c.offset = 0
+		// Don't reset cursor/offset - items are the same, just no filter
 		return
 	}
-
-	search := strings.ToLower(c.search)
-	c.filteredItems = nil
-
-	// Collect matching items and their parent paths
-	matchedIDs := make(map[string]bool)
-
-	// First pass: find all matching items
-	for _, item := range c.items {
-		if strings.Contains(strings.ToLower(item.Name), search) ||
-			(item.Type == ItemRequest && strings.Contains(strings.ToLower(item.Method), search)) {
-			matchedIDs[item.ID] = true
-		}
-	}
-
-	// Add all matching items to filtered list
-	for _, item := range c.items {
-		if matchedIDs[item.ID] {
-			c.filteredItems = append(c.filteredItems, item)
-		}
-	}
-
-	// Reset cursor
+	// Use pure function - no duplicate logic
+	c.filteredItems = FilterItemsBySearch(c.items, c.search)
+	// Reset cursor when search changes (filter changes visible items)
 	c.cursor = 0
 	c.offset = 0
 }
@@ -568,26 +508,40 @@ func (c *CollectionTree) historyContentHeight() int {
 
 func (c *CollectionTree) expandCurrent() {
 	displayItems := c.getDisplayItems()
-	if c.cursor >= 0 && c.cursor < len(displayItems) {
-		item := displayItems[c.cursor]
-		if item.Expandable && !item.Expanded {
-			c.expanded[item.ID] = true
-			c.rebuildItems()
-			c.applyFilter()
-		}
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return
 	}
+	item := displayItems[c.cursor]
+	if !item.Expandable || item.Expanded {
+		return
+	}
+	// Use pure function for immutable expand toggle
+	c.expanded = ToggleExpand(c.expanded, item.ID, true)
+	c.rebuildItems()
+	// Only refilter if search is active
+	if c.search != "" {
+		c.filteredItems = FilterItemsBySearch(c.items, c.search)
+	}
+	// cursor/offset unchanged - explicit
 }
 
 func (c *CollectionTree) collapseCurrent() {
 	displayItems := c.getDisplayItems()
-	if c.cursor >= 0 && c.cursor < len(displayItems) {
-		item := displayItems[c.cursor]
-		if item.Expandable && item.Expanded {
-			c.expanded[item.ID] = false
-			c.rebuildItems()
-			c.applyFilter()
-		}
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return
 	}
+	item := displayItems[c.cursor]
+	if !item.Expandable || !item.Expanded {
+		return
+	}
+	// Use pure function for immutable expand toggle
+	c.expanded = ToggleExpand(c.expanded, item.ID, false)
+	c.rebuildItems()
+	// Only refilter if search is active
+	if c.search != "" {
+		c.filteredItems = FilterItemsBySearch(c.items, c.search)
+	}
+	// cursor/offset unchanged - explicit
 }
 
 // View renders the component with stacked History and Collections.
@@ -676,13 +630,6 @@ func (c *CollectionTree) View() string {
 	}
 
 	return borderStyle.Render(strings.Join(parts, "\n"))
-}
-
-func (c *CollectionTree) renderModeIndicator(hint string, width int) string {
-	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")).
-		Width(width)
-	return style.Render(hint)
 }
 
 func (c *CollectionTree) renderCollectionContent(innerWidth, contentHeight int) string {
@@ -1214,39 +1161,6 @@ func (c *CollectionTree) IsExpanded(index int) bool {
 		return false
 	}
 	return c.items[index].Expanded
-}
-
-// Expand expands the item at index.
-func (c *CollectionTree) Expand(index int) {
-	if index < 0 || index >= len(c.items) {
-		return
-	}
-	item := c.items[index]
-	if !item.Expandable {
-		return
-	}
-	c.expanded[item.ID] = true
-	c.rebuildItems()
-}
-
-// Collapse collapses the item at index.
-func (c *CollectionTree) Collapse(index int) {
-	if index < 0 || index >= len(c.items) {
-		return
-	}
-	item := c.items[index]
-	c.expanded[item.ID] = false
-	c.rebuildItems()
-}
-
-// SetSearch sets the search filter.
-func (c *CollectionTree) SetSearch(query string) {
-	c.search = query
-}
-
-// ClearSearch clears the search filter.
-func (c *CollectionTree) ClearSearch() {
-	c.search = ""
 }
 
 func (c *CollectionTree) rebuildItems() {

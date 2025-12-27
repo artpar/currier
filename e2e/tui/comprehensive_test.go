@@ -81,7 +81,7 @@ func TestTUI_ComprehensiveE2E(t *testing.T) {
 
 		// Navigate down with j
 		session.SendKey("j")
-		output = session.Output()
+		_ = session.Output()
 		t.Logf("After j: cursor should have moved")
 
 		// Expand with l
@@ -146,18 +146,18 @@ func TestTUI_ComprehensiveE2E(t *testing.T) {
 
 		// ] should switch to next tab (Headers)
 		session.SendKey("]")
-		output = session.Output()
+		_ = session.Output()
 		t.Logf("After ] key: checking if tab switched")
 
 		// [ should switch back to previous tab (URL)
 		session.SendKey("[")
-		output = session.Output()
+		_ = session.Output()
 		t.Logf("After [ key: checking if tab switched back")
 
 		// Test in Response pane too
 		session.SendKey("3")
 		session.SendKey("]")
-		output = session.Output()
+		_ = session.Output()
 		t.Logf("Response pane after ] key")
 	})
 
@@ -229,7 +229,7 @@ func TestTUI_ComprehensiveE2E(t *testing.T) {
 
 		// Press Esc to clear search
 		session.SendKey("Escape")
-		output = session.Output()
+		_ = session.Output()
 	})
 
 	t.Run("7_New_Request_Creation", func(t *testing.T) {
@@ -259,11 +259,11 @@ func TestTUI_ComprehensiveE2E(t *testing.T) {
 		session.SendKey("n")
 
 		// Should auto-enter URL edit mode
-		output := session.Output()
+		_ = session.Output()
 
 		// Type URL
 		session.Type("https://httpbin.org/get")
-		output = session.Output()
+		output := session.Output()
 
 		if !strings.Contains(output, "httpbin") {
 			t.Errorf("BUG: Typed URL should appear in the request panel")

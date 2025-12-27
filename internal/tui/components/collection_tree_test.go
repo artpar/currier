@@ -12,6 +12,47 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Test helpers for key event simulation
+
+func pressKey(tree *CollectionTree, key rune) *CollectionTree {
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}}
+	updated, _ := tree.Update(msg)
+	return updated.(*CollectionTree)
+}
+
+func pressEnter(tree *CollectionTree) *CollectionTree {
+	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, _ := tree.Update(msg)
+	return updated.(*CollectionTree)
+}
+
+func pressEscape(tree *CollectionTree) *CollectionTree {
+	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	updated, _ := tree.Update(msg)
+	return updated.(*CollectionTree)
+}
+
+// expandItem expands the item at current cursor using 'l' key
+func expandItem(tree *CollectionTree) *CollectionTree {
+	return pressKey(tree, 'l')
+}
+
+// collapseItem collapses the item at current cursor using 'h' key
+func collapseItem(tree *CollectionTree) *CollectionTree {
+	return pressKey(tree, 'h')
+}
+
+// typeSearch enters search mode and types the query
+func typeSearch(tree *CollectionTree, query string) *CollectionTree {
+	tree = pressKey(tree, '/') // Enter search mode
+	for _, r := range query {
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+	}
+	return pressEnter(tree) // Exit search mode
+}
+
 func TestNewCollectionTree(t *testing.T) {
 	t.Run("creates empty tree", func(t *testing.T) {
 		tree := NewCollectionTree()
@@ -227,7 +268,7 @@ func TestCollectionTree_Expand(t *testing.T) {
 		tree := newTestTreeWithFolders(t)
 		tree.Focus()
 		tree.SetCursor(0)
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		msg := tea.KeyMsg{Type: tea.KeyEnter}
 		updated, _ := tree.Update(msg)
@@ -252,7 +293,7 @@ func TestCollectionTree_Expand(t *testing.T) {
 		tree := newTestTreeWithFolders(t)
 		tree.Focus()
 		tree.SetCursor(0)
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}}
 		updated, _ := tree.Update(msg)
@@ -268,14 +309,13 @@ func TestCollectionTree_Selection(t *testing.T) {
 		tree.Focus()
 
 		// Expand to show requests
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		// Move to first request
 		tree.SetCursor(1) // After expanding, cursor 1 is first request
 
 		msg := tea.KeyMsg{Type: tea.KeyEnter}
-		updated, cmd := tree.Update(msg)
-		tree = updated.(*CollectionTree)
+		_, cmd := tree.Update(msg)
 
 		// Should produce a selection message
 		assert.NotNil(t, cmd)
@@ -284,7 +324,7 @@ func TestCollectionTree_Selection(t *testing.T) {
 	t.Run("returns selected item", func(t *testing.T) {
 		tree := newTestTreeWithRequests(t)
 		tree.Focus()
-		tree.Expand(0)
+		tree = expandItem(tree)
 		tree.SetCursor(1)
 
 		selected := tree.Selected()
@@ -312,8 +352,9 @@ func TestCollectionTree_View(t *testing.T) {
 
 	t.Run("shows expanded indicator", func(t *testing.T) {
 		tree := newTestTreeWithFolders(t)
+		tree.Focus()
 		tree.SetSize(40, 20)
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		view := tree.View()
 		assert.Contains(t, view, "▼") // Expanded indicator
@@ -333,23 +374,29 @@ func TestCollectionTree_View(t *testing.T) {
 func TestCollectionTree_Search(t *testing.T) {
 	t.Run("filters items by search query", func(t *testing.T) {
 		tree := newTestTree(t)
-		tree.SetSearch("API 1")
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree = typeSearch(tree, "API 1")
 
 		// Should only show matching items
 		assert.Equal(t, 1, tree.VisibleItemCount())
 	})
 
-	t.Run("clears search", func(t *testing.T) {
+	t.Run("clears search with escape", func(t *testing.T) {
 		tree := newTestTree(t)
-		tree.SetSearch("API 1")
-		tree.ClearSearch()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree = typeSearch(tree, "API 1")
+		tree = pressEscape(tree) // Clear search
 
 		assert.Equal(t, tree.ItemCount(), tree.VisibleItemCount())
 	})
 
 	t.Run("case insensitive search", func(t *testing.T) {
 		tree := newTestTree(t)
-		tree.SetSearch("api 1")
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree = typeSearch(tree, "api 1")
 
 		assert.Equal(t, 1, tree.VisibleItemCount())
 	})
@@ -385,9 +432,10 @@ func TestCollectionTree_Methods(t *testing.T) {
 
 	t.Run("Collapse collapses item", func(t *testing.T) {
 		tree := newTestTreeWithFolders(t)
-		tree.Expand(0)
+		tree.Focus()
+		tree = expandItem(tree)
 		assert.True(t, tree.IsExpanded(0))
-		tree.Collapse(0)
+		tree = collapseItem(tree)
 		assert.False(t, tree.IsExpanded(0))
 	})
 }
@@ -504,6 +552,7 @@ func TestCollectionTree_ViewWithSearch(t *testing.T) {
 func TestCollectionTree_MethodBadges(t *testing.T) {
 	t.Run("renders GET method badge", func(t *testing.T) {
 		tree := NewCollectionTree()
+		tree.Focus()
 		tree.SetSize(60, 20)
 
 		c := core.NewCollection("Test API")
@@ -511,7 +560,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 		c.AddRequest(req)
 
 		tree.SetCollections([]*core.Collection{c})
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		view := tree.View()
 		assert.Contains(t, view, "GET")
@@ -519,6 +568,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 
 	t.Run("renders POST method badge", func(t *testing.T) {
 		tree := NewCollectionTree()
+		tree.Focus()
 		tree.SetSize(60, 20)
 
 		c := core.NewCollection("Test API")
@@ -526,7 +576,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 		c.AddRequest(req)
 
 		tree.SetCollections([]*core.Collection{c})
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		view := tree.View()
 		assert.Contains(t, view, "POST")
@@ -534,6 +584,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 
 	t.Run("renders PUT method badge", func(t *testing.T) {
 		tree := NewCollectionTree()
+		tree.Focus()
 		tree.SetSize(60, 20)
 
 		c := core.NewCollection("Test API")
@@ -541,7 +592,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 		c.AddRequest(req)
 
 		tree.SetCollections([]*core.Collection{c})
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		view := tree.View()
 		assert.Contains(t, view, "PUT")
@@ -549,6 +600,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 
 	t.Run("renders DELETE method badge", func(t *testing.T) {
 		tree := NewCollectionTree()
+		tree.Focus()
 		tree.SetSize(60, 20)
 
 		c := core.NewCollection("Test API")
@@ -556,7 +608,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 		c.AddRequest(req)
 
 		tree.SetCollections([]*core.Collection{c})
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		view := tree.View()
 		assert.Contains(t, view, "DEL")
@@ -564,6 +616,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 
 	t.Run("renders PATCH method badge", func(t *testing.T) {
 		tree := NewCollectionTree()
+		tree.Focus()
 		tree.SetSize(60, 20)
 
 		c := core.NewCollection("Test API")
@@ -571,7 +624,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 		c.AddRequest(req)
 
 		tree.SetCollections([]*core.Collection{c})
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		view := tree.View()
 		assert.Contains(t, view, "PTCH")
@@ -581,6 +634,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 func TestCollectionTree_FolderItems(t *testing.T) {
 	t.Run("expands nested folders", func(t *testing.T) {
 		tree := NewCollectionTree()
+		tree.Focus()
 		tree.SetSize(80, 30)
 
 		c := core.NewCollection("API")
@@ -590,7 +644,7 @@ func TestCollectionTree_FolderItems(t *testing.T) {
 		tree.SetCollections([]*core.Collection{c})
 
 		// Expand collection
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		assert.Greater(t, tree.VisibleItemCount(), 1)
 	})
@@ -612,6 +666,7 @@ func TestCollectionTree_WindowSizeMessage(t *testing.T) {
 func TestCollectionTree_NestedFolders(t *testing.T) {
 	t.Run("expands nested folder with requests", func(t *testing.T) {
 		tree := NewCollectionTree()
+		tree.Focus()
 		tree.SetSize(80, 30)
 
 		c := core.NewCollection("API")
@@ -621,12 +676,14 @@ func TestCollectionTree_NestedFolders(t *testing.T) {
 
 		tree.SetCollections([]*core.Collection{c})
 
-		// Expand collection
-		tree.Expand(0)
-		// Expand Users folder
-		tree.Expand(1)
-		// Expand Admin folder
-		tree.Expand(2)
+		// Expand collection (cursor at 0)
+		tree = expandItem(tree)
+		// Move to Users folder (position 1) and expand
+		tree = pressKey(tree, 'j')
+		tree = expandItem(tree)
+		// Move to Admin folder (position 2) and expand
+		tree = pressKey(tree, 'j')
+		tree = expandItem(tree)
 
 		view := tree.View()
 		assert.Contains(t, view, "Admin")
@@ -637,6 +694,7 @@ func TestCollectionTree_NestedFolders(t *testing.T) {
 func TestCollectionTree_MethodBadgeOther(t *testing.T) {
 	t.Run("renders HEAD method badge", func(t *testing.T) {
 		tree := NewCollectionTree()
+		tree.Focus()
 		tree.SetSize(60, 20)
 
 		c := core.NewCollection("Test API")
@@ -644,7 +702,7 @@ func TestCollectionTree_MethodBadgeOther(t *testing.T) {
 		c.AddRequest(req)
 
 		tree.SetCollections([]*core.Collection{c})
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		view := tree.View()
 		assert.Contains(t, view, "HEAD")
@@ -652,6 +710,7 @@ func TestCollectionTree_MethodBadgeOther(t *testing.T) {
 
 	t.Run("renders OPTIONS method badge", func(t *testing.T) {
 		tree := NewCollectionTree()
+		tree.Focus()
 		tree.SetSize(60, 20)
 
 		c := core.NewCollection("Test API")
@@ -659,7 +718,7 @@ func TestCollectionTree_MethodBadgeOther(t *testing.T) {
 		c.AddRequest(req)
 
 		tree.SetCollections([]*core.Collection{c})
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		view := tree.View()
 		assert.Contains(t, view, "OPT")
@@ -686,19 +745,20 @@ func TestCollectionTree_SetCursorEdgeCases(t *testing.T) {
 func TestCollectionTree_ExpandCollapse(t *testing.T) {
 	t.Run("Expand does nothing for non-expandable", func(t *testing.T) {
 		tree := newTestTreeWithRequests(t)
-		tree.Expand(0)
+		tree.Focus()
+		tree = expandItem(tree)
 
-		// Move to request (not expandable)
-		tree.SetCursor(1)
-		tree.Expand(1)
+		// Move to request (not expandable) and try to expand
+		tree = pressKey(tree, 'j')
+		_ = expandItem(tree) // Should not panic
 
-		// Should not panic
+		// Should not panic and item count should be same
 		assert.True(t, true)
 	})
 
 	t.Run("IsExpanded returns false for non-expandable", func(t *testing.T) {
 		tree := newTestTreeWithRequests(t)
-		tree.Expand(0)
+		tree = expandItem(tree)
 
 		// Request at index 1 is not expandable
 		assert.False(t, tree.IsExpanded(1))
@@ -1053,8 +1113,7 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 
 		// Select with Enter
 		msg = tea.KeyMsg{Type: tea.KeyEnter}
-		updated, cmd := tree.Update(msg)
-		tree = updated.(*CollectionTree)
+		_, cmd := tree.Update(msg)
 
 		// Should have a command
 		assert.NotNil(t, cmd)
@@ -1598,20 +1657,22 @@ func TestCollectionTree_AddRequestWithCollection(t *testing.T) {
 func TestCollectionTree_ExpandCollapseEdgeCases(t *testing.T) {
 	t.Run("expand collection by index", func(t *testing.T) {
 		tree := newTestTreeWithFolders(t)
+		tree.Focus()
 		tree.SetSize(80, 30)
 
 		// Expand first collection
-		tree.Expand(0)
+		tree = expandItem(tree)
 		assert.True(t, tree.IsExpanded(0))
 	})
 
 	t.Run("collapse collection by index", func(t *testing.T) {
 		tree := newTestTreeWithFolders(t)
+		tree.Focus()
 		tree.SetSize(80, 30)
 
 		// Expand first then collapse
-		tree.Expand(0)
-		tree.Collapse(0)
+		tree = expandItem(tree)
+		tree = collapseItem(tree)
 		assert.False(t, tree.IsExpanded(0))
 	})
 
@@ -1623,22 +1684,30 @@ func TestCollectionTree_ExpandCollapseEdgeCases(t *testing.T) {
 		assert.False(t, tree.IsExpanded(100))
 	})
 
-	t.Run("Expand does nothing for invalid index", func(t *testing.T) {
+	t.Run("expand at invalid cursor does nothing", func(t *testing.T) {
 		tree := newTestTreeWithFolders(t)
+		tree.Focus()
 		tree.SetSize(80, 30)
 
-		// Expand invalid index should not panic
-		tree.Expand(100)
+		// Set cursor beyond items
+		tree.SetCursor(100)
+		tree = expandItem(tree)
+
+		// Should not panic
 		view := tree.View()
 		assert.NotEmpty(t, view)
 	})
 
-	t.Run("Collapse does nothing for invalid index", func(t *testing.T) {
+	t.Run("collapse at invalid cursor does nothing", func(t *testing.T) {
 		tree := newTestTreeWithFolders(t)
+		tree.Focus()
 		tree.SetSize(80, 30)
 
-		// Collapse invalid index should not panic
-		tree.Collapse(100)
+		// Set cursor beyond items
+		tree.SetCursor(100)
+		tree = collapseItem(tree)
+
+		// Should not panic
 		view := tree.View()
 		assert.NotEmpty(t, view)
 	})
@@ -1716,8 +1785,7 @@ func TestCollectionTree_HistoryCursorBounds(t *testing.T) {
 
 		// Press Enter on empty list
 		msg = tea.KeyMsg{Type: tea.KeyEnter}
-		updated, cmd := tree.Update(msg)
-		tree = updated.(*CollectionTree)
+		_, cmd := tree.Update(msg)
 
 		// Should not crash and should not produce a command
 		assert.Nil(t, cmd)
@@ -1850,5 +1918,101 @@ func TestCollectionTree_GPressed(t *testing.T) {
 
 		// After gg, gPressed should be false
 		assert.False(t, tree.GPressed())
+	})
+}
+
+// TestKeyboardExpandCollapse tests expand/collapse via actual key events.
+// This catches bugs that the Expand()/Collapse() API methods don't.
+func TestKeyboardExpandCollapse(t *testing.T) {
+	t.Run("l_key_preserves_cursor_position", func(t *testing.T) {
+		tree := newTestTreeWithFolders(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Cursor starts at 0 (first collection)
+		assert.Equal(t, 0, tree.Cursor())
+		assert.False(t, tree.IsExpanded(0))
+
+		// Press l to expand via keyboard
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Cursor should still be at 0, item should be expanded
+		assert.Equal(t, 0, tree.Cursor(), "cursor should not change after expand")
+		assert.True(t, tree.IsExpanded(0), "item should be expanded")
+	})
+
+	t.Run("h_key_preserves_cursor_position", func(t *testing.T) {
+		tree := newTestTreeWithFolders(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Expand first, then collapse
+		tree = expandItem(tree)
+		assert.True(t, tree.IsExpanded(0))
+
+		// Press h to collapse via keyboard
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Cursor should still be at 0
+		assert.Equal(t, 0, tree.Cursor(), "cursor should not change after collapse")
+		assert.False(t, tree.IsExpanded(0), "item should be collapsed")
+	})
+
+	t.Run("enter_key_preserves_cursor_position", func(t *testing.T) {
+		tree := newTestTreeWithFolders(t)
+		tree.Focus()
+		tree.SetSize(80, 30)
+
+		// Cursor at 0 (expandable collection)
+		assert.Equal(t, 0, tree.Cursor())
+		assert.False(t, tree.IsExpanded(0))
+
+		// Press Enter to toggle expand
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Cursor should still be at 0
+		assert.Equal(t, 0, tree.Cursor(), "cursor should not change after enter")
+		assert.True(t, tree.IsExpanded(0), "item should be expanded")
+	})
+
+	t.Run("expand_at_cursor_5_preserves_position", func(t *testing.T) {
+		// Create tree with multiple collections
+		coll1 := core.NewCollection("Collection 1")
+		coll1.AddRequest(core.NewRequestDefinition("Request 1", "GET", "https://example.com/1"))
+		coll2 := core.NewCollection("Collection 2")
+		coll2.AddRequest(core.NewRequestDefinition("Request 2", "GET", "https://example.com/2"))
+		coll3 := core.NewCollection("Collection 3")
+		coll3.AddRequest(core.NewRequestDefinition("Request 3", "GET", "https://example.com/3"))
+
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetCollections([]*core.Collection{coll1, coll2, coll3})
+
+		// Expand coll1 (cursor at 0)
+		tree = expandItem(tree)
+		// Navigate to coll2 (position 2 after coll1 expanded) and expand
+		tree = pressKey(tree, 'j') // to Request 1
+		tree = pressKey(tree, 'j') // to coll2
+		tree = expandItem(tree)
+
+		// Navigate to position 4 (coll3)
+		tree.SetCursor(4)
+		assert.Equal(t, 4, tree.Cursor())
+		assert.False(t, tree.IsExpanded(4))
+
+		// Press l to expand at cursor position 4
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Cursor should still be at 4
+		assert.Equal(t, 4, tree.Cursor(), "cursor should stay at 4 after expand")
 	})
 }

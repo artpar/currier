@@ -55,12 +55,10 @@ type RequestPanel struct {
 	request       *core.RequestDefinition
 	activeTab     RequestTab
 	cursor        int
-	offset        int
 	editingURL    bool   // True when editing URL inline
 	urlInput      string // Current URL input while editing
 	urlCursor     int    // Cursor position in URL input
 	editingMethod bool   // True when editing HTTP method
-	methodIndex   int    // Current index in httpMethods
 
 	// Header editing state
 	editingHeader     bool   // True when editing a header
@@ -1749,29 +1747,6 @@ func (p *RequestPanel) renderURLBar() string {
 
 func (p *RequestPanel) renderTabBar() string {
 	innerWidth := p.width - 2
-	var tabs []string
-
-	for i, name := range tabNames {
-		if RequestTab(i) == p.activeTab {
-			// Active tab - colored indicator
-			activeStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("214")).
-				Bold(true).
-				Padding(0, 1)
-			indicator := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("214")).
-				Render("━")
-			tabs = append(tabs, activeStyle.Render(name)+"\n"+indicator+strings.Repeat("━", len(name)))
-		} else {
-			// Inactive tab
-			inactiveStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("245")).
-				Padding(0, 1)
-			tabs = append(tabs, inactiveStyle.Render(name)+"\n"+strings.Repeat(" ", len(name)+2))
-		}
-	}
-
-	// Build two-line tab bar
 	var topLine, bottomLine []string
 	for i, name := range tabNames {
 		if RequestTab(i) == p.activeTab {

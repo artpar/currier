@@ -720,10 +720,6 @@ func buildSearchQuery(searchTerm string, opts history.QueryOptions) (string, []i
 	return query, args
 }
 
-type rowScanner interface {
-	Scan(dest ...interface{}) error
-}
-
 func scanEntry(row *sql.Row) (history.Entry, error) {
 	var entry history.Entry
 	var headersJSON, respHeadersJSON, tagsJSON, metadataJSON sql.NullString

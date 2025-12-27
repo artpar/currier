@@ -498,8 +498,7 @@ func TestRequestPanel_URLEditingCursor(t *testing.T) {
 
 		// Backspace
 		msg = tea.KeyMsg{Type: tea.KeyBackspace}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
+		_, _ = panel.Update(msg)
 
 		// Should have removed last character
 		assert.True(t, true) // Test passed if no panic
@@ -523,8 +522,7 @@ func TestRequestPanel_URLEditingCursor(t *testing.T) {
 
 		// Move left
 		msg = tea.KeyMsg{Type: tea.KeyLeft}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
+		_, _ = panel.Update(msg)
 
 		assert.True(t, true)
 	})
@@ -551,8 +549,7 @@ func TestRequestPanel_URLEditingCursor(t *testing.T) {
 		panel = updated.(*RequestPanel)
 
 		msg = tea.KeyMsg{Type: tea.KeyRight}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
+		_, _ = panel.Update(msg)
 
 		assert.True(t, true)
 	})
@@ -573,8 +570,7 @@ func TestRequestPanel_URLEditingCursor(t *testing.T) {
 		}
 
 		msg = tea.KeyMsg{Type: tea.KeyHome}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
+		_, _ = panel.Update(msg)
 
 		assert.True(t, true)
 	})
@@ -589,8 +585,7 @@ func TestRequestPanel_URLEditingCursor(t *testing.T) {
 		panel = updated.(*RequestPanel)
 
 		msg = tea.KeyMsg{Type: tea.KeyEnd}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
+		_, _ = panel.Update(msg)
 
 		assert.True(t, true)
 	})
@@ -617,8 +612,7 @@ func TestRequestPanel_URLEditingCursor(t *testing.T) {
 
 		// Delete character
 		msg = tea.KeyMsg{Type: tea.KeyDelete}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
+		_, _ = panel.Update(msg)
 
 		assert.True(t, true)
 	})
@@ -639,8 +633,7 @@ func TestRequestPanel_URLEditingCursor(t *testing.T) {
 		}
 
 		msg = tea.KeyMsg{Type: tea.KeyCtrlU}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
+		_, _ = panel.Update(msg)
 
 		assert.True(t, true)
 	})
@@ -655,8 +648,7 @@ func TestRequestPanel_URLEditingCursor(t *testing.T) {
 		panel = updated.(*RequestPanel)
 
 		msg = tea.KeyMsg{Type: tea.KeyCtrlA}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
+		_, _ = panel.Update(msg)
 
 		assert.True(t, true)
 	})
@@ -671,8 +663,7 @@ func TestRequestPanel_URLEditingCursor(t *testing.T) {
 		panel = updated.(*RequestPanel)
 
 		msg = tea.KeyMsg{Type: tea.KeyCtrlE}
-		updated, _ = panel.Update(msg)
-		panel = updated.(*RequestPanel)
+		_, _ = panel.Update(msg)
 
 		assert.True(t, true)
 	})

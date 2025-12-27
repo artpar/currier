@@ -2,7 +2,6 @@ package script
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -719,10 +718,4 @@ func BenchmarkIntegration_SandboxedExecution(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		scope.Execute(ctx, script)
 	}
-}
-
-// Helper to convert interface{} to JSON string for debugging
-func toJSON(v interface{}) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	return string(b)
 }

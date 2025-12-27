@@ -275,10 +275,7 @@ func (f *XMLFormatter) highlightProcInst(pi string) string {
 	result.WriteString(f.punctStyle.Render("<?"))
 
 	// Remove <? and ?>
-	inner := pi[2:]
-	if strings.HasSuffix(inner, "?>") {
-		inner = inner[:len(inner)-2]
-	}
+	inner := strings.TrimSuffix(pi[2:], "?>")
 
 	// Find target name
 	spaceIdx := strings.Index(inner, " ")

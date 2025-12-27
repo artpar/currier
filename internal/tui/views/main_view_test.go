@@ -771,8 +771,7 @@ func TestMainView_Feedback(t *testing.T) {
 		view.SetSize(120, 40)
 
 		msg := components.FeedbackMsg{Message: "Something went wrong", IsError: true}
-		updated, cmd := view.Update(msg)
-		view = updated.(*MainView)
+		_, cmd := view.Update(msg)
 
 		assert.NotNil(t, cmd)
 	})
@@ -784,8 +783,7 @@ func TestMainView_CopyMsg(t *testing.T) {
 		view.SetSize(120, 40)
 
 		msg := components.CopyMsg{Content: "small text"}
-		updated, cmd := view.Update(msg)
-		view = updated.(*MainView)
+		_, cmd := view.Update(msg)
 
 		// Should return a tick command for clearing notification
 		assert.NotNil(t, cmd)
@@ -801,8 +799,7 @@ func TestMainView_CopyMsg(t *testing.T) {
 			largeContent[i] = 'x'
 		}
 		msg := components.CopyMsg{Content: string(largeContent)}
-		updated, cmd := view.Update(msg)
-		view = updated.(*MainView)
+		_, cmd := view.Update(msg)
 
 		assert.NotNil(t, cmd)
 	})
