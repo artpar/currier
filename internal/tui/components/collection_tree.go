@@ -187,6 +187,7 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		case "g":
 			if c.gPressed {
 				c.cursor = 0
+				c.offset = 0
 				c.gPressed = false
 			} else {
 				c.gPressed = true

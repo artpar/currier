@@ -116,6 +116,26 @@ func TestCollectionTree_Navigation(t *testing.T) {
 		assert.Equal(t, 0, tree.Cursor())
 	})
 
+	t.Run("gg resets scroll offset to show cursor", func(t *testing.T) {
+		tree := newTestTree(t)
+		tree.Focus()
+		tree.SetSize(30, 10) // Small height to force scrolling
+		tree.SetCursor(5)
+		tree.offset = 3 // Simulate having scrolled down
+
+		// First g
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Second g
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, 0, tree.Cursor(), "cursor should be at 0")
+		assert.Equal(t, 0, tree.offset, "offset should be reset to 0 so cursor is visible")
+	})
+
 	t.Run("goes to bottom with G", func(t *testing.T) {
 		tree := newTestTree(t)
 		tree.Focus()
