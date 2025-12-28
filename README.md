@@ -179,15 +179,46 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 
 ## Keyboard Shortcuts
 
-| Mode   | Key       | Action              |
-|--------|-----------|---------------------|
-| Normal | `j/k`     | Navigate up/down    |
-| Normal | `h/l`     | Collapse/expand     |
-| Normal | `Enter`   | Select item         |
-| Normal | `i`       | Enter insert mode   |
-| Normal | `/`       | Search              |
-| Normal | `:`       | Command mode        |
-| Insert | `Esc`     | Return to normal    |
+### Global
+| Key | Action |
+|-----|--------|
+| `Tab` | Cycle between panes |
+| `1/2/3` | Jump to pane |
+| `n` | Create new request |
+| `s` | Save request to collection |
+| `w` | Toggle WebSocket mode |
+| `?` | Show help |
+| `q` | Quit |
+
+### Collections Panel
+| Key | Action |
+|-----|--------|
+| `j/k` | Navigate up/down |
+| `h/l` | Collapse/expand |
+| `Enter` | Select request |
+| `N` | Create new collection |
+| `r` | Rename collection |
+| `D` | Delete collection |
+| `d` | Delete request |
+| `/` | Search |
+| `H` | Switch to History |
+
+### Request Panel
+| Key | Action |
+|-----|--------|
+| `e` | Edit URL |
+| `m` | Cycle HTTP method |
+| `[/]` | Switch tabs |
+| `Enter` | Send request |
+| `Alt+Enter` | Send (while editing) |
+
+### Response Panel
+| Key | Action |
+|-----|--------|
+| `j/k` | Scroll |
+| `G/gg` | Top/bottom |
+| `[/]` | Switch tabs |
+| `y` | Copy response |
 
 ## Project Structure
 
