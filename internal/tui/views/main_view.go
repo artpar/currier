@@ -189,6 +189,21 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			return clearNotificationMsg{}
 		})
 
+	case components.RenameCollectionMsg:
+		// Persist renamed collection
+		if v.collectionStore != nil && msg.Collection != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = v.collectionStore.Save(ctx, msg.Collection)
+			}()
+		}
+		v.notification = fmt.Sprintf("Renamed to '%s'", msg.Collection.Name())
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
 	case components.SendRequestMsg:
 		v.response.SetLoading(true)
 		v.focusPane(PaneResponse)
@@ -382,7 +397,7 @@ func (v *MainView) handleSaveToCollection() (tui.Component, tea.Cmd) {
 func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	// Check if we're in INSERT mode (editing text in any pane)
 	// In INSERT mode, forward ALL keys to the focused pane except Ctrl+C
-	isEditing := v.request.IsEditing() || v.tree.IsSearching()
+	isEditing := v.request.IsEditing() || v.tree.IsSearching() || v.tree.IsRenaming()
 
 	// Ctrl+C always quits
 	if msg.Type == tea.KeyCtrlC {
@@ -728,7 +743,7 @@ func (v *MainView) renderStatusBar() string {
 	modeStyle := lipgloss.NewStyle().
 		Bold(true).
 		Padding(0, 1)
-	isEditing := v.request.IsEditing() || v.tree.IsSearching()
+	isEditing := v.request.IsEditing() || v.tree.IsSearching() || v.tree.IsRenaming()
 	if isEditing {
 		modeStyle = modeStyle.
 			Background(lipgloss.Color("214")).
@@ -854,6 +869,7 @@ func (v *MainView) renderHelp() string {
 		"│    h / l              Collapse/Expand collection        │",
 		"│    Enter              Select request                    │",
 		"│    N                  Create new collection             │",
+		"│    r                  Rename selected collection        │",
 		"│    D                  Delete selected collection        │",
 		"│    d                  Delete selected request           │",
 		"│    /                  Start search                      │",

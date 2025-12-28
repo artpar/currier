@@ -83,6 +83,11 @@ type DeleteCollectionMsg struct {
 	CollectionID string
 }
 
+// RenameCollectionMsg is sent when a collection is renamed.
+type RenameCollectionMsg struct {
+	Collection *core.Collection
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -98,6 +103,11 @@ type CollectionTree struct {
 	search        string
 	searching     bool // True when in search mode
 	gPressed      bool // For gg sequence
+
+	// Rename mode
+	renaming         bool   // True when renaming a collection
+	renameBuffer     string // Buffer for the new name
+	renamingCollID   string // ID of collection being renamed
 
 	// View mode (Collections or History)
 	viewMode ViewMode
@@ -161,6 +171,11 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return c.handleSearchInput(msg)
 	}
 
+	// Handle rename mode input
+	if c.renaming {
+		return c.handleRenameInput(msg)
+	}
+
 	// Handle history view mode
 	if c.viewMode == ViewHistory {
 		return c.handleHistoryKeyMsg(msg)
@@ -211,6 +226,10 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Delete selected collection
 			c.gPressed = false
 			return c.handleDeleteCollection()
+		case "r":
+			// Rename selected collection
+			c.gPressed = false
+			return c.startRename()
 		case "G":
 			displayItems := c.getDisplayItems()
 			if len(displayItems) > 0 {
@@ -569,6 +588,88 @@ func (c *CollectionTree) handleDeleteCollection() (tui.Component, tea.Cmd) {
 			CollectionID: collectionID,
 		}
 	}
+}
+
+func (c *CollectionTree) startRename() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only rename collections
+	if item.Type != ItemCollection {
+		return c, nil
+	}
+
+	// Start rename mode with current name
+	c.renaming = true
+	c.renamingCollID = item.ID
+	c.renameBuffer = item.Name
+
+	return c, nil
+}
+
+func (c *CollectionTree) handleRenameInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Cancel rename
+		c.renaming = false
+		c.renameBuffer = ""
+		c.renamingCollID = ""
+		return c, nil
+
+	case tea.KeyEnter:
+		// Confirm rename
+		if c.renameBuffer == "" {
+			// Don't allow empty names
+			return c, nil
+		}
+
+		// Find and rename the collection
+		var renamedColl *core.Collection
+		for _, coll := range c.collections {
+			if coll.ID() == c.renamingCollID {
+				coll.SetName(c.renameBuffer)
+				renamedColl = coll
+				break
+			}
+		}
+
+		c.renaming = false
+		c.renameBuffer = ""
+		c.renamingCollID = ""
+		c.rebuildItems()
+
+		if renamedColl != nil {
+			return c, func() tea.Msg {
+				return RenameCollectionMsg{Collection: renamedColl}
+			}
+		}
+		return c, nil
+
+	case tea.KeyBackspace:
+		if len(c.renameBuffer) > 0 {
+			c.renameBuffer = c.renameBuffer[:len(c.renameBuffer)-1]
+		}
+		return c, nil
+
+	case tea.KeyRunes:
+		c.renameBuffer += string(msg.Runes)
+		return c, nil
+
+	case tea.KeySpace:
+		c.renameBuffer += " "
+		return c, nil
+	}
+
+	return c, nil
+}
+
+// IsRenaming returns true if currently in rename mode.
+func (c *CollectionTree) IsRenaming() bool {
+	return c.renaming
 }
 
 func (c *CollectionTree) moveCursor(delta int) {
@@ -1036,8 +1137,11 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 		icon = c.methodBadge(item.Method) + " "
 	}
 
-	// Name
+	// Name - show rename buffer if renaming this collection
 	name := item.Name
+	if c.renaming && item.Type == ItemCollection && item.ID == c.renamingCollID {
+		name = c.renameBuffer + "▏" // Show cursor
+	}
 	availableWidth := width - len(selPrefix) - len(indent) - len(indicator) - len(icon) - 2
 	if availableWidth <= 0 {
 		// Not enough space for name at all

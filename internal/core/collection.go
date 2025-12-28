@@ -74,6 +74,11 @@ func (c *Collection) SetDescription(desc string) {
 	c.touch()
 }
 
+func (c *Collection) SetName(name string) {
+	c.name = name
+	c.touch()
+}
+
 func (c *Collection) SetVersion(version string) {
 	c.version = version
 	c.touch()
