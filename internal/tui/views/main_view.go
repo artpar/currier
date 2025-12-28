@@ -543,12 +543,19 @@ func (v *MainView) renderHelpBar() string {
 				keyStyle.Render("Esc") + descStyle.Render(" Cancel"),
 				keyStyle.Render("Ctrl+U") + descStyle.Render(" Clear"),
 			}
+		} else if v.tree.ViewMode() == components.ViewHistory {
+			hints = []string{
+				keyStyle.Render("j/k") + descStyle.Render(" Navigate"),
+				keyStyle.Render("Enter") + descStyle.Render(" Load"),
+				keyStyle.Render("r") + descStyle.Render(" Refresh"),
+				keyStyle.Render("C") + descStyle.Render(" Collections"),
+			}
 		} else {
 			hints = []string{
 				keyStyle.Render("j/k") + descStyle.Render(" Navigate"),
-				keyStyle.Render("Enter") + descStyle.Render(" Select"),
+				keyStyle.Render("h/l") + descStyle.Render(" Collapse/Expand"),
 				keyStyle.Render("/") + descStyle.Render(" Search"),
-				keyStyle.Render("Tab") + descStyle.Render(" Next pane"),
+				keyStyle.Render("H") + descStyle.Render(" History"),
 			}
 		}
 	case PaneRequest:

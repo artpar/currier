@@ -124,12 +124,12 @@ func TestFullWorkflow_SendRequestAndVerifyHistory(t *testing.T) {
 		}
 	}
 
-	// Step 8: Switch to History view and verify display
-	t.Log("Step 8: Switch to History view")
-	session.SendKey("1") // Focus collections pane first (H only works when collections focused)
-	session.SendKey("H")
+	// Step 8: Verify History view is active (default view mode is now history)
+	t.Log("Step 8: Verify History view is active")
+	session.SendKey("1") // Focus collections pane
 
 	state = session.State()
+	// History is now the default view mode
 	if state.Tree.ViewMode != "history" {
 		t.Errorf("Expected history view mode, got %s", state.Tree.ViewMode)
 	}

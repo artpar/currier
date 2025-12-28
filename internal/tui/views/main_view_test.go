@@ -597,14 +597,31 @@ func TestMainView_StatusBarEdgeCases(t *testing.T) {
 }
 
 func TestMainView_HelpBar(t *testing.T) {
-	t.Run("shows collection hints when collections pane focused", func(t *testing.T) {
+	t.Run("shows history hints when collections pane focused in history mode", func(t *testing.T) {
 		view := NewMainView()
 		view.SetSize(120, 40)
 		view.FocusPane(PaneCollections)
+		// Default is now history mode
 
 		output := view.View()
 		assert.Contains(t, output, "Navigate")
+		assert.Contains(t, output, "Load")
+		assert.Contains(t, output, "Refresh")
+		assert.Contains(t, output, "Collections")
+	})
+
+	t.Run("shows collection hints when in collections mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneCollections)
+		// Switch to collections mode
+		view.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+
+		output := view.View()
+		assert.Contains(t, output, "Navigate")
+		assert.Contains(t, output, "Collapse/Expand")
 		assert.Contains(t, output, "Search")
+		assert.Contains(t, output, "History")
 	})
 
 	t.Run("shows request hints when request pane focused", func(t *testing.T) {

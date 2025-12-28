@@ -504,6 +504,11 @@ func (p *ResponsePanel) renderBodyTab() []string {
 		p.detectedType = string(DetectContentFormat(contentType, content))
 	}
 
+	// Handle binary content - don't render it to avoid breaking the terminal
+	if p.detectedType == "binary" {
+		return p.renderBinaryPlaceholder()
+	}
+
 	// If pretty print is off, return raw content
 	if !p.prettyPrint {
 		return strings.Split(content, "\n")
@@ -523,6 +528,30 @@ func (p *ResponsePanel) renderBodyTab() []string {
 	default:
 		return strings.Split(content, "\n")
 	}
+}
+
+// renderBinaryPlaceholder returns a user-friendly message for binary content.
+func (p *ResponsePanel) renderBinaryPlaceholder() []string {
+	size := p.response.Body().Size()
+	contentType := p.response.Headers().Get("Content-Type")
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+
+	lines := []string{
+		"",
+		titleStyle.Render("  Binary Content Detected"),
+		"",
+		infoStyle.Render(fmt.Sprintf("  Content-Type: %s", contentType)),
+		infoStyle.Render(fmt.Sprintf("  Size: %s", p.formatSize(int64(size)))),
+		"",
+		hintStyle.Render("  Binary content cannot be displayed in the terminal."),
+		hintStyle.Render("  Use 'y' to copy the response or save to a file."),
+		"",
+	}
+
+	return lines
 }
 
 func (p *ResponsePanel) renderHeadersTab() []string {

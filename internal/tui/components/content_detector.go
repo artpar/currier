@@ -2,16 +2,18 @@ package components
 
 import (
 	"strings"
+	"unicode"
 )
 
 // ContentFormat represents the detected format of response content.
 type ContentFormat string
 
 const (
-	FormatJSON ContentFormat = "json"
-	FormatXML  ContentFormat = "xml"
-	FormatHTML ContentFormat = "html"
-	FormatText ContentFormat = "text"
+	FormatJSON   ContentFormat = "json"
+	FormatXML    ContentFormat = "xml"
+	FormatHTML   ContentFormat = "html"
+	FormatText   ContentFormat = "text"
+	FormatBinary ContentFormat = "binary"
 )
 
 // String returns the string representation of the content format.
@@ -28,6 +30,11 @@ func (f ContentFormat) Upper() string {
 func DetectContentFormat(contentType string, body string) ContentFormat {
 	// Check Content-Type header first (most reliable)
 	ct := strings.ToLower(contentType)
+
+	// Binary types - check these first to avoid processing binary as text
+	if isBinaryContentType(ct) {
+		return FormatBinary
+	}
 
 	// JSON types
 	if strings.Contains(ct, "application/json") ||
@@ -52,11 +59,54 @@ func DetectContentFormat(contentType string, body string) ContentFormat {
 	return detectFromContent(body)
 }
 
+// isBinaryContentType checks if the content type indicates binary data.
+func isBinaryContentType(ct string) bool {
+	binaryTypes := []string{
+		"application/octet-stream",
+		"application/gzip",
+		"application/x-gzip",
+		"application/x-tar",
+		"application/zip",
+		"application/x-zip",
+		"application/x-compressed",
+		"application/x-bzip",
+		"application/x-bzip2",
+		"application/x-7z-compressed",
+		"application/x-rar-compressed",
+		"application/pdf",
+		"application/x-executable",
+		"application/x-sharedlib",
+		"application/x-mach-binary",
+		"application/wasm",
+	}
+
+	for _, bt := range binaryTypes {
+		if strings.Contains(ct, bt) {
+			return true
+		}
+	}
+
+	// Check for binary media types
+	if strings.HasPrefix(ct, "image/") ||
+		strings.HasPrefix(ct, "audio/") ||
+		strings.HasPrefix(ct, "video/") ||
+		strings.HasPrefix(ct, "font/") {
+		return true
+	}
+
+	return false
+}
+
 // detectFromContent attempts to detect the format from the content itself.
 func detectFromContent(body string) ContentFormat {
 	trimmed := strings.TrimSpace(body)
 	if len(trimmed) == 0 {
 		return FormatText
+	}
+
+	// Check for binary content first (non-printable characters)
+	if isBinaryContent(body) {
+		return FormatBinary
 	}
 
 	// JSON: starts with { or [
@@ -96,4 +146,41 @@ func detectFromContent(body string) ContentFormat {
 	}
 
 	return FormatText
+}
+
+// isBinaryContent checks if the content contains non-printable characters
+// that indicate binary data. We sample the first 8KB for efficiency.
+func isBinaryContent(body string) bool {
+	// Sample first 8KB for efficiency
+	sample := body
+	if len(sample) > 8192 {
+		sample = sample[:8192]
+	}
+
+	// Count non-printable characters
+	nonPrintable := 0
+	total := 0
+
+	for _, r := range sample {
+		total++
+		// Allow common whitespace: space, tab, newline, carriage return
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			continue
+		}
+		// Check if character is printable
+		if !unicode.IsPrint(r) && !unicode.IsSpace(r) {
+			nonPrintable++
+		}
+		// Early exit if we find enough non-printable chars
+		if nonPrintable > 10 {
+			return true
+		}
+	}
+
+	// If more than 5% non-printable, consider it binary
+	if total > 0 && float64(nonPrintable)/float64(total) > 0.05 {
+		return true
+	}
+
+	return false
 }

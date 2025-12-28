@@ -227,19 +227,19 @@ func TestJourney_HelpOverlay(t *testing.T) {
 		Run()
 }
 
-// TestJourney_HistoryView tests switching to history view.
+// TestJourney_HistoryView tests switching between history and collections view.
 func TestJourney_HistoryView(t *testing.T) {
 	harness.NewJourney(t, "History view").
-		Step("Start in collections view").
-			ExpectViewMode("collections").
-
-		Step("Switch to history view").
-			SendKey("H").
+		Step("Start in history view (default)").
 			ExpectViewMode("history").
 
-		Step("Switch back to collections").
+		Step("Switch to collections view").
 			SendKey("C").
 			ExpectViewMode("collections").
+
+		Step("Switch back to history").
+			SendKey("H").
+			ExpectViewMode("history").
 
 		Run()
 }
@@ -247,6 +247,10 @@ func TestJourney_HistoryView(t *testing.T) {
 // TestJourney_SearchCollections tests search functionality.
 func TestJourney_SearchCollections(t *testing.T) {
 	harness.NewJourney(t, "Search collections").
+		Step("Switch to collections mode (search only works in collections)").
+			SendKey("C").
+			ExpectViewMode("collections").
+
 		Step("Start search").
 			SendKey("/").
 			ExpectState(func(t *testing.T, s *harness.State) {
