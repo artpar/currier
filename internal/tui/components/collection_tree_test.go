@@ -554,6 +554,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(60, 20)
+		tree.viewMode = ViewCollections // Switch to collections mode
 
 		c := core.NewCollection("Test API")
 		req := core.NewRequestDefinition("Get Users", "GET", "/users")
@@ -570,6 +571,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(60, 20)
+		tree.viewMode = ViewCollections // Switch to collections mode
 
 		c := core.NewCollection("Test API")
 		req := core.NewRequestDefinition("Create User", "POST", "/users")
@@ -586,6 +588,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(60, 20)
+		tree.viewMode = ViewCollections // Switch to collections mode
 
 		c := core.NewCollection("Test API")
 		req := core.NewRequestDefinition("Update User", "PUT", "/users")
@@ -602,6 +605,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(60, 20)
+		tree.viewMode = ViewCollections // Switch to collections mode
 
 		c := core.NewCollection("Test API")
 		req := core.NewRequestDefinition("Delete User", "DELETE", "/users/1")
@@ -618,6 +622,7 @@ func TestCollectionTree_MethodBadges(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(60, 20)
+		tree.viewMode = ViewCollections // Switch to collections mode
 
 		c := core.NewCollection("Test API")
 		req := core.NewRequestDefinition("Patch User", "PATCH", "/users/1")
@@ -636,6 +641,7 @@ func TestCollectionTree_FolderItems(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections // Switch to collections mode
 
 		c := core.NewCollection("API")
 		folder := c.AddFolder("Users")
@@ -668,6 +674,7 @@ func TestCollectionTree_NestedFolders(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections // Switch to collections mode
 
 		c := core.NewCollection("API")
 		parentFolder := c.AddFolder("Users")
@@ -696,6 +703,7 @@ func TestCollectionTree_MethodBadgeOther(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(60, 20)
+		tree.viewMode = ViewCollections // Switch to collections mode
 
 		c := core.NewCollection("Test API")
 		req := core.NewRequestDefinition("Head Check", "HEAD", "/health")
@@ -712,6 +720,7 @@ func TestCollectionTree_MethodBadgeOther(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(60, 20)
+		tree.viewMode = ViewCollections // Switch to collections mode
 
 		c := core.NewCollection("Test API")
 		req := core.NewRequestDefinition("CORS Options", "OPTIONS", "/api")
@@ -793,6 +802,8 @@ func newTestTree(t *testing.T) *CollectionTree {
 	}
 
 	tree.SetCollections(collections)
+	// Switch to collections mode (default is now history mode)
+	tree.viewMode = ViewCollections
 	return tree
 }
 
@@ -805,6 +816,8 @@ func newTestTreeWithFolders(t *testing.T) *CollectionTree {
 	c.AddFolder("Posts")
 
 	tree.SetCollections([]*core.Collection{c})
+	// Switch to collections mode (default is now history mode)
+	tree.viewMode = ViewCollections
 	return tree
 }
 
@@ -821,6 +834,8 @@ func newTestTreeWithRequests(t *testing.T) *CollectionTree {
 	c.AddRequest(req2)
 
 	tree.SetCollections([]*core.Collection{c})
+	// Switch to collections mode (default is now history mode)
+	tree.viewMode = ViewCollections
 	return tree
 }
 
@@ -937,6 +952,7 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		// History is default mode - no need to switch
 
 		store := &mockHistoryStore{
 			entries: []history.Entry{
@@ -947,17 +963,12 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		}
 		tree.SetHistoryStore(store)
 
-		// Switch to history view
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
-
 		// Initial cursor should be at 0
 		assert.Equal(t, 0, tree.HistoryCursor())
 
 		// Move down with j
-		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
-		updated, _ = tree.Update(msg)
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
 		// Cursor should now be at 1
@@ -992,6 +1003,7 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		// History is default mode - no need to switch
 
 		store := &mockHistoryStore{
 			entries: []history.Entry{
@@ -1001,14 +1013,9 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		}
 		tree.SetHistoryStore(store)
 
-		// Switch to history
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
-
 		// First g
-		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
-		updated, _ = tree.Update(msg)
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ := tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
 		// Second g
@@ -1023,6 +1030,7 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		// History is default mode - no need to switch
 
 		store := &mockHistoryStore{
 			entries: []history.Entry{
@@ -1033,14 +1041,9 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		}
 		tree.SetHistoryStore(store)
 
-		// Switch to history
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
-
 		// Go to end with G
-		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
-		updated, _ = tree.Update(msg)
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+		updated, _ := tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
 		view := tree.View()
@@ -1051,18 +1054,14 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		// History is default mode - no need to switch
 
 		store := &mockHistoryStore{entries: []history.Entry{}}
 		tree.SetHistoryStore(store)
 
-		// Switch to history
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
-
 		// Exit with Escape
-		msg = tea.KeyMsg{Type: tea.KeyEsc}
-		updated, _ = tree.Update(msg)
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
 		assert.Equal(t, ViewCollections, tree.ViewMode())
@@ -1072,6 +1071,7 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		// History is default mode - no need to switch
 
 		store := &mockHistoryStore{
 			entries: []history.Entry{
@@ -1080,14 +1080,9 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		}
 		tree.SetHistoryStore(store)
 
-		// Switch to history
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
-
 		// Refresh with r
-		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}
-		updated, _ = tree.Update(msg)
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}
+		updated, _ := tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
 		view := tree.View()
@@ -1098,6 +1093,7 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		// History is default mode - no need to switch
 
 		store := &mockHistoryStore{
 			entries: []history.Entry{
@@ -1106,13 +1102,8 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		}
 		tree.SetHistoryStore(store)
 
-		// Switch to history
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
-
 		// Select with Enter
-		msg = tea.KeyMsg{Type: tea.KeyEnter}
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
 		_, cmd := tree.Update(msg)
 
 		// Should have a command
@@ -1123,18 +1114,14 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		// History is default mode - no need to switch
 
 		store := &mockHistoryStore{entries: []history.Entry{}}
 		tree.SetHistoryStore(store)
 
-		// Switch to history
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
-
 		// Press h (should do nothing)
-		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}}
-		updated, _ = tree.Update(msg)
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}}
+		updated, _ := tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
 		// Press l (should do nothing)
@@ -1149,11 +1136,7 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
-
-		// Switch to history without store
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
+		// History is default mode - no need to switch
 
 		view := tree.View()
 		assert.Contains(t, view, "History")
@@ -1163,6 +1146,7 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		// History is default mode - no need to switch
 
 		store := &mockHistoryStore{
 			entries: []history.Entry{
@@ -1182,11 +1166,6 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		}
 		tree.SetHistoryStore(store)
 
-		// Switch to history
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
-
 		view := tree.View()
 		assert.Contains(t, view, "GET")
 	})
@@ -1195,6 +1174,7 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		// History is default mode - no need to switch
 
 		store := &mockHistoryStore{
 			entries: []history.Entry{
@@ -1203,11 +1183,6 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 			},
 		}
 		tree.SetHistoryStore(store)
-
-		// Switch to history
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
 
 		assert.True(t, tree.Focused())
 		assert.Equal(t, 0, tree.HistoryCursor())
@@ -1270,6 +1245,7 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		// History is default mode - no need to switch
 
 		store := &mockHistoryStore{
 			entries: []history.Entry{
@@ -1278,14 +1254,9 @@ func TestCollectionTree_HistoryView(t *testing.T) {
 		}
 		tree.SetHistoryStore(store)
 
-		// Switch to history
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
-		updated, _ := tree.Update(msg)
-		tree = updated.(*CollectionTree)
-
 		// Start search
-		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
-		updated, _ = tree.Update(msg)
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		updated, _ := tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
 		// Type search query
@@ -1312,22 +1283,23 @@ func TestCollectionTree_HistoryAccessors(t *testing.T) {
 	t.Run("ViewModeName returns correct names", func(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.SetSize(80, 30)
+		// Default is now history mode
+		assert.Equal(t, "history", tree.ViewModeName())
 
-		assert.Equal(t, "collections", tree.ViewModeName())
-
-		// Switch to history
+		// Switch to collections
 		tree.Focus()
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}}
 		updated, _ := tree.Update(msg)
 		tree = updated.(*CollectionTree)
 
-		assert.Equal(t, "history", tree.ViewModeName())
+		assert.Equal(t, "collections", tree.ViewModeName())
 	})
 
 	t.Run("SearchQuery returns current search", func(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections // Test in collections mode
 
 		// Initial query is empty
 		assert.Equal(t, "", tree.SearchQuery())
@@ -1993,6 +1965,7 @@ func TestKeyboardExpandCollapse(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.Focus()
 		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections // Switch to collections mode
 		tree.SetCollections([]*core.Collection{coll1, coll2, coll3})
 
 		// Expand coll1 (cursor at 0)

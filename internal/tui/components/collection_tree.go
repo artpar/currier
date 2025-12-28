@@ -93,6 +93,7 @@ func NewCollectionTree() *CollectionTree {
 	return &CollectionTree{
 		title:    "Collections",
 		expanded: make(map[string]bool),
+		viewMode: ViewHistory,
 	}
 }
 

@@ -121,6 +121,7 @@ func TestCollectionTree_CollectionsMode_Navigation(t *testing.T) {
 	t.Run("j_moves_cursor_down", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand to have multiple items
 		assert.Equal(t, 0, tree.Cursor())
 
@@ -132,6 +133,7 @@ func TestCollectionTree_CollectionsMode_Navigation(t *testing.T) {
 	t.Run("j_at_bottom_stays_at_bottom", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		// Expand to see all items
 		tree = sendKey(tree, 'l')
 		// Go to bottom
@@ -146,6 +148,7 @@ func TestCollectionTree_CollectionsMode_Navigation(t *testing.T) {
 	t.Run("k_moves_cursor_up", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand first
 		tree = sendKey(tree, 'j') // Move down
 		assert.Equal(t, 1, tree.Cursor())
@@ -158,6 +161,7 @@ func TestCollectionTree_CollectionsMode_Navigation(t *testing.T) {
 	t.Run("k_at_top_stays_at_top", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		assert.Equal(t, 0, tree.Cursor())
 
 		tree = sendKey(tree, 'k')
@@ -168,6 +172,7 @@ func TestCollectionTree_CollectionsMode_Navigation(t *testing.T) {
 	t.Run("G_goes_to_bottom", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand to have multiple items
 		assert.Equal(t, 0, tree.Cursor())
 
@@ -179,6 +184,7 @@ func TestCollectionTree_CollectionsMode_Navigation(t *testing.T) {
 	t.Run("gg_goes_to_top", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand
 		tree = sendKey(tree, 'G') // Go to bottom
 		assert.Greater(t, tree.Cursor(), 0)
@@ -194,6 +200,7 @@ func TestCollectionTree_CollectionsMode_ExpandCollapse(t *testing.T) {
 	t.Run("l_expands_collapsed_collection", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		initialCount := tree.ItemCount()
 		assert.False(t, tree.IsExpanded(0))
 
@@ -206,6 +213,7 @@ func TestCollectionTree_CollectionsMode_ExpandCollapse(t *testing.T) {
 	t.Run("l_does_nothing_on_already_expanded", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand first
 		assert.True(t, tree.IsExpanded(0))
 		count := tree.ItemCount()
@@ -219,6 +227,7 @@ func TestCollectionTree_CollectionsMode_ExpandCollapse(t *testing.T) {
 	t.Run("l_does_nothing_on_request", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand collection
 		tree = sendKey(tree, 'j') // Move to folder
 		tree = sendKey(tree, 'l') // Expand folder
@@ -233,6 +242,7 @@ func TestCollectionTree_CollectionsMode_ExpandCollapse(t *testing.T) {
 	t.Run("h_collapses_expanded_collection", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand first
 		assert.True(t, tree.IsExpanded(0))
 		expandedCount := tree.ItemCount()
@@ -246,6 +256,7 @@ func TestCollectionTree_CollectionsMode_ExpandCollapse(t *testing.T) {
 	t.Run("h_does_nothing_on_already_collapsed", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		assert.False(t, tree.IsExpanded(0))
 		count := tree.ItemCount()
 
@@ -258,6 +269,7 @@ func TestCollectionTree_CollectionsMode_ExpandCollapse(t *testing.T) {
 	t.Run("h_does_nothing_on_request", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand
 		tree = sendKey(tree, 'j')
 		tree = sendKey(tree, 'l') // Expand folder
@@ -274,6 +286,7 @@ func TestCollectionTree_CollectionsMode_ViewSwitch(t *testing.T) {
 	t.Run("H_switches_to_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode first
 		assert.Equal(t, ViewCollections, tree.ViewMode())
 
 		tree = sendKey(tree, 'H')
@@ -284,6 +297,7 @@ func TestCollectionTree_CollectionsMode_ViewSwitch(t *testing.T) {
 	t.Run("C_does_nothing_in_collections_mode", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		assert.Equal(t, ViewCollections, tree.ViewMode())
 
 		tree = sendKey(tree, 'C')
@@ -296,6 +310,7 @@ func TestCollectionTree_CollectionsMode_Search(t *testing.T) {
 	t.Run("slash_enters_search_mode", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		assert.False(t, tree.IsSearching())
 
 		tree = sendKey(tree, '/')
@@ -306,6 +321,7 @@ func TestCollectionTree_CollectionsMode_Search(t *testing.T) {
 	t.Run("Escape_clears_search_filter", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand
 		// Enter search, type query, exit search
 		tree = sendKey(tree, '/')
@@ -330,7 +346,7 @@ func TestCollectionTree_HistoryMode_Navigation(t *testing.T) {
 	t.Run("j_moves_cursor_down_in_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H') // Switch to history
+		// History is the default mode, no need to switch
 		assert.Equal(t, 0, tree.HistoryCursor())
 
 		tree = sendKey(tree, 'j')
@@ -341,7 +357,6 @@ func TestCollectionTree_HistoryMode_Navigation(t *testing.T) {
 	t.Run("k_moves_cursor_up_in_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
 		tree = sendKey(tree, 'j') // Move down first
 		assert.Equal(t, 1, tree.HistoryCursor())
 
@@ -353,7 +368,6 @@ func TestCollectionTree_HistoryMode_Navigation(t *testing.T) {
 	t.Run("G_goes_to_bottom_in_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
 		assert.Equal(t, 0, tree.HistoryCursor())
 
 		tree = sendKey(tree, 'G')
@@ -364,7 +378,6 @@ func TestCollectionTree_HistoryMode_Navigation(t *testing.T) {
 	t.Run("gg_goes_to_top_in_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
 		tree = sendKey(tree, 'G') // Go to bottom
 		assert.Greater(t, tree.HistoryCursor(), 0)
 
@@ -379,7 +392,7 @@ func TestCollectionTree_HistoryMode_ExpandCollapseNoOp(t *testing.T) {
 	t.Run("l_does_nothing_in_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 		cursor := tree.HistoryCursor()
 
 		tree = sendKey(tree, 'l')
@@ -391,7 +404,7 @@ func TestCollectionTree_HistoryMode_ExpandCollapseNoOp(t *testing.T) {
 	t.Run("h_does_nothing_in_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 		cursor := tree.HistoryCursor()
 
 		tree = sendKey(tree, 'h')
@@ -405,7 +418,7 @@ func TestCollectionTree_HistoryMode_ViewSwitch(t *testing.T) {
 	t.Run("C_switches_to_collections", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 		assert.Equal(t, ViewHistory, tree.ViewMode())
 
 		tree = sendKey(tree, 'C')
@@ -413,10 +426,10 @@ func TestCollectionTree_HistoryMode_ViewSwitch(t *testing.T) {
 		assert.Equal(t, ViewCollections, tree.ViewMode())
 	})
 
-	t.Run("H_toggles_back_to_collections", func(t *testing.T) {
+	t.Run("H_toggles_to_collections", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 		assert.Equal(t, ViewHistory, tree.ViewMode())
 
 		tree = sendKey(tree, 'H')
@@ -427,7 +440,7 @@ func TestCollectionTree_HistoryMode_ViewSwitch(t *testing.T) {
 	t.Run("Escape_switches_to_collections", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 		assert.Equal(t, ViewHistory, tree.ViewMode())
 
 		tree = sendSpecialKey(tree, tea.KeyEsc)
@@ -440,7 +453,7 @@ func TestCollectionTree_HistoryMode_Refresh(t *testing.T) {
 	t.Run("r_refreshes_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 		tree = sendKey(tree, 'j') // Move cursor
 		assert.Equal(t, 1, tree.HistoryCursor())
 
@@ -459,6 +472,7 @@ func TestCollectionTree_SearchMode_Input(t *testing.T) {
 	t.Run("typing_adds_to_search_query", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, '/')
 		assert.True(t, tree.IsSearching())
 
@@ -473,6 +487,7 @@ func TestCollectionTree_SearchMode_Input(t *testing.T) {
 	t.Run("j_adds_to_query_not_move", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand
 		tree = sendKey(tree, '/')
 
@@ -485,6 +500,7 @@ func TestCollectionTree_SearchMode_Input(t *testing.T) {
 	t.Run("k_adds_to_query_and_resets_cursor", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand first
 		tree = sendKey(tree, 'j') // Move down
 		assert.Equal(t, 1, tree.Cursor())
@@ -500,6 +516,7 @@ func TestCollectionTree_SearchMode_Input(t *testing.T) {
 	t.Run("Backspace_removes_character", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, '/')
 		tree = sendKey(tree, 'a')
 		tree = sendKey(tree, 'b')
@@ -514,6 +531,7 @@ func TestCollectionTree_SearchMode_Input(t *testing.T) {
 	t.Run("CtrlU_clears_query", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, '/')
 		tree = sendKey(tree, 'a')
 		tree = sendKey(tree, 'b')
@@ -528,6 +546,7 @@ func TestCollectionTree_SearchMode_Input(t *testing.T) {
 	t.Run("Space_adds_space_to_query", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, '/')
 		tree = sendKey(tree, 'a')
 		tree = sendSpecialKey(tree, tea.KeySpace)
@@ -541,6 +560,7 @@ func TestCollectionTree_SearchMode_Exit(t *testing.T) {
 	t.Run("Enter_exits_search_keeps_filter", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand
 		tree = sendKey(tree, '/')
 		tree = sendKey(tree, 'R')
@@ -558,6 +578,7 @@ func TestCollectionTree_SearchMode_Exit(t *testing.T) {
 	t.Run("Escape_exits_search_keeps_filter", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, '/')
 		tree = sendKey(tree, 't')
 		tree = sendKey(tree, 'e')
@@ -576,7 +597,7 @@ func TestCollectionTree_SearchMode_History(t *testing.T) {
 	t.Run("search_works_in_history_mode", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H') // Switch to history
+		// History is the default mode
 		tree = sendKey(tree, '/')
 		assert.True(t, tree.IsSearching())
 
@@ -731,7 +752,7 @@ func TestCollectionTree_GPressed_HistoryMode(t *testing.T) {
 	t.Run("g_sets_gPressed_in_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 		assert.False(t, tree.GPressed())
 
 		tree = sendKey(tree, 'g')
@@ -742,7 +763,7 @@ func TestCollectionTree_GPressed_HistoryMode(t *testing.T) {
 	t.Run("gg_goes_to_top_in_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 		tree = sendKey(tree, 'G') // Go to bottom
 		assert.Greater(t, tree.HistoryCursor(), 0)
 
@@ -756,7 +777,7 @@ func TestCollectionTree_GPressed_HistoryMode(t *testing.T) {
 	t.Run("C_resets_gPressed_in_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 		tree = sendKey(tree, 'g')
 		assert.True(t, tree.GPressed())
 
@@ -768,7 +789,7 @@ func TestCollectionTree_GPressed_HistoryMode(t *testing.T) {
 	t.Run("r_resets_gPressed_in_history", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 		tree = sendKey(tree, 'g')
 		assert.True(t, tree.GPressed())
 
@@ -786,6 +807,7 @@ func TestCollectionTree_Enter_ItemTypes(t *testing.T) {
 	t.Run("Enter_on_collection_toggles_expand", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		assert.False(t, tree.IsExpanded(0))
 
 		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
@@ -797,6 +819,7 @@ func TestCollectionTree_Enter_ItemTypes(t *testing.T) {
 	t.Run("Enter_on_expanded_collection_collapses", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand
 		assert.True(t, tree.IsExpanded(0))
 
@@ -809,6 +832,7 @@ func TestCollectionTree_Enter_ItemTypes(t *testing.T) {
 	t.Run("Enter_on_folder_toggles_expand", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand collection
 		tree = sendKey(tree, 'j') // Move to folder
 
@@ -820,6 +844,7 @@ func TestCollectionTree_Enter_ItemTypes(t *testing.T) {
 	t.Run("Enter_on_request_returns_selection", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 		tree = sendKey(tree, 'l') // Expand collection
 		tree = sendKey(tree, 'j') // Move to folder
 		tree = sendKey(tree, 'l') // Expand folder
@@ -837,7 +862,7 @@ func TestCollectionTree_Enter_ItemTypes(t *testing.T) {
 	t.Run("Enter_on_history_entry_returns_selection", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
-		tree = sendKey(tree, 'H')
+		// History is the default mode
 
 		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
 
@@ -857,6 +882,7 @@ func TestCollectionTree_CursorBoundaries(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.SetSize(80, 30)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 
 		tree = sendKey(tree, 'j')
 
@@ -867,6 +893,7 @@ func TestCollectionTree_CursorBoundaries(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.SetSize(80, 30)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 
 		tree = sendKey(tree, 'G')
 
@@ -876,6 +903,7 @@ func TestCollectionTree_CursorBoundaries(t *testing.T) {
 	t.Run("cursor_independent_between_modes", func(t *testing.T) {
 		tree := newTreeWithHistory(t)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode first
 		tree = sendKey(tree, 'l') // Expand
 		tree = sendKey(tree, 'j')
 		tree = sendKey(tree, 'j')
@@ -901,6 +929,7 @@ func TestCollectionTree_ScrollOffset(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.SetSize(80, 10) // Small height to trigger scrolling
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 
 		// Create a collection with many items
 		coll := core.NewCollection("Big Collection")
@@ -920,6 +949,7 @@ func TestCollectionTree_ScrollOffset(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.SetSize(80, 10)
 		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
 
 		coll := core.NewCollection("Big Collection")
 		for i := 0; i < 20; i++ {
