@@ -620,7 +620,7 @@ func TestMainView_HelpBar(t *testing.T) {
 		output := view.View()
 		assert.Contains(t, output, "Navigate")
 		assert.Contains(t, output, "Collapse/Expand")
-		assert.Contains(t, output, "Search")
+		assert.Contains(t, output, "Delete")
 		assert.Contains(t, output, "History")
 	})
 

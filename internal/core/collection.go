@@ -220,14 +220,31 @@ func (c *Collection) FindRequest(id string) (*RequestDefinition, bool) {
 }
 
 // RemoveRequest removes a request by ID from root level.
-func (c *Collection) RemoveRequest(id string) {
+func (c *Collection) RemoveRequest(id string) bool {
 	for i, r := range c.requests {
 		if r.ID() == id {
 			c.requests = append(c.requests[:i], c.requests[i+1:]...)
 			c.touch()
-			return
+			return true
 		}
 	}
+	return false
+}
+
+// RemoveRequestRecursive searches for and removes a request by ID from anywhere in the collection.
+func (c *Collection) RemoveRequestRecursive(id string) bool {
+	// Try root level first
+	if c.RemoveRequest(id) {
+		return true
+	}
+	// Try folders recursively
+	for _, f := range c.folders {
+		if f.RemoveRequestRecursive(id) {
+			c.touch()
+			return true
+		}
+	}
+	return false
 }
 
 // WebSockets returns all WebSocket definitions.
@@ -373,13 +390,30 @@ func (f *Folder) FindRequest(id string) (*RequestDefinition, bool) {
 	return nil, false
 }
 
-func (f *Folder) RemoveRequest(id string) {
+// RemoveRequest removes a request by ID from this folder.
+func (f *Folder) RemoveRequest(id string) bool {
 	for i, r := range f.requests {
 		if r.ID() == id {
 			f.requests = append(f.requests[:i], f.requests[i+1:]...)
-			return
+			return true
 		}
 	}
+	return false
+}
+
+// RemoveRequestRecursive searches for and removes a request by ID from this folder or any subfolder.
+func (f *Folder) RemoveRequestRecursive(id string) bool {
+	// Try this folder first
+	if f.RemoveRequest(id) {
+		return true
+	}
+	// Try subfolders recursively
+	for _, sub := range f.folders {
+		if sub.RemoveRequestRecursive(id) {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *Folder) Clone() *Folder {

@@ -61,6 +61,28 @@ type SelectHistoryItemMsg struct {
 	Entry history.Entry
 }
 
+// DeleteRequestMsg is sent when a request is deleted from a collection.
+type DeleteRequestMsg struct {
+	Collection *core.Collection
+	RequestID  string
+}
+
+// SaveToCollectionMsg is sent when a request is saved to a collection.
+type SaveToCollectionMsg struct {
+	Collection *core.Collection
+	Request    *core.RequestDefinition
+}
+
+// CreateCollectionMsg is sent when a new collection is created.
+type CreateCollectionMsg struct {
+	Collection *core.Collection
+}
+
+// DeleteCollectionMsg is sent when a collection is deleted.
+type DeleteCollectionMsg struct {
+	CollectionID string
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -177,6 +199,18 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.loadHistory()
 			c.gPressed = false
 			return c, nil
+		case "d":
+			// Delete selected request
+			c.gPressed = false
+			return c.handleDeleteRequest()
+		case "N":
+			// Create new collection
+			c.gPressed = false
+			return c.handleCreateCollection()
+		case "D":
+			// Delete selected collection
+			c.gPressed = false
+			return c.handleDeleteCollection()
 		case "G":
 			displayItems := c.getDisplayItems()
 			if len(displayItems) > 0 {
@@ -440,6 +474,101 @@ func (c *CollectionTree) handleEnter() (tui.Component, tea.Cmd) {
 	}
 
 	return c, nil
+}
+
+func (c *CollectionTree) handleDeleteRequest() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only delete requests
+	if item.Type != ItemRequest {
+		return c, nil
+	}
+
+	requestID := item.Request.ID()
+
+	// Find and remove the request from its collection
+	modifiedCollection := c.DeleteRequest(requestID)
+	if modifiedCollection == nil {
+		return c, nil
+	}
+
+	// Emit message for persistence
+	return c, func() tea.Msg {
+		return DeleteRequestMsg{
+			Collection: modifiedCollection,
+			RequestID:  requestID,
+		}
+	}
+}
+
+func (c *CollectionTree) handleCreateCollection() (tui.Component, tea.Cmd) {
+	// Create a new collection with a default name
+	newCollection := core.NewCollection("New Collection")
+
+	// Add to collections list
+	c.collections = append(c.collections, newCollection)
+	c.rebuildItems()
+
+	// Move cursor to the new collection (last item at level 0)
+	for i, item := range c.items {
+		if item.ID == newCollection.ID() {
+			c.cursor = i
+			break
+		}
+	}
+
+	// Emit message for persistence
+	return c, func() tea.Msg {
+		return CreateCollectionMsg{
+			Collection: newCollection,
+		}
+	}
+}
+
+func (c *CollectionTree) handleDeleteCollection() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only delete collections (not folders or requests)
+	if item.Type != ItemCollection {
+		return c, nil
+	}
+
+	collectionID := item.ID
+
+	// Remove from collections list
+	for i, coll := range c.collections {
+		if coll.ID() == collectionID {
+			c.collections = append(c.collections[:i], c.collections[i+1:]...)
+			break
+		}
+	}
+
+	c.rebuildItems()
+
+	// Adjust cursor if needed
+	if c.cursor >= len(c.items) {
+		c.cursor = len(c.items) - 1
+	}
+	if c.cursor < 0 {
+		c.cursor = 0
+	}
+
+	// Emit message for persistence (delete from disk)
+	return c, func() tea.Msg {
+		return DeleteCollectionMsg{
+			CollectionID: collectionID,
+		}
+	}
 }
 
 func (c *CollectionTree) moveCursor(delta int) {
@@ -1100,6 +1229,36 @@ func (c *CollectionTree) AddRequest(req *core.RequestDefinition, collection *cor
 	return true
 }
 
+// DeleteRequest removes a request from any collection by ID.
+// Returns the collection that was modified (for persistence), or nil if not found.
+func (c *CollectionTree) DeleteRequest(id string) *core.Collection {
+	// Find which collection contains this request
+	for _, coll := range c.collections {
+		if coll.RemoveRequestRecursive(id) {
+			// Rebuild tree
+			c.rebuildItems()
+			// Adjust cursor if needed
+			if c.cursor >= len(c.items) {
+				c.cursor = len(c.items) - 1
+			}
+			if c.cursor < 0 {
+				c.cursor = 0
+			}
+			return coll
+		}
+	}
+	return nil
+}
+
+// GetSelectedItem returns the currently selected tree item, or nil if none.
+func (c *CollectionTree) GetSelectedItem() *TreeItem {
+	items := c.getDisplayItems()
+	if c.cursor >= 0 && c.cursor < len(items) {
+		return &items[c.cursor]
+	}
+	return nil
+}
+
 // SetHistoryStore sets the history store for browsing request history.
 func (c *CollectionTree) SetHistoryStore(store history.Store) {
 	c.historyStore = store
@@ -1162,6 +1321,12 @@ func (c *CollectionTree) IsExpanded(index int) bool {
 		return false
 	}
 	return c.items[index].Expanded
+}
+
+// RebuildItems rebuilds the tree items from the collections.
+// Call this after modifying collections externally.
+func (c *CollectionTree) RebuildItems() {
+	c.rebuildItems()
 }
 
 func (c *CollectionTree) rebuildItems() {

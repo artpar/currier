@@ -12,6 +12,7 @@ import (
 	"github.com/artpar/currier/internal/history/sqlite"
 	"github.com/artpar/currier/internal/importer"
 	"github.com/artpar/currier/internal/interpolate"
+	"github.com/artpar/currier/internal/storage/filesystem"
 	"github.com/artpar/currier/internal/tui/views"
 )
 
@@ -133,6 +134,14 @@ func runTUI(collections []*core.Collection, env *core.Environment) error {
 		view.SetHistoryStore(historyStore)
 	}
 
+	// Initialize collection store for persistence
+	collectionStore, err := initCollectionStore()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Could not initialize collection store: %v\n", err)
+	} else {
+		view.SetCollectionStore(collectionStore)
+	}
+
 	// Load collections if provided
 	if len(collections) > 0 {
 		view.SetCollections(collections)
@@ -180,6 +189,28 @@ func initHistoryStore() (*sqlite.Store, error) {
 	store, err := sqlite.New(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("could not open history database: %w", err)
+	}
+
+	return store, nil
+}
+
+// initCollectionStore creates and initializes the filesystem collection store.
+func initCollectionStore() (*filesystem.CollectionStore, error) {
+	// Get user config directory
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("could not determine config directory: %w", err)
+		}
+		configDir = filepath.Join(homeDir, ".config")
+	}
+
+	// Create collections directory
+	collectionsDir := filepath.Join(configDir, "currier", "collections")
+	store, err := filesystem.NewCollectionStore(collectionsDir)
+	if err != nil {
+		return nil, fmt.Errorf("could not create collection store: %w", err)
 	}
 
 	return store, nil

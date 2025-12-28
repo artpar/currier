@@ -16,6 +16,7 @@ import (
 	httpclient "github.com/artpar/currier/internal/protocol/http"
 	"github.com/artpar/currier/internal/protocol/websocket"
 	"github.com/artpar/currier/internal/script"
+	"github.com/artpar/currier/internal/storage/filesystem"
 	"github.com/artpar/currier/internal/tui"
 	"github.com/artpar/currier/internal/tui/components"
 )
@@ -54,8 +55,9 @@ type MainView struct {
 	interpolator *interpolate.Engine
 	notification string    // Temporary notification message
 	notifyUntil  time.Time // When to clear notification
-	historyStore history.Store // Store for request history
-	lastRequest  *core.RequestDefinition // Last sent request for history
+	historyStore    history.Store             // Store for request history
+	collectionStore *filesystem.CollectionStore // Store for collection persistence
+	lastRequest     *core.RequestDefinition   // Last sent request for history
 }
 
 // clearNotificationMsg is sent to clear the notification.
@@ -141,6 +143,51 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		v.request.SetRequest(req)
 		v.focusPane(PaneRequest)
 		return v, nil
+
+	case components.DeleteRequestMsg:
+		// Persist the modified collection
+		if v.collectionStore != nil && msg.Collection != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = v.collectionStore.Save(ctx, msg.Collection)
+			}()
+		}
+		v.notification = "Request deleted"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case components.CreateCollectionMsg:
+		// Persist the new collection
+		if v.collectionStore != nil && msg.Collection != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = v.collectionStore.Save(ctx, msg.Collection)
+			}()
+		}
+		v.notification = fmt.Sprintf("Created '%s'", msg.Collection.Name())
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case components.DeleteCollectionMsg:
+		// Delete collection from disk
+		if v.collectionStore != nil && msg.CollectionID != "" {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = v.collectionStore.Delete(ctx, msg.CollectionID)
+			}()
+		}
+		v.notification = "Collection deleted"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
 
 	case components.SendRequestMsg:
 		v.response.SetLoading(true)
@@ -281,6 +328,57 @@ func (v *MainView) handleFeedback(msg components.FeedbackMsg) (tui.Component, te
 	})
 }
 
+func (v *MainView) handleSaveToCollection() (tui.Component, tea.Cmd) {
+	// Get current request from request panel
+	req := v.request.Request()
+	if req == nil {
+		v.notification = "No request to save"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+	}
+
+	// Get or create a collection
+	collections := v.tree.Collections()
+	var targetCollection *core.Collection
+
+	if len(collections) == 0 {
+		// Create a default collection
+		targetCollection = core.NewCollection("My Collection")
+		v.tree.SetCollections([]*core.Collection{targetCollection})
+	} else {
+		// Use the first collection
+		targetCollection = collections[0]
+	}
+
+	// Clone the request to avoid modifying the original
+	savedReq := core.NewRequestDefinition(req.Name(), req.Method(), req.URL())
+	savedReq.SetBody(req.Body())
+	for k, val := range req.Headers() {
+		savedReq.SetHeader(k, val)
+	}
+
+	// Add to collection
+	targetCollection.AddRequest(savedReq)
+	v.tree.RebuildItems()
+
+	// Persist the collection
+	if v.collectionStore != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = v.collectionStore.Save(ctx, targetCollection)
+		}()
+	}
+
+	v.notification = fmt.Sprintf("Saved to %s", targetCollection.Name())
+	v.notifyUntil = time.Now().Add(2 * time.Second)
+	return v, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return clearNotificationMsg{}
+	})
+}
+
 func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	// Check if we're in INSERT mode (editing text in any pane)
 	// In INSERT mode, forward ALL keys to the focused pane except Ctrl+C
@@ -364,6 +462,9 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 				v.focusPane(PaneWebSocket)
 			}
 			return v, nil
+		case "s":
+			// Save current request to collection
+			return v.handleSaveToCollection()
 		}
 	}
 
@@ -554,7 +655,7 @@ func (v *MainView) renderHelpBar() string {
 			hints = []string{
 				keyStyle.Render("j/k") + descStyle.Render(" Navigate"),
 				keyStyle.Render("h/l") + descStyle.Render(" Collapse/Expand"),
-				keyStyle.Render("/") + descStyle.Render(" Search"),
+				keyStyle.Render("d") + descStyle.Render(" Delete"),
 				keyStyle.Render("H") + descStyle.Render(" History"),
 			}
 		}
@@ -600,6 +701,7 @@ func (v *MainView) renderHelpBar() string {
 	// Always add global hints
 	hints = append(hints,
 		keyStyle.Render("n")+descStyle.Render(" New"),
+		keyStyle.Render("s")+descStyle.Render(" Save"),
 		keyStyle.Render("w")+descStyle.Render(" WS"),
 		keyStyle.Render("1/2/3")+descStyle.Render(" Pane"),
 		keyStyle.Render("?")+descStyle.Render(" Help"),
@@ -751,6 +853,9 @@ func (v *MainView) renderHelp() string {
 		"│  Collections Pane                                        │",
 		"│    h / l              Collapse/Expand collection        │",
 		"│    Enter              Select request                    │",
+		"│    N                  Create new collection             │",
+		"│    D                  Delete selected collection        │",
+		"│    d                  Delete selected request           │",
 		"│    /                  Start search                      │",
 		"│    H                  Switch to History view            │",
 		"│    Esc                Clear search (or exit History)    │",
@@ -786,6 +891,7 @@ func (v *MainView) renderHelp() string {
 		"│                                                          │",
 		"│  General                                                 │",
 		"│    n                  Create new request                │",
+		"│    s                  Save request to collection        │",
 		"│    ?                  Toggle this help                  │",
 		"│    q / Ctrl+C         Quit                              │",
 		"│                                                          │",
@@ -889,6 +995,11 @@ func (v *MainView) SetEnvironment(env *core.Environment, engine *interpolate.Eng
 func (v *MainView) SetHistoryStore(store history.Store) {
 	v.historyStore = store
 	v.tree.SetHistoryStore(store)
+}
+
+// SetCollectionStore sets the collection store for persistence.
+func (v *MainView) SetCollectionStore(store *filesystem.CollectionStore) {
+	v.collectionStore = store
 }
 
 // saveToHistory saves a request/response pair to history.
