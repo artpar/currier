@@ -965,3 +965,317 @@ func TestCollectionTree_ScrollOffset(t *testing.T) {
 		assert.Equal(t, 0, tree.Cursor())
 	})
 }
+
+// =============================================================================
+// COLLECTION MANAGEMENT TESTS
+// =============================================================================
+
+func TestCollectionTree_DeleteRequest(t *testing.T) {
+	t.Run("d_deletes_selected_request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C') // Switch to collections mode
+
+		coll := core.NewCollection("Test Collection")
+		req1 := core.NewRequestDefinition("Request 1", "GET", "http://example.com/1")
+		req2 := core.NewRequestDefinition("Request 2", "POST", "http://example.com/2")
+		coll.AddRequest(req1)
+		coll.AddRequest(req2)
+		tree.SetCollections([]*core.Collection{coll})
+		tree = sendKey(tree, 'l') // Expand collection
+
+		// Move to first request
+		tree = sendKey(tree, 'j')
+		assert.Equal(t, 1, tree.Cursor())
+
+		// Delete the request
+		tree, cmd := sendKeyWithCmd(tree, 'd')
+
+		// Should emit DeleteRequestMsg
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		deleteMsg, ok := msg.(DeleteRequestMsg)
+		assert.True(t, ok, "should emit DeleteRequestMsg")
+		assert.Equal(t, req1.ID(), deleteMsg.RequestID)
+
+		// Collection should have one less request
+		assert.Equal(t, 1, len(coll.Requests()))
+	})
+
+	t.Run("d_does_nothing_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Cursor is on collection (index 0)
+		assert.Equal(t, 0, tree.Cursor())
+
+		tree, cmd := sendKeyWithCmd(tree, 'd')
+
+		// Should not emit any message
+		assert.Nil(t, cmd)
+		// Collection should still exist
+		assert.Equal(t, 1, len(tree.Collections()))
+	})
+
+	t.Run("d_does_nothing_when_unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		// Not focused
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		initialCount := len(coll.Requests())
+		tree = sendKey(tree, 'd')
+
+		assert.Equal(t, initialCount, len(coll.Requests()))
+	})
+}
+
+func TestCollectionTree_CreateCollection(t *testing.T) {
+	t.Run("N_creates_new_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		assert.Equal(t, 0, len(tree.Collections()))
+
+		tree, cmd := sendKeyWithCmd(tree, 'N')
+
+		// Should emit CreateCollectionMsg
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		createMsg, ok := msg.(CreateCollectionMsg)
+		assert.True(t, ok, "should emit CreateCollectionMsg")
+		assert.Equal(t, "New Collection", createMsg.Collection.Name())
+
+		// Should have one collection now
+		assert.Equal(t, 1, len(tree.Collections()))
+	})
+
+	t.Run("N_adds_to_existing_collections", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		existing := core.NewCollection("Existing")
+		tree.SetCollections([]*core.Collection{existing})
+		assert.Equal(t, 1, len(tree.Collections()))
+
+		tree, _ = sendKeyWithCmd(tree, 'N')
+
+		assert.Equal(t, 2, len(tree.Collections()))
+	})
+
+	t.Run("N_does_nothing_when_unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		// Not focused
+
+		tree = sendKey(tree, 'N')
+
+		assert.Equal(t, 0, len(tree.Collections()))
+	})
+}
+
+func TestCollectionTree_DeleteCollection(t *testing.T) {
+	t.Run("D_deletes_selected_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll1 := core.NewCollection("Collection 1")
+		coll2 := core.NewCollection("Collection 2")
+		tree.SetCollections([]*core.Collection{coll1, coll2})
+
+		// Cursor is on first collection
+		assert.Equal(t, 0, tree.Cursor())
+
+		tree, cmd := sendKeyWithCmd(tree, 'D')
+
+		// Should emit DeleteCollectionMsg
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		deleteMsg, ok := msg.(DeleteCollectionMsg)
+		assert.True(t, ok, "should emit DeleteCollectionMsg")
+		assert.Equal(t, coll1.ID(), deleteMsg.CollectionID)
+
+		// Should have one collection now
+		assert.Equal(t, 1, len(tree.Collections()))
+		assert.Equal(t, "Collection 2", tree.Collections()[0].Name())
+	})
+
+	t.Run("D_does_nothing_on_request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+
+		tree, cmd := sendKeyWithCmd(tree, 'D')
+
+		// Should not emit any message
+		assert.Nil(t, cmd)
+		// Collection should still exist
+		assert.Equal(t, 1, len(tree.Collections()))
+	})
+
+	t.Run("D_adjusts_cursor_after_delete", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Only Collection")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree, _ = sendKeyWithCmd(tree, 'D')
+
+		// Cursor should be 0 (clamped)
+		assert.Equal(t, 0, tree.Cursor())
+		assert.Equal(t, 0, len(tree.Collections()))
+	})
+}
+
+func TestCollectionTree_RenameCollection(t *testing.T) {
+	t.Run("r_enters_rename_mode", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Original Name")
+		tree.SetCollections([]*core.Collection{coll})
+
+		assert.False(t, tree.IsRenaming())
+
+		tree = sendKey(tree, 'r')
+
+		assert.True(t, tree.IsRenaming())
+	})
+
+	t.Run("r_does_nothing_on_request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+
+		tree = sendKey(tree, 'r')
+
+		assert.False(t, tree.IsRenaming())
+	})
+
+	t.Run("typing_in_rename_mode_updates_buffer", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Original")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'r') // Enter rename mode
+		tree = sendKey(tree, 'N')
+		tree = sendKey(tree, 'e')
+		tree = sendKey(tree, 'w')
+
+		// Name should not be changed yet (still in rename mode)
+		assert.True(t, tree.IsRenaming())
+		assert.Equal(t, "Original", coll.Name())
+	})
+
+	t.Run("enter_confirms_rename", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Original")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'r')
+		// Clear buffer and type new name
+		tree = sendSpecialKey(tree, tea.KeyBackspace)
+		tree = sendSpecialKey(tree, tea.KeyBackspace)
+		tree = sendSpecialKey(tree, tea.KeyBackspace)
+		tree = sendSpecialKey(tree, tea.KeyBackspace)
+		tree = sendSpecialKey(tree, tea.KeyBackspace)
+		tree = sendSpecialKey(tree, tea.KeyBackspace)
+		tree = sendSpecialKey(tree, tea.KeyBackspace)
+		tree = sendSpecialKey(tree, tea.KeyBackspace)
+		tree = sendKey(tree, 'N')
+		tree = sendKey(tree, 'e')
+		tree = sendKey(tree, 'w')
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		assert.False(t, tree.IsRenaming())
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		renameMsg, ok := msg.(RenameCollectionMsg)
+		assert.True(t, ok, "should emit RenameCollectionMsg")
+		assert.Equal(t, "New", renameMsg.Collection.Name())
+	})
+
+	t.Run("escape_cancels_rename", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Original")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'r')
+		tree = sendKey(tree, 'X') // Type something
+
+		tree = sendSpecialKey(tree, tea.KeyEsc)
+
+		assert.False(t, tree.IsRenaming())
+		assert.Equal(t, "Original", coll.Name()) // Name unchanged
+	})
+
+	t.Run("empty_name_not_allowed", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Original")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'r')
+		// Delete all characters
+		for i := 0; i < 10; i++ {
+			tree = sendSpecialKey(tree, tea.KeyBackspace)
+		}
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		// Should still be in rename mode (empty name not allowed)
+		assert.True(t, tree.IsRenaming())
+		assert.Nil(t, cmd)
+	})
+}
