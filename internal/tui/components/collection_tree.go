@@ -88,6 +88,13 @@ type RenameCollectionMsg struct {
 	Collection *core.Collection
 }
 
+// MoveRequestMsg is sent when a request is moved between collections.
+type MoveRequestMsg struct {
+	SourceCollection *core.Collection
+	TargetCollection *core.Collection
+	Request          *core.RequestDefinition
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -105,9 +112,16 @@ type CollectionTree struct {
 	gPressed      bool // For gg sequence
 
 	// Rename mode
-	renaming         bool   // True when renaming a collection
-	renameBuffer     string // Buffer for the new name
-	renamingCollID   string // ID of collection being renamed
+	renaming       bool   // True when renaming a collection
+	renameBuffer   string // Buffer for the new name
+	renamingCollID string // ID of collection being renamed
+
+	// Move mode
+	moving          bool                    // True when moving a request
+	movingRequest   *core.RequestDefinition // Request being moved
+	sourceCollID    string                  // Source collection ID
+	moveTargets     []TreeItem              // Collections available as move targets
+	moveCursor      int                     // Cursor for selecting target collection
 
 	// View mode (Collections or History)
 	viewMode ViewMode
@@ -176,6 +190,11 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return c.handleRenameInput(msg)
 	}
 
+	// Handle move mode input
+	if c.moving {
+		return c.handleMoveInput(msg)
+	}
+
 	// Handle history view mode
 	if c.viewMode == ViewHistory {
 		return c.handleHistoryKeyMsg(msg)
@@ -201,9 +220,9 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.gPressed = false
 			return c, nil
 		case "j":
-			c.moveCursor(1)
+			c.moveCursorPos(1)
 		case "k":
-			c.moveCursor(-1)
+			c.moveCursorPos(-1)
 		case "l":
 			c.expandCurrent()
 		case "h":
@@ -230,6 +249,10 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Rename selected collection
 			c.gPressed = false
 			return c.startRename()
+		case "m":
+			// Move request to another collection
+			c.gPressed = false
+			return c.startMove()
 		case "G":
 			displayItems := c.getDisplayItems()
 			if len(displayItems) > 0 {
@@ -672,7 +695,152 @@ func (c *CollectionTree) IsRenaming() bool {
 	return c.renaming
 }
 
-func (c *CollectionTree) moveCursor(delta int) {
+// IsMoving returns true if currently in move mode.
+func (c *CollectionTree) IsMoving() bool {
+	return c.moving
+}
+
+func (c *CollectionTree) startMove() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only move requests
+	if item.Type != ItemRequest {
+		return c, nil
+	}
+
+	// Find source collection
+	var sourceCollID string
+	for _, coll := range c.collections {
+		if req, found := coll.FindRequest(item.Request.ID()); found && req != nil {
+			sourceCollID = coll.ID()
+			break
+		}
+	}
+
+	if sourceCollID == "" {
+		return c, nil
+	}
+
+	// Get move targets (all collections except source)
+	targets := c.getMoveTargets(sourceCollID)
+	if len(targets) == 0 {
+		// No other collections to move to
+		return c, nil
+	}
+
+	c.moving = true
+	c.movingRequest = item.Request
+	c.sourceCollID = sourceCollID
+	c.moveTargets = targets
+	c.moveCursor = 0
+
+	return c, nil
+}
+
+func (c *CollectionTree) getMoveTargets(excludeID string) []TreeItem {
+	var targets []TreeItem
+	for _, coll := range c.collections {
+		if coll.ID() != excludeID {
+			targets = append(targets, TreeItem{
+				ID:         coll.ID(),
+				Name:       coll.Name(),
+				Type:       ItemCollection,
+				Collection: coll,
+			})
+		}
+	}
+	return targets
+}
+
+func (c *CollectionTree) handleMoveInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Cancel move
+		c.moving = false
+		c.movingRequest = nil
+		c.sourceCollID = ""
+		c.moveTargets = nil
+		c.moveCursor = 0
+		return c, nil
+
+	case tea.KeyEnter:
+		// Confirm move
+		if c.moveCursor < 0 || c.moveCursor >= len(c.moveTargets) {
+			return c, nil
+		}
+
+		targetItem := c.moveTargets[c.moveCursor]
+		targetColl := targetItem.Collection
+
+		// Find source collection and remove request
+		var sourceColl *core.Collection
+		for _, coll := range c.collections {
+			if coll.ID() == c.sourceCollID {
+				sourceColl = coll
+				coll.RemoveRequestRecursive(c.movingRequest.ID())
+				break
+			}
+		}
+
+		// Add to target collection
+		targetColl.AddRequest(c.movingRequest)
+
+		movedRequest := c.movingRequest
+
+		// Exit move mode
+		c.moving = false
+		c.movingRequest = nil
+		c.sourceCollID = ""
+		c.moveTargets = nil
+		c.moveCursor = 0
+		c.rebuildItems()
+
+		if sourceColl != nil && targetColl != nil {
+			return c, func() tea.Msg {
+				return MoveRequestMsg{
+					SourceCollection: sourceColl,
+					TargetCollection: targetColl,
+					Request:          movedRequest,
+				}
+			}
+		}
+		return c, nil
+
+	case tea.KeyRunes:
+		switch string(msg.Runes) {
+		case "j":
+			if c.moveCursor < len(c.moveTargets)-1 {
+				c.moveCursor++
+			}
+		case "k":
+			if c.moveCursor > 0 {
+				c.moveCursor--
+			}
+		}
+		return c, nil
+	}
+
+	// Handle j/k via KeyDown/KeyUp
+	switch msg.Type {
+	case tea.KeyDown:
+		if c.moveCursor < len(c.moveTargets)-1 {
+			c.moveCursor++
+		}
+	case tea.KeyUp:
+		if c.moveCursor > 0 {
+			c.moveCursor--
+		}
+	}
+
+	return c, nil
+}
+
+func (c *CollectionTree) moveCursorPos(delta int) {
 	displayItems := c.getDisplayItems()
 	// Use pure functions - explicit state changes
 	c.cursor = MoveCursor(c.cursor, delta, len(displayItems))
@@ -789,6 +957,11 @@ func (c *CollectionTree) View() string {
 	}
 	if innerHeight < 1 {
 		innerHeight = 1
+	}
+
+	// Render move mode overlay
+	if c.moving {
+		return c.renderMoveMode(innerWidth, innerHeight)
 	}
 
 	// Section header styles
@@ -997,6 +1170,70 @@ func (c *CollectionTree) formatTimeAgo(t time.Time) string {
 	default:
 		return t.Format("Jan 2")
 	}
+}
+
+func (c *CollectionTree) renderMoveMode(innerWidth, innerHeight int) string {
+	headerStyle := lipgloss.NewStyle().
+		Width(innerWidth).
+		Bold(true).
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("62"))
+
+	// Header showing what's being moved
+	reqName := "Request"
+	if c.movingRequest != nil {
+		reqName = c.movingRequest.Name()
+		if len(reqName) > innerWidth-15 {
+			reqName = reqName[:innerWidth-18] + "..."
+		}
+	}
+	header := headerStyle.Render("Move: " + reqName)
+
+	// Render target list
+	var lines []string
+	lines = append(lines, header)
+	lines = append(lines, "") // Empty line
+
+	for i, target := range c.moveTargets {
+		prefix := "  "
+		if i == c.moveCursor {
+			prefix = "→ "
+		}
+		line := prefix + "📁 " + target.Name
+
+		// Pad/truncate to width
+		if len(line) > innerWidth {
+			line = line[:innerWidth-3] + "..."
+		} else if len(line) < innerWidth {
+			line += strings.Repeat(" ", innerWidth-len(line))
+		}
+
+		// Highlight selected
+		style := lipgloss.NewStyle()
+		if i == c.moveCursor {
+			style = style.
+				Background(lipgloss.Color("62")).
+				Foreground(lipgloss.Color("229"))
+		}
+		lines = append(lines, style.Render(line))
+	}
+
+	// Fill remaining height
+	for len(lines) < innerHeight {
+		lines = append(lines, strings.Repeat(" ", innerWidth))
+	}
+
+	// Border
+	borderStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder())
+	if c.focused {
+		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
+	} else {
+		borderStyle = borderStyle.BorderForeground(lipgloss.Color("243"))
+	}
+
+	content := strings.Join(lines[:innerHeight], "\n")
+	return borderStyle.Render(content)
 }
 
 func (c *CollectionTree) renderSearchBar() string {

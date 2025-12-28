@@ -1279,3 +1279,149 @@ func TestCollectionTree_RenameCollection(t *testing.T) {
 		assert.Nil(t, cmd)
 	})
 }
+
+func TestCollectionTree_MoveRequest(t *testing.T) {
+	t.Run("m_enters_move_mode_on_request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll1 := core.NewCollection("Collection 1")
+		coll1.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		coll2 := core.NewCollection("Collection 2")
+		tree.SetCollections([]*core.Collection{coll1, coll2})
+
+		tree = sendKey(tree, 'l') // Expand collection 1
+		tree = sendKey(tree, 'j') // Move to request
+
+		assert.False(t, tree.IsMoving())
+
+		tree = sendKey(tree, 'm')
+
+		assert.True(t, tree.IsMoving())
+	})
+
+	t.Run("m_does_nothing_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'm')
+
+		assert.False(t, tree.IsMoving())
+	})
+
+	t.Run("m_does_nothing_with_single_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Only Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+
+		tree = sendKey(tree, 'm')
+
+		// Should not enter move mode because there's no other collection to move to
+		assert.False(t, tree.IsMoving())
+	})
+
+	t.Run("jk_navigates_move_targets", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll1 := core.NewCollection("Collection 1")
+		coll1.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		coll2 := core.NewCollection("Collection 2")
+		coll3 := core.NewCollection("Collection 3")
+		tree.SetCollections([]*core.Collection{coll1, coll2, coll3})
+
+		tree = sendKey(tree, 'l') // Expand collection 1
+		tree = sendKey(tree, 'j') // Move to request
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		assert.True(t, tree.IsMoving())
+
+		// Navigate down
+		tree = sendKey(tree, 'j')
+		// Navigate up
+		tree = sendKey(tree, 'k')
+
+		// Should still be in move mode
+		assert.True(t, tree.IsMoving())
+	})
+
+	t.Run("escape_cancels_move", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll1 := core.NewCollection("Collection 1")
+		req := core.NewRequestDefinition("Request", "GET", "http://example.com")
+		coll1.AddRequest(req)
+		coll2 := core.NewCollection("Collection 2")
+		tree.SetCollections([]*core.Collection{coll1, coll2})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		assert.True(t, tree.IsMoving())
+
+		tree = sendSpecialKey(tree, tea.KeyEsc)
+
+		assert.False(t, tree.IsMoving())
+		// Request should still be in original collection
+		_, found := coll1.FindRequest(req.ID())
+		assert.True(t, found)
+	})
+
+	t.Run("enter_confirms_move", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll1 := core.NewCollection("Collection 1")
+		req := core.NewRequestDefinition("Request", "GET", "http://example.com")
+		coll1.AddRequest(req)
+		coll2 := core.NewCollection("Collection 2")
+		tree.SetCollections([]*core.Collection{coll1, coll2})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		assert.False(t, tree.IsMoving())
+		assert.NotNil(t, cmd)
+
+		msg := cmd()
+		moveMsg, ok := msg.(MoveRequestMsg)
+		assert.True(t, ok, "should emit MoveRequestMsg")
+		assert.Equal(t, coll1.ID(), moveMsg.SourceCollection.ID())
+		assert.Equal(t, coll2.ID(), moveMsg.TargetCollection.ID())
+
+		// Request should be in target collection
+		_, foundInTarget := coll2.FindRequest(req.ID())
+		assert.True(t, foundInTarget)
+
+		// Request should not be in source collection
+		_, foundInSource := coll1.FindRequest(req.ID())
+		assert.False(t, foundInSource)
+	})
+}

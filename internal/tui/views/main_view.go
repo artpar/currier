@@ -204,6 +204,30 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			return clearNotificationMsg{}
 		})
 
+	case components.MoveRequestMsg:
+		// Persist both source and target collections
+		if v.collectionStore != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if msg.SourceCollection != nil {
+					_ = v.collectionStore.Save(ctx, msg.SourceCollection)
+				}
+				if msg.TargetCollection != nil {
+					_ = v.collectionStore.Save(ctx, msg.TargetCollection)
+				}
+			}()
+		}
+		targetName := "collection"
+		if msg.TargetCollection != nil {
+			targetName = msg.TargetCollection.Name()
+		}
+		v.notification = fmt.Sprintf("Moved to '%s'", targetName)
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
 	case components.SendRequestMsg:
 		v.response.SetLoading(true)
 		v.focusPane(PaneResponse)
@@ -397,7 +421,7 @@ func (v *MainView) handleSaveToCollection() (tui.Component, tea.Cmd) {
 func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	// Check if we're in INSERT mode (editing text in any pane)
 	// In INSERT mode, forward ALL keys to the focused pane except Ctrl+C
-	isEditing := v.request.IsEditing() || v.tree.IsSearching() || v.tree.IsRenaming()
+	isEditing := v.request.IsEditing() || v.tree.IsSearching() || v.tree.IsRenaming() || v.tree.IsMoving()
 
 	// Ctrl+C always quits
 	if msg.Type == tea.KeyCtrlC {
@@ -743,7 +767,7 @@ func (v *MainView) renderStatusBar() string {
 	modeStyle := lipgloss.NewStyle().
 		Bold(true).
 		Padding(0, 1)
-	isEditing := v.request.IsEditing() || v.tree.IsSearching() || v.tree.IsRenaming()
+	isEditing := v.request.IsEditing() || v.tree.IsSearching() || v.tree.IsRenaming() || v.tree.IsMoving()
 	if isEditing {
 		modeStyle = modeStyle.
 			Background(lipgloss.Color("214")).
@@ -872,6 +896,7 @@ func (v *MainView) renderHelp() string {
 		"│    r                  Rename selected collection        │",
 		"│    D                  Delete selected collection        │",
 		"│    d                  Delete selected request           │",
+		"│    m                  Move request to collection        │",
 		"│    /                  Start search                      │",
 		"│    H                  Switch to History view            │",
 		"│    Esc                Clear search (or exit History)    │",
