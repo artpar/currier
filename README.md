@@ -11,6 +11,7 @@ A vim-modal TUI API client for developers and AI agents.
 - **Request history** - SQLite-backed history with search and replay
 - **Import/Export** - Support for Postman, cURL, HAR, and OpenAPI formats
 - **CLI mode** - Execute requests directly from the command line
+- **curl import** - Run `currier curl <args>` to import any curl command into the TUI
 
 ## Demos
 
@@ -134,6 +135,47 @@ currier send -X POST -H "Content-Type: application/json" \
 # Use an environment
 currier send -e production https://{{host}}/api/users
 ```
+
+### Import curl Commands
+
+Import any curl command directly into the TUI - perfect for testing API examples from documentation:
+
+```bash
+# Simple GET request
+currier curl https://httpbin.org/get
+
+# POST with JSON body
+currier curl -X POST https://httpbin.org/post \
+  -H "Content-Type: application/json" \
+  -d '{"name": "test", "value": 123}'
+
+# With authentication
+currier curl -u admin:secret https://api.example.com/protected
+
+# Modern --json flag (sets Content-Type and Accept headers automatically)
+currier curl --json '{"query": "search"}' https://api.example.com/search
+
+# Copy curl from browser DevTools and run directly
+currier curl -X POST 'https://api.example.com/endpoint' \
+  -H 'Authorization: Bearer token123' \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"key":"value"}'
+```
+
+**Supported curl options:**
+- `-X, --request` - HTTP method (GET, POST, PUT, DELETE, PATCH, etc.)
+- `-H, --header` - Custom headers
+- `-d, --data` - Request body
+- `--data-raw, --data-binary` - Raw request body
+- `--json` - JSON body with automatic Content-Type
+- `-u, --user` - Basic authentication
+- `-A, --user-agent` - User-Agent header
+- `-b, --cookie` - Cookie header
+- `-e, --referer` - Referer header
+- `-I, --head` - HEAD request
+- `-L, --location` - Follow redirects (noted)
+- `-k, --insecure` - Skip SSL verification (noted)
+- `--compressed` - Accept compressed responses
 
 ## Keyboard Shortcuts
 

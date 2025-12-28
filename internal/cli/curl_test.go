@@ -275,3 +275,219 @@ func TestCurlCommand_ComplexArgsParseCorrectly(t *testing.T) {
 	assert.Equal(t, "application/json", requests[0].Headers()["Content-Type"])
 	assert.Equal(t, `{"name":"test"}`, requests[0].Body())
 }
+
+// Additional comprehensive curl parsing tests
+func TestCurlParsing_AdditionalFeatures(t *testing.T) {
+	curlImporter := importer.NewCurlImporter()
+
+	t.Run("parses URL with query parameters", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl "https://api.example.com/search?q=test&limit=10&offset=0"`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "https://api.example.com/search?q=test&limit=10&offset=0", requests[0].URL())
+	})
+
+	t.Run("parses user-agent header", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -A "Mozilla/5.0 (Macintosh)" https://example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "Mozilla/5.0 (Macintosh)", requests[0].Headers()["User-Agent"])
+	})
+
+	t.Run("parses cookie header", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -b "session=abc123; token=xyz" https://example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "session=abc123; token=xyz", requests[0].Headers()["Cookie"])
+	})
+
+	t.Run("parses referer header", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -e "https://google.com" https://example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "https://google.com", requests[0].Headers()["Referer"])
+	})
+
+	t.Run("parses compressed flag", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl --compressed https://example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "gzip, deflate, br", requests[0].Headers()["Accept-Encoding"])
+	})
+
+	t.Run("parses PUT request", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -X PUT -d '{"id":1}' https://example.com/users/1`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "PUT", requests[0].Method())
+		assert.Equal(t, `{"id":1}`, requests[0].Body())
+	})
+
+	t.Run("parses DELETE request", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -X DELETE https://example.com/users/1`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "DELETE", requests[0].Method())
+	})
+
+	t.Run("parses PATCH request", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -X PATCH -d '{"name":"updated"}' https://example.com/users/1`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "PATCH", requests[0].Method())
+	})
+
+	t.Run("parses multiple headers", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -H "Authorization: Bearer token123" -H "X-Custom-Header: value" -H "Accept: application/json" https://api.example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		headers := requests[0].Headers()
+		assert.Equal(t, "Bearer token123", headers["Authorization"])
+		assert.Equal(t, "value", headers["X-Custom-Header"])
+		assert.Equal(t, "application/json", headers["Accept"])
+	})
+
+	t.Run("parses data-raw flag", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl --data-raw '{"raw":"data"}' https://example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "POST", requests[0].Method())
+		assert.Equal(t, `{"raw":"data"}`, requests[0].Body())
+	})
+
+	t.Run("parses long form options", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl --request POST --header "Content-Type: application/json" --data '{"test":true}' https://example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "POST", requests[0].Method())
+		assert.Equal(t, "application/json", requests[0].Headers()["Content-Type"])
+		assert.Equal(t, `{"test":true}`, requests[0].Body())
+	})
+
+	t.Run("ignores silent and verbose flags", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -s -S -v https://example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "https://example.com", requests[0].URL())
+	})
+
+	t.Run("ignores follow redirects flag", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -L https://example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "https://example.com", requests[0].URL())
+	})
+
+	t.Run("ignores insecure flag", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -k https://self-signed.example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "https://self-signed.example.com", requests[0].URL())
+	})
+
+	t.Run("parses auth with only username", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -u admin https://example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		auth := requests[0].Auth()
+		assert.Equal(t, "basic", auth.Type)
+		assert.Equal(t, "admin", auth.Username)
+		assert.Equal(t, "", auth.Password)
+	})
+
+	t.Run("parses form data with data-urlencode", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl --data-urlencode "name=John Doe" https://example.com`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "POST", requests[0].Method())
+		assert.Equal(t, "name=John Doe", requests[0].Body())
+	})
+
+	t.Run("parses real-world GitHub API example", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl -H "Accept: application/vnd.github.v3+json" -H "Authorization: token ghp_xxxx" https://api.github.com/user`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "GET", requests[0].Method())
+		assert.Equal(t, "https://api.github.com/user", requests[0].URL())
+		assert.Equal(t, "application/vnd.github.v3+json", requests[0].Headers()["Accept"])
+		assert.Equal(t, "token ghp_xxxx", requests[0].Headers()["Authorization"])
+	})
+
+	t.Run("parses multiline curl with backslash continuations", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"key":"value"}' \
+  https://api.example.com/endpoint`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "POST", requests[0].Method())
+		assert.Equal(t, "application/json", requests[0].Headers()["Content-Type"])
+		assert.Equal(t, `{"key":"value"}`, requests[0].Body())
+		assert.Equal(t, "https://api.example.com/endpoint", requests[0].URL())
+	})
+
+	t.Run("generates name from URL path", func(t *testing.T) {
+		collection, err := curlImporter.Import(context.Background(),
+			[]byte(`curl https://api.example.com/v1/users/profile`))
+		require.NoError(t, err)
+
+		requests := collection.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "profile", requests[0].Name())
+	})
+}
