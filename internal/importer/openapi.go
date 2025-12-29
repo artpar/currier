@@ -244,10 +244,8 @@ func (o *OpenAPIImporter) createRequest(op pathOperation, baseURL string, compon
 	}
 
 	// Build URL with path parameters replaced by placeholders
-	reqURL := baseURL + op.Path
-	if baseURL == "" {
-		reqURL = "{{base_url}}" + op.Path
-	}
+	// Always use {{base_url}} variable for flexibility in switching environments
+	reqURL := "{{base_url}}" + op.Path
 
 	req := core.NewRequestDefinition(name, op.Method, reqURL)
 
@@ -280,13 +278,10 @@ func (o *OpenAPIImporter) createRequest(op pathOperation, baseURL string, compon
 			example := o.getExampleValue(param.Schema, param.Example)
 			reqURL += url.QueryEscape(param.Name) + "=" + url.QueryEscape(example)
 		case "path":
-			// Replace path parameter placeholder
+			// Replace path parameter placeholder with variable syntax
+			// Always use {{param_name}} for path params since they require user input
 			placeholder := "{" + param.Name + "}"
-			example := o.getExampleValue(param.Schema, param.Example)
-			if example == "" {
-				example = "{{" + param.Name + "}}"
-			}
-			reqURL = strings.ReplaceAll(reqURL, placeholder, example)
+			reqURL = strings.ReplaceAll(reqURL, placeholder, "{{"+param.Name+"}}")
 		}
 	}
 

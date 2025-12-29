@@ -2230,13 +2230,17 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 
 	// Icon based on type
 	var icon string
+	var iconWidth int // Track visible width separately from styled string length
 	switch item.Type {
 	case ItemCollection:
 		icon = "📁 "
+		iconWidth = 3 // emoji + space
 	case ItemFolder:
 		icon = "📂 "
+		iconWidth = 3 // emoji + space
 	case ItemRequest:
 		icon = c.methodBadge(item.Method) + " "
+		iconWidth = 6 // method badge (5 chars) + space
 	}
 
 	// Name - show rename buffer if renaming this collection, folder, or request
@@ -2250,7 +2254,7 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 	if c.renaming && item.Type == ItemRequest && item.Request != nil && item.Request.ID() == c.renamingReqID {
 		name = c.renameBuffer + "▏" // Show cursor
 	}
-	availableWidth := width - len(selPrefix) - len(indent) - len(indicator) - len(icon) - 2
+	availableWidth := width - len(selPrefix) - len(indent) - len(indicator) - iconWidth - 2
 	if availableWidth <= 0 {
 		// Not enough space for name at all
 		name = ""
