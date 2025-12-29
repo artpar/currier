@@ -11,6 +11,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/artpar/currier/internal/cookies"
 	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/exporter"
 	"github.com/artpar/currier/internal/history"
@@ -68,6 +69,9 @@ type MainView struct {
 	showEnvSwitcher  bool                          // Whether env switcher popup is visible
 	envList          []filesystem.EnvironmentMeta  // Available environments
 	envCursor        int                           // Current selection in env list
+
+	// Cookie jar for automatic cookie handling
+	cookieJar *cookies.PersistentJar
 }
 
 // clearNotificationMsg is sent to clear the notification.
@@ -475,7 +479,7 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		v.response.SetLoading(true)
 		v.focusPane(PaneResponse)
 		v.lastRequest = msg.Request // Save for history
-		return v, sendRequest(msg.Request, v.interpolator)
+		return v, sendRequest(msg.Request, v.interpolator, v.cookieJar)
 
 	case components.ResponseReceivedMsg:
 		v.response.SetLoading(false)
@@ -707,6 +711,21 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 
 	case tea.KeyEsc:
 		// Already in normal mode, nothing to do
+		return v, nil
+
+	case tea.KeyCtrlK:
+		// Clear all cookies
+		if v.cookieJar != nil {
+			if err := v.cookieJar.Clear(); err != nil {
+				v.notification = "Failed to clear cookies"
+			} else {
+				v.notification = "Cookies cleared"
+			}
+			v.notifyUntil = time.Now().Add(2 * time.Second)
+			return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+				return clearNotificationMsg{}
+			})
+		}
 		return v, nil
 
 	case tea.KeyRunes:
@@ -1208,6 +1227,7 @@ func (v *MainView) renderHelp() string {
 		"│    n                  Create new request                │",
 		"│    s                  Save request to collection        │",
 		"│    V                  Switch environment                │",
+		"│    Ctrl+K             Clear all cookies                 │",
 		"│    ?                  Toggle this help                  │",
 		"│    q / Ctrl+C         Quit                              │",
 		"│                                                          │",
@@ -1418,6 +1438,11 @@ func (v *MainView) SetEnvironmentStore(store *filesystem.EnvironmentStore) {
 	v.environmentStore = store
 }
 
+// SetCookieJar sets the cookie jar for automatic cookie handling.
+func (v *MainView) SetCookieJar(jar *cookies.PersistentJar) {
+	v.cookieJar = jar
+}
+
 // openEnvSwitcher opens the environment switcher popup.
 func (v *MainView) openEnvSwitcher() (tui.Component, tea.Cmd) {
 	if v.environmentStore == nil {
@@ -1603,7 +1628,7 @@ func (v *MainView) Notification() string {
 }
 
 // sendRequest creates a tea.Cmd that sends an HTTP request asynchronously.
-func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine) tea.Cmd {
+func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine, cookieJar *cookies.PersistentJar) tea.Cmd {
 	return func() tea.Msg {
 		// Early validation of URL
 		url := reqDef.FullURL()
@@ -1659,10 +1684,14 @@ func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine) tea
 			return components.RequestErrorMsg{Error: err}
 		}
 
-		// Create HTTP client with timeout
-		client := httpclient.NewClient(
+		// Create HTTP client with timeout and cookie jar
+		clientOpts := []httpclient.Option{
 			httpclient.WithTimeout(30 * time.Second),
-		)
+		}
+		if cookieJar != nil {
+			clientOpts = append(clientOpts, httpclient.WithCookieJar(cookieJar))
+		}
+		client := httpclient.NewClient(clientOpts...)
 
 		// Send the request
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

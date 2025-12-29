@@ -69,6 +69,13 @@ func WithNoRedirects() Option {
 	}
 }
 
+// WithCookieJar sets a cookie jar for automatic cookie handling.
+func WithCookieJar(jar http.CookieJar) Option {
+	return func(c *Client) {
+		c.httpClient.Jar = jar
+	}
+}
+
 // Protocol returns the protocol identifier.
 func (c *Client) Protocol() string {
 	return "http"

@@ -8,6 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"github.com/artpar/currier/internal/cookies"
+	cookiestore "github.com/artpar/currier/internal/cookies/sqlite"
 	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/history/sqlite"
 	"github.com/artpar/currier/internal/importer"
@@ -150,6 +152,15 @@ func runTUI(collections []*core.Collection, env *core.Environment) error {
 		view.SetEnvironmentStore(environmentStore)
 	}
 
+	// Initialize cookie jar for automatic cookie handling
+	cookieJar, cookieStoreCloser, err := initCookieJar()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Could not initialize cookie jar: %v\n", err)
+	} else {
+		view.SetCookieJar(cookieJar)
+		defer cookieStoreCloser.Close()
+	}
+
 	// Load collections if provided
 	if len(collections) > 0 {
 		view.SetCollections(collections)
@@ -244,4 +255,39 @@ func initEnvironmentStore() (*filesystem.EnvironmentStore, error) {
 	}
 
 	return store, nil
+}
+
+// initCookieJar creates and initializes the persistent cookie jar.
+func initCookieJar() (*cookies.PersistentJar, *cookiestore.Store, error) {
+	// Get user config directory
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, nil, fmt.Errorf("could not determine config directory: %w", err)
+		}
+		configDir = filepath.Join(homeDir, ".config")
+	}
+
+	// Create currier directory
+	currierDir := filepath.Join(configDir, "currier")
+	if err := os.MkdirAll(currierDir, 0755); err != nil {
+		return nil, nil, fmt.Errorf("could not create config directory: %w", err)
+	}
+
+	// Create cookie store
+	dbPath := filepath.Join(currierDir, "cookies.db")
+	store, err := cookiestore.New(dbPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not open cookie database: %w", err)
+	}
+
+	// Create persistent jar
+	jar, err := cookies.NewPersistentJar(store)
+	if err != nil {
+		store.Close()
+		return nil, nil, fmt.Errorf("could not create cookie jar: %w", err)
+	}
+
+	return jar, store, nil
 }
