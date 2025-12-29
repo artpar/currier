@@ -1774,6 +1774,86 @@ func TestCollectionTree_DuplicateRequest(t *testing.T) {
 	})
 }
 
+func TestCollectionTree_DuplicateFolder(t *testing.T) {
+	t.Run("y_duplicates_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		folder := coll.AddFolder("Original Folder")
+		folder.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		// Should have 1 folder before duplicate
+		assert.Equal(t, 1, len(coll.Folders()))
+
+		tree, cmd := sendKeyWithCmd(tree, 'y')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		dupMsg, ok := msg.(DuplicateFolderMsg)
+		assert.True(t, ok, "should emit DuplicateFolderMsg")
+		assert.Equal(t, coll.ID(), dupMsg.Collection.ID())
+		assert.Equal(t, "Original Folder (Copy)", dupMsg.Folder.Name())
+
+		// Should have 2 folders after duplicate
+		assert.Equal(t, 2, len(coll.Folders()))
+	})
+
+	t.Run("duplicate_folder_copies_contents", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		folder := coll.AddFolder("Folder")
+		folder.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://example.com/1"))
+		folder.AddRequest(core.NewRequestDefinition("Req2", "POST", "http://example.com/2"))
+		subfolder := folder.AddFolder("Subfolder")
+		subfolder.AddRequest(core.NewRequestDefinition("SubReq", "DELETE", "http://example.com/3"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		_, cmd := sendKeyWithCmd(tree, 'y')
+
+		msg := cmd()
+		dupMsg := msg.(DuplicateFolderMsg)
+
+		// Check duplicated folder has same structure
+		assert.Equal(t, 2, len(dupMsg.Folder.Requests()))
+		assert.Equal(t, 1, len(dupMsg.Folder.Folders()))
+		assert.Equal(t, 1, len(dupMsg.Folder.Folders()[0].Requests()))
+
+		// But different IDs
+		assert.NotEqual(t, folder.ID(), dupMsg.Folder.ID())
+	})
+
+	t.Run("y_does_nothing_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddFolder("Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Cursor is on collection (not expanded)
+		tree, cmd := sendKeyWithCmd(tree, 'y')
+
+		assert.Nil(t, cmd)
+		assert.Equal(t, 1, len(coll.Folders()))
+	})
+}
+
 func TestCollectionTree_RenameRequest(t *testing.T) {
 	t.Run("R_enters_rename_mode_on_request", func(t *testing.T) {
 		tree := NewCollectionTree()

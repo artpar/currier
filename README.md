@@ -202,7 +202,7 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `D` | Delete collection/folder |
 | `d` | Delete request |
 | `m` | Move request/folder |
-| `y` | Duplicate/copy request |
+| `y` | Duplicate request/folder |
 | `R` | Rename request/folder |
 | `/` | Search |
 | `H` | Switch to History |

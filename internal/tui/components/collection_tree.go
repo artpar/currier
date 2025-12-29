@@ -102,6 +102,12 @@ type DuplicateRequestMsg struct {
 	Request    *core.RequestDefinition
 }
 
+// DuplicateFolderMsg is sent when a folder is duplicated.
+type DuplicateFolderMsg struct {
+	Collection *core.Collection
+	Folder     *core.Folder
+}
+
 // RenameRequestMsg is sent when a request is renamed.
 type RenameRequestMsg struct {
 	Collection *core.Collection
@@ -617,6 +623,11 @@ func (c *CollectionTree) handleDuplicateRequest() (tui.Component, tea.Cmd) {
 
 	item := displayItems[c.cursor]
 
+	// Handle folder duplication
+	if item.Type == ItemFolder {
+		return c.handleDuplicateFolder(item)
+	}
+
 	// Only duplicate requests
 	if item.Type != ItemRequest {
 		return c, nil
@@ -657,6 +668,46 @@ func (c *CollectionTree) handleDuplicateRequest() (tui.Component, tea.Cmd) {
 		return DuplicateRequestMsg{
 			Collection: targetColl,
 			Request:    cloned,
+		}
+	}
+}
+
+func (c *CollectionTree) handleDuplicateFolder(item TreeItem) (tui.Component, tea.Cmd) {
+	// Find the collection containing this folder
+	var targetColl *core.Collection
+	for _, coll := range c.collections {
+		if coll.FindFolder(item.ID) != nil {
+			targetColl = coll
+			break
+		}
+	}
+
+	if targetColl == nil {
+		return c, nil
+	}
+
+	// Clone the folder with all contents
+	cloned := item.Folder.Clone()
+	cloned.SetName(item.Folder.Name() + " (Copy)")
+
+	// Add to the same collection at root level
+	targetColl.AddExistingFolder(cloned)
+	c.rebuildItems()
+
+	// Move cursor to the new folder
+	for i, treeItem := range c.items {
+		if treeItem.Type == ItemFolder && treeItem.Folder != nil && treeItem.Folder.ID() == cloned.ID() {
+			c.cursor = i
+			c.offset = AdjustOffset(c.cursor, c.offset, c.contentHeight())
+			break
+		}
+	}
+
+	// Emit message for persistence
+	return c, func() tea.Msg {
+		return DuplicateFolderMsg{
+			Collection: targetColl,
+			Folder:     cloned,
 		}
 	}
 }

@@ -273,6 +273,21 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			return clearNotificationMsg{}
 		})
 
+	case components.DuplicateFolderMsg:
+		// Persist collection with duplicated folder
+		if v.collectionStore != nil && msg.Collection != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = v.collectionStore.Save(ctx, msg.Collection)
+			}()
+		}
+		v.notification = "Folder duplicated"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
 	case components.RenameRequestMsg:
 		// Persist collection with renamed request
 		if v.collectionStore != nil && msg.Collection != nil {
@@ -1003,7 +1018,7 @@ func (v *MainView) renderHelp() string {
 		"│    D                  Delete selected collection/folder │",
 		"│    d                  Delete selected request           │",
 		"│    m                  Move request/folder                │",
-		"│    y                  Duplicate/copy request            │",
+		"│    y                  Duplicate request/folder           │",
 		"│    R                  Rename selected request/folder    │",
 		"│    /                  Start search                      │",
 		"│    H                  Switch to History view            │",
