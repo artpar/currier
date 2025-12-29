@@ -231,6 +231,33 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			return clearNotificationMsg{}
 		})
 
+	case components.MoveFolderMsg:
+		// Persist both source and target collections
+		if v.collectionStore != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if msg.SourceCollection != nil {
+					_ = v.collectionStore.Save(ctx, msg.SourceCollection)
+				}
+				if msg.TargetCollection != nil {
+					_ = v.collectionStore.Save(ctx, msg.TargetCollection)
+				}
+			}()
+		}
+		// Show target name
+		targetName := "collection"
+		if msg.TargetFolder != nil {
+			targetName = msg.TargetFolder.Name()
+		} else if msg.TargetCollection != nil {
+			targetName = msg.TargetCollection.Name()
+		}
+		v.notification = fmt.Sprintf("Moved folder to '%s'", targetName)
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
 	case components.DuplicateRequestMsg:
 		// Persist collection with duplicated request
 		if v.collectionStore != nil && msg.Collection != nil {
@@ -975,7 +1002,7 @@ func (v *MainView) renderHelp() string {
 		"│    r                  Rename selected collection        │",
 		"│    D                  Delete selected collection/folder │",
 		"│    d                  Delete selected request           │",
-		"│    m                  Move request to collection/folder │",
+		"│    m                  Move request/folder                │",
 		"│    y                  Duplicate/copy request            │",
 		"│    R                  Rename selected request/folder    │",
 		"│    /                  Start search                      │",

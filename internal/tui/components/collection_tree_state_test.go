@@ -1534,6 +1534,149 @@ func TestCollectionTree_MoveRequest(t *testing.T) {
 	})
 }
 
+func TestCollectionTree_MoveFolder(t *testing.T) {
+	t.Run("m_enters_move_mode_on_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Collection")
+		coll.AddFolder("Folder1")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand collection
+		tree = sendKey(tree, 'j') // Move to folder
+
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		assert.True(t, tree.IsMoving())
+	})
+
+	t.Run("move_folder_to_another_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll1 := core.NewCollection("Collection1")
+		folder := coll1.AddFolder("Folder")
+		folder.AddRequest(core.NewRequestDefinition("Req", "GET", "http://example.com"))
+
+		coll2 := core.NewCollection("Collection2")
+		tree.SetCollections([]*core.Collection{coll1, coll2})
+
+		// Verify initial state
+		assert.Equal(t, 1, len(coll1.Folders()))
+		assert.Equal(t, 0, len(coll2.Folders()))
+
+		tree = sendKey(tree, 'l') // Expand coll1
+		tree = sendKey(tree, 'j') // Move to folder
+
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		// Navigate to coll2 (coll1 is first, then coll2)
+		tree = sendKey(tree, 'j') // coll2
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		moveMsg, ok := msg.(MoveFolderMsg)
+		assert.True(t, ok, "should emit MoveFolderMsg")
+		assert.Equal(t, coll1.ID(), moveMsg.SourceCollection.ID())
+		assert.Equal(t, coll2.ID(), moveMsg.TargetCollection.ID())
+		assert.Nil(t, moveMsg.TargetFolder)
+		assert.Equal(t, folder.ID(), moveMsg.Folder.ID())
+
+		// Folder should now be in coll2
+		assert.Equal(t, 0, len(coll1.Folders()))
+		assert.Equal(t, 1, len(coll2.Folders()))
+	})
+
+	t.Run("move_folder_into_another_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Collection")
+		folder1 := coll.AddFolder("Folder1")
+		folder2 := coll.AddFolder("Folder2")
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Verify initial state
+		assert.Equal(t, 2, len(coll.Folders()))
+		assert.Equal(t, 0, len(folder2.Folders()))
+
+		tree = sendKey(tree, 'l') // Expand collection
+		tree = sendKey(tree, 'j') // Move to folder1
+
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		// Navigate to folder2 (collection -> folder2)
+		tree = sendKey(tree, 'j') // folder2
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		moveMsg, ok := msg.(MoveFolderMsg)
+		assert.True(t, ok, "should emit MoveFolderMsg")
+		assert.NotNil(t, moveMsg.TargetFolder)
+		assert.Equal(t, folder2.ID(), moveMsg.TargetFolder.ID())
+
+		// Folder1 should now be inside folder2
+		assert.Equal(t, 1, len(coll.Folders())) // Only folder2 at root
+		assert.Equal(t, 1, len(folder2.Folders()))
+		assert.Equal(t, folder1.ID(), folder2.Folders()[0].ID())
+	})
+
+	t.Run("move_targets_exclude_self_and_children", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Collection")
+		parentFolder := coll.AddFolder("Parent")
+		parentFolder.AddFolder("Child") // Nested folder
+		coll.AddFolder("Sibling")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand collection
+		tree = sendKey(tree, 'j') // Move to parent folder
+
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		// Move targets should include: Collection, Sibling
+		// Move targets should NOT include: Parent, Child
+		assert.True(t, tree.IsMoving())
+		// There should be 2 targets (collection + sibling)
+	})
+
+	t.Run("escape_cancels_folder_move", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Collection")
+		coll.AddFolder("Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand collection
+		tree = sendKey(tree, 'j') // Move to folder
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		assert.True(t, tree.IsMoving())
+
+		tree = sendSpecialKey(tree, tea.KeyEsc)
+
+		assert.False(t, tree.IsMoving())
+	})
+}
+
 func TestCollectionTree_DuplicateRequest(t *testing.T) {
 	t.Run("y_duplicates_request", func(t *testing.T) {
 		tree := NewCollectionTree()

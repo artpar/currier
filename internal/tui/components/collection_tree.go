@@ -126,6 +126,14 @@ type DeleteFolderMsg struct {
 	FolderID   string
 }
 
+// MoveFolderMsg is sent when a folder is moved between collections or into another folder.
+type MoveFolderMsg struct {
+	SourceCollection *core.Collection
+	TargetCollection *core.Collection
+	TargetFolder     *core.Folder // nil if moved to collection root
+	Folder           *core.Folder
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -150,11 +158,12 @@ type CollectionTree struct {
 	renamingFolderID string // ID of folder being renamed
 
 	// Move mode
-	moving          bool                    // True when moving a request
-	movingRequest   *core.RequestDefinition // Request being moved
+	moving          bool                    // True when moving a request or folder
+	movingRequest   *core.RequestDefinition // Request being moved (nil if moving folder)
+	movingFolder    *core.Folder            // Folder being moved (nil if moving request)
 	sourceCollID    string                  // Source collection ID
-	moveTargets     []TreeItem              // Collections available as move targets
-	moveCursor      int                     // Cursor for selecting target collection
+	moveTargets     []TreeItem              // Collections/folders available as move targets
+	moveCursor      int                     // Cursor for selecting target
 
 	// View mode (Collections or History)
 	viewMode ViewMode
@@ -1048,36 +1057,67 @@ func (c *CollectionTree) startMove() (tui.Component, tea.Cmd) {
 
 	item := displayItems[c.cursor]
 
-	// Only move requests
-	if item.Type != ItemRequest {
-		return c, nil
-	}
-
-	// Find source collection
-	var sourceCollID string
-	for _, coll := range c.collections {
-		if req, found := coll.FindRequest(item.Request.ID()); found && req != nil {
-			sourceCollID = coll.ID()
-			break
+	// Handle requests
+	if item.Type == ItemRequest {
+		// Find source collection
+		var sourceCollID string
+		for _, coll := range c.collections {
+			if req, found := coll.FindRequest(item.Request.ID()); found && req != nil {
+				sourceCollID = coll.ID()
+				break
+			}
 		}
-	}
 
-	if sourceCollID == "" {
+		if sourceCollID == "" {
+			return c, nil
+		}
+
+		// Get move targets (all collections and folders)
+		targets := c.getMoveTargets("")
+		if len(targets) == 0 {
+			return c, nil
+		}
+
+		c.moving = true
+		c.movingRequest = item.Request
+		c.movingFolder = nil
+		c.sourceCollID = sourceCollID
+		c.moveTargets = targets
+		c.moveCursor = 0
+
 		return c, nil
 	}
 
-	// Get move targets (all collections except source)
-	targets := c.getMoveTargets(sourceCollID)
-	if len(targets) == 0 {
-		// No other collections to move to
+	// Handle folders
+	if item.Type == ItemFolder {
+		// Find source collection
+		var sourceCollID string
+		for _, coll := range c.collections {
+			if coll.FindFolder(item.ID) != nil {
+				sourceCollID = coll.ID()
+				break
+			}
+		}
+
+		if sourceCollID == "" {
+			return c, nil
+		}
+
+		// Get move targets excluding this folder and its descendants
+		targets := c.getMoveTargetsForFolder(item.ID)
+		if len(targets) == 0 {
+			return c, nil
+		}
+
+		c.moving = true
+		c.movingRequest = nil
+		c.movingFolder = item.Folder
+		c.sourceCollID = sourceCollID
+		c.moveTargets = targets
+		c.moveCursor = 0
+
 		return c, nil
 	}
-
-	c.moving = true
-	c.movingRequest = item.Request
-	c.sourceCollID = sourceCollID
-	c.moveTargets = targets
-	c.moveCursor = 0
 
 	return c, nil
 }
@@ -1116,12 +1156,53 @@ func (c *CollectionTree) getFolderTargets(coll *core.Collection, folders []*core
 	return targets
 }
 
+// getMoveTargetsForFolder returns valid move targets for a folder, excluding the folder itself and its descendants.
+func (c *CollectionTree) getMoveTargetsForFolder(excludeFolderID string) []TreeItem {
+	var targets []TreeItem
+	for _, coll := range c.collections {
+		// Add the collection itself
+		targets = append(targets, TreeItem{
+			ID:         coll.ID(),
+			Name:       coll.Name(),
+			Type:       ItemCollection,
+			Level:      0,
+			Collection: coll,
+		})
+		// Add folders, excluding the moving folder and its descendants
+		targets = append(targets, c.getFolderTargetsExcluding(coll, coll.Folders(), 1, excludeFolderID)...)
+	}
+	return targets
+}
+
+// getFolderTargetsExcluding returns folder targets excluding a specific folder and its descendants.
+func (c *CollectionTree) getFolderTargetsExcluding(coll *core.Collection, folders []*core.Folder, level int, excludeID string) []TreeItem {
+	var targets []TreeItem
+	for _, folder := range folders {
+		// Skip the excluded folder and all its descendants
+		if folder.ID() == excludeID {
+			continue
+		}
+		targets = append(targets, TreeItem{
+			ID:         folder.ID(),
+			Name:       folder.Name(),
+			Type:       ItemFolder,
+			Level:      level,
+			Collection: coll,
+			Folder:     folder,
+		})
+		// Add nested folders recursively
+		targets = append(targets, c.getFolderTargetsExcluding(coll, folder.Folders(), level+1, excludeID)...)
+	}
+	return targets
+}
+
 func (c *CollectionTree) handleMoveInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
 		// Cancel move
 		c.moving = false
 		c.movingRequest = nil
+		c.movingFolder = nil
 		c.sourceCollID = ""
 		c.moveTargets = nil
 		c.moveCursor = 0
@@ -1137,15 +1218,53 @@ func (c *CollectionTree) handleMoveInput(msg tea.KeyMsg) (tui.Component, tea.Cmd
 		targetColl := targetItem.Collection
 		targetFolder := targetItem.Folder // nil if moving to collection root
 
-		// Find source collection and remove request
+		// Find source collection
 		var sourceColl *core.Collection
 		for _, coll := range c.collections {
 			if coll.ID() == c.sourceCollID {
 				sourceColl = coll
-				coll.RemoveRequestRecursive(c.movingRequest.ID())
 				break
 			}
 		}
+
+		// Handle folder move
+		if c.movingFolder != nil {
+			// Remove folder from source
+			sourceColl.RemoveFolderRecursive(c.movingFolder.ID())
+
+			// Add to target folder or collection root
+			if targetFolder != nil {
+				targetFolder.AddExistingFolder(c.movingFolder)
+			} else {
+				targetColl.AddExistingFolder(c.movingFolder)
+			}
+
+			movedFolder := c.movingFolder
+
+			// Exit move mode
+			c.moving = false
+			c.movingRequest = nil
+			c.movingFolder = nil
+			c.sourceCollID = ""
+			c.moveTargets = nil
+			c.moveCursor = 0
+			c.rebuildItems()
+
+			if sourceColl != nil && targetColl != nil {
+				return c, func() tea.Msg {
+					return MoveFolderMsg{
+						SourceCollection: sourceColl,
+						TargetCollection: targetColl,
+						TargetFolder:     targetFolder,
+						Folder:           movedFolder,
+					}
+				}
+			}
+			return c, nil
+		}
+
+		// Handle request move
+		sourceColl.RemoveRequestRecursive(c.movingRequest.ID())
 
 		// Add to target folder or collection root
 		if targetFolder != nil {
@@ -1159,6 +1278,7 @@ func (c *CollectionTree) handleMoveInput(msg tea.KeyMsg) (tui.Component, tea.Cmd
 		// Exit move mode
 		c.moving = false
 		c.movingRequest = nil
+		c.movingFolder = nil
 		c.sourceCollID = ""
 		c.moveTargets = nil
 		c.moveCursor = 0
@@ -1545,14 +1665,16 @@ func (c *CollectionTree) renderMoveMode(innerWidth, innerHeight int) string {
 		Background(lipgloss.Color("62"))
 
 	// Header showing what's being moved
-	reqName := "Request"
-	if c.movingRequest != nil {
-		reqName = c.movingRequest.Name()
-		if len(reqName) > innerWidth-15 {
-			reqName = reqName[:innerWidth-18] + "..."
-		}
+	itemName := "Item"
+	if c.movingFolder != nil {
+		itemName = "📂 " + c.movingFolder.Name()
+	} else if c.movingRequest != nil {
+		itemName = c.movingRequest.Name()
 	}
-	header := headerStyle.Render("Move: " + reqName)
+	if len(itemName) > innerWidth-15 {
+		itemName = itemName[:innerWidth-18] + "..."
+	}
+	header := headerStyle.Render("Move: " + itemName)
 
 	// Render target list
 	var lines []string
