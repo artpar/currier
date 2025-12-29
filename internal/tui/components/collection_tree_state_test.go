@@ -2521,3 +2521,110 @@ func TestCollectionTree_ExportCollection(t *testing.T) {
 		assert.Nil(t, cmd)
 	})
 }
+
+func TestCollectionTree_ImportCollection(t *testing.T) {
+	t.Run("I_enters_import_mode", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		assert.False(t, tree.IsImporting())
+
+		tree = sendKey(tree, 'I')
+
+		assert.True(t, tree.IsImporting())
+	})
+
+	t.Run("typing_updates_import_buffer", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		tree = sendKey(tree, 'I') // Enter import mode
+
+		// Type a file path
+		tree = sendKey(tree, '/')
+		tree = sendKey(tree, 't')
+		tree = sendKey(tree, 'm')
+		tree = sendKey(tree, 'p')
+
+		assert.True(t, tree.IsImporting())
+	})
+
+	t.Run("enter_emits_ImportCollectionMsg", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		tree = sendKey(tree, 'I') // Enter import mode
+
+		// Type a file path
+		tree = sendKey(tree, 't')
+		tree = sendKey(tree, 'e')
+		tree = sendKey(tree, 's')
+		tree = sendKey(tree, 't')
+		tree = sendKey(tree, '.')
+		tree = sendKey(tree, 'j')
+		tree = sendKey(tree, 's')
+		tree = sendKey(tree, 'o')
+		tree = sendKey(tree, 'n')
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		assert.False(t, tree.IsImporting())
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		importMsg, ok := msg.(ImportCollectionMsg)
+		assert.True(t, ok, "should emit ImportCollectionMsg")
+		assert.Equal(t, "test.json", importMsg.FilePath)
+	})
+
+	t.Run("escape_cancels_import", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		tree = sendKey(tree, 'I') // Enter import mode
+		tree = sendKey(tree, 't')
+		tree = sendKey(tree, 'e')
+		tree = sendKey(tree, 's')
+		tree = sendKey(tree, 't')
+
+		assert.True(t, tree.IsImporting())
+
+		tree = sendSpecialKey(tree, tea.KeyEsc)
+
+		assert.False(t, tree.IsImporting())
+	})
+
+	t.Run("enter_with_empty_path_does_nothing", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		tree = sendKey(tree, 'I') // Enter import mode
+
+		// Don't type anything, just press enter
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		// Should still be in import mode
+		assert.True(t, tree.IsImporting())
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("I_does_nothing_when_unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		// Not focused
+		tree = sendKey(tree, 'C')
+
+		tree = sendKey(tree, 'I')
+
+		assert.False(t, tree.IsImporting())
+	})
+}

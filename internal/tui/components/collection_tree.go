@@ -150,6 +150,11 @@ type MoveFolderMsg struct {
 	Folder           *core.Folder
 }
 
+// ImportCollectionMsg is sent when a collection should be imported from a file.
+type ImportCollectionMsg struct {
+	FilePath string
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -180,6 +185,10 @@ type CollectionTree struct {
 	sourceCollID    string                  // Source collection ID
 	moveTargets     []TreeItem              // Collections/folders available as move targets
 	moveCursor      int                     // Cursor for selecting target
+
+	// Import mode
+	importing     bool   // True when entering file path for import
+	importBuffer  string // Buffer for the file path
 
 	// View mode (Collections or History)
 	viewMode ViewMode
@@ -253,6 +262,11 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return c.handleMoveInput(msg)
 	}
 
+	// Handle import mode input
+	if c.importing {
+		return c.handleImportInput(msg)
+	}
+
 	// Handle history view mode
 	if c.viewMode == ViewHistory {
 		return c.handleHistoryKeyMsg(msg)
@@ -303,6 +317,12 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Export collection to Postman JSON
 			c.gPressed = false
 			return c.handleExportCollection()
+		case "I":
+			// Import collection from Postman JSON
+			c.gPressed = false
+			c.importing = true
+			c.importBuffer = ""
+			return c, nil
 		case "F":
 			// Create new folder in current collection
 			c.gPressed = false
@@ -1171,6 +1191,47 @@ func (c *CollectionTree) handleRenameInput(msg tea.KeyMsg) (tui.Component, tea.C
 	return c, nil
 }
 
+func (c *CollectionTree) handleImportInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Cancel import
+		c.importing = false
+		c.importBuffer = ""
+		return c, nil
+
+	case tea.KeyEnter:
+		// Confirm import
+		if c.importBuffer == "" {
+			// Don't allow empty path
+			return c, nil
+		}
+
+		filePath := c.importBuffer
+		c.importing = false
+		c.importBuffer = ""
+
+		return c, func() tea.Msg {
+			return ImportCollectionMsg{FilePath: filePath}
+		}
+
+	case tea.KeyBackspace:
+		if len(c.importBuffer) > 0 {
+			c.importBuffer = c.importBuffer[:len(c.importBuffer)-1]
+		}
+		return c, nil
+
+	case tea.KeyRunes:
+		c.importBuffer += string(msg.Runes)
+		return c, nil
+
+	case tea.KeySpace:
+		c.importBuffer += " "
+		return c, nil
+	}
+
+	return c, nil
+}
+
 // IsRenaming returns true if currently in rename mode.
 func (c *CollectionTree) IsRenaming() bool {
 	return c.renaming
@@ -1179,6 +1240,11 @@ func (c *CollectionTree) IsRenaming() bool {
 // IsMoving returns true if currently in move mode.
 func (c *CollectionTree) IsMoving() bool {
 	return c.moving
+}
+
+// IsImporting returns true if currently in import mode.
+func (c *CollectionTree) IsImporting() bool {
+	return c.importing
 }
 
 func (c *CollectionTree) startMove() (tui.Component, tea.Cmd) {
@@ -1581,6 +1647,11 @@ func (c *CollectionTree) View() string {
 		return c.renderMoveMode(innerWidth, innerHeight)
 	}
 
+	// Render import mode overlay
+	if c.importing {
+		return c.renderImportMode(innerWidth, innerHeight)
+	}
+
 	// Section header styles
 	activeHeaderStyle := lipgloss.NewStyle().
 		Width(innerWidth).
@@ -1851,6 +1922,51 @@ func (c *CollectionTree) renderMoveMode(innerWidth, innerHeight int) string {
 		}
 		lines = append(lines, style.Render(line))
 	}
+
+	// Fill remaining height
+	for len(lines) < innerHeight {
+		lines = append(lines, strings.Repeat(" ", innerWidth))
+	}
+
+	// Border
+	borderStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder())
+	if c.focused {
+		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
+	} else {
+		borderStyle = borderStyle.BorderForeground(lipgloss.Color("243"))
+	}
+
+	content := strings.Join(lines[:innerHeight], "\n")
+	return borderStyle.Render(content)
+}
+
+func (c *CollectionTree) renderImportMode(innerWidth, innerHeight int) string {
+	headerStyle := lipgloss.NewStyle().
+		Width(innerWidth).
+		Bold(true).
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("62"))
+
+	header := headerStyle.Render("Import Postman Collection")
+
+	var lines []string
+	lines = append(lines, header)
+	lines = append(lines, "") // Empty line
+	lines = append(lines, "Enter file path (.json or .postman_collection.json):")
+	lines = append(lines, "")
+
+	// Show input with cursor
+	inputStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("229"))
+	input := c.importBuffer + "▏"
+	if len(input) > innerWidth-2 {
+		// Show end of path if too long
+		input = "..." + input[len(input)-innerWidth+5:]
+	}
+	lines = append(lines, inputStyle.Render(input))
+	lines = append(lines, "")
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Render("Enter to confirm, Esc to cancel"))
 
 	// Fill remaining height
 	for len(lines) < innerHeight {

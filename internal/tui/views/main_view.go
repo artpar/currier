@@ -14,6 +14,7 @@ import (
 	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/exporter"
 	"github.com/artpar/currier/internal/history"
+	"github.com/artpar/currier/internal/importer"
 	"github.com/artpar/currier/internal/interfaces"
 	"github.com/artpar/currier/internal/interpolate"
 	httpclient "github.com/artpar/currier/internal/protocol/http"
@@ -331,6 +332,39 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 					v.notification = fmt.Sprintf("✗ Failed to write %s", filename)
 				} else {
 					v.notification = fmt.Sprintf("✓ Exported to %s", filename)
+				}
+			}
+			v.notifyUntil = time.Now().Add(3 * time.Second)
+			return v, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+				return clearNotificationMsg{}
+			})
+		}
+
+	case components.ImportCollectionMsg:
+		// Import collection from Postman JSON
+		if msg.FilePath != "" {
+			data, err := os.ReadFile(msg.FilePath)
+			if err != nil {
+				v.notification = fmt.Sprintf("✗ Failed to read file: %s", err.Error())
+			} else {
+				postmanImporter := importer.NewPostmanImporter()
+				ctx := context.Background()
+				coll, err := postmanImporter.Import(ctx, data)
+				if err != nil {
+					v.notification = fmt.Sprintf("✗ Import failed: %s", err.Error())
+				} else {
+					// Add to collections and save
+					collections := v.tree.Collections()
+					collections = append(collections, coll)
+					v.tree.SetCollections(collections)
+					if v.collectionStore != nil {
+						go func() {
+							ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+							defer cancel()
+							_ = v.collectionStore.Save(ctx, coll)
+						}()
+					}
+					v.notification = fmt.Sprintf("✓ Imported %s", coll.Name())
 				}
 			}
 			v.notifyUntil = time.Now().Add(3 * time.Second)
@@ -1072,6 +1106,7 @@ func (v *MainView) renderHelp() string {
 		"│    y                  Duplicate request/folder           │",
 		"│    c                  Copy request as cURL              │",
 		"│    E                  Export collection to Postman      │",
+		"│    I                  Import collection from Postman    │",
 		"│    R                  Rename selected request/folder    │",
 		"│    /                  Start search                      │",
 		"│    H                  Switch to History view            │",
