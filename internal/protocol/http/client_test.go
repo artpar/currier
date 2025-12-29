@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -472,5 +473,161 @@ func TestClient_Send_Redirect(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, 302, resp.Status().Code())
+	})
+}
+
+func TestClient_WithCookieJar(t *testing.T) {
+	t.Run("uses cookie jar for requests", func(t *testing.T) {
+		var receivedCookie string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/set-cookie" {
+				http.SetCookie(w, &http.Cookie{
+					Name:  "session",
+					Value: "abc123",
+					Path:  "/",
+				})
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			if r.URL.Path == "/check-cookie" {
+				cookie, err := r.Cookie("session")
+				if err == nil {
+					receivedCookie = cookie.Value
+				}
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}))
+		defer server.Close()
+
+		jar, _ := cookiejar.New(nil)
+		client := NewClient(WithCookieJar(jar))
+
+		// Set cookie
+		req1, _ := core.NewRequest("http", "GET", server.URL+"/set-cookie")
+		ctx := context.Background()
+		_, err := client.Send(ctx, req1)
+		require.NoError(t, err)
+
+		// Check cookie is sent
+		req2, _ := core.NewRequest("http", "GET", server.URL+"/check-cookie")
+		_, err = client.Send(ctx, req2)
+		require.NoError(t, err)
+
+		assert.Equal(t, "abc123", receivedCookie)
+	})
+}
+
+func TestClient_WithProxy(t *testing.T) {
+	t.Run("sets proxy configuration", func(t *testing.T) {
+		client := NewClient(WithProxy("http://proxy.example.com:8080"))
+		assert.NotNil(t, client)
+		assert.Equal(t, "http://proxy.example.com:8080", client.config.ProxyURL)
+	})
+
+	t.Run("supports socks5 proxy", func(t *testing.T) {
+		client := NewClient(WithProxy("socks5://proxy.example.com:1080"))
+		assert.NotNil(t, client)
+		assert.Equal(t, "socks5://proxy.example.com:1080", client.config.ProxyURL)
+	})
+}
+
+func TestClient_WithClientCert(t *testing.T) {
+	t.Run("sets client certificate configuration", func(t *testing.T) {
+		client := NewClient(WithClientCert("/path/to/cert.pem", "/path/to/key.pem"))
+		assert.NotNil(t, client)
+		assert.NotNil(t, client.config.TLS)
+		assert.Equal(t, "/path/to/cert.pem", client.config.TLS.CertFile)
+		assert.Equal(t, "/path/to/key.pem", client.config.TLS.KeyFile)
+	})
+
+	t.Run("creates TLS config if nil", func(t *testing.T) {
+		client := NewClient()
+		assert.Nil(t, client.config.TLS)
+
+		client = NewClient(WithClientCert("/cert.pem", "/key.pem"))
+		assert.NotNil(t, client.config.TLS)
+	})
+}
+
+func TestClient_WithCACert(t *testing.T) {
+	t.Run("sets CA certificate configuration", func(t *testing.T) {
+		client := NewClient(WithCACert("/path/to/ca.pem"))
+		assert.NotNil(t, client)
+		assert.NotNil(t, client.config.TLS)
+		assert.Equal(t, "/path/to/ca.pem", client.config.TLS.CAFile)
+	})
+
+	t.Run("creates TLS config if nil", func(t *testing.T) {
+		client := NewClient()
+		assert.Nil(t, client.config.TLS)
+
+		client = NewClient(WithCACert("/ca.pem"))
+		assert.NotNil(t, client.config.TLS)
+	})
+}
+
+func TestClient_WithInsecureSkipVerify(t *testing.T) {
+	t.Run("sets insecure skip verify", func(t *testing.T) {
+		client := NewClient(WithInsecureSkipVerify())
+		assert.NotNil(t, client)
+		assert.NotNil(t, client.config.TLS)
+		assert.True(t, client.config.TLS.InsecureSkipVerify)
+	})
+
+	t.Run("creates TLS config if nil", func(t *testing.T) {
+		client := NewClient()
+		assert.Nil(t, client.config.TLS)
+
+		client = NewClient(WithInsecureSkipVerify())
+		assert.NotNil(t, client.config.TLS)
+		assert.True(t, client.config.TLS.InsecureSkipVerify)
+	})
+}
+
+func TestClient_buildTLSConfig(t *testing.T) {
+	t.Run("returns nil when no TLS config", func(t *testing.T) {
+		client := NewClient()
+		tlsConfig := client.buildTLSConfig()
+		assert.Nil(t, tlsConfig)
+	})
+
+	t.Run("sets InsecureSkipVerify", func(t *testing.T) {
+		client := NewClient(WithInsecureSkipVerify())
+		tlsConfig := client.buildTLSConfig()
+		assert.NotNil(t, tlsConfig)
+		assert.True(t, tlsConfig.InsecureSkipVerify)
+	})
+
+	t.Run("handles missing certificate files gracefully", func(t *testing.T) {
+		client := NewClient(WithClientCert("/nonexistent/cert.pem", "/nonexistent/key.pem"))
+		tlsConfig := client.buildTLSConfig()
+		assert.NotNil(t, tlsConfig)
+		// Certificate loading failed silently, so no certificates
+		assert.Empty(t, tlsConfig.Certificates)
+	})
+
+	t.Run("handles missing CA file gracefully", func(t *testing.T) {
+		client := NewClient(WithCACert("/nonexistent/ca.pem"))
+		tlsConfig := client.buildTLSConfig()
+		assert.NotNil(t, tlsConfig)
+		// CA loading failed silently, so no custom CA
+		assert.Nil(t, tlsConfig.RootCAs)
+	})
+}
+
+func TestClient_CombinedTLSOptions(t *testing.T) {
+	t.Run("combines multiple TLS options", func(t *testing.T) {
+		client := NewClient(
+			WithInsecureSkipVerify(),
+			WithCACert("/path/to/ca.pem"),
+			WithClientCert("/path/to/cert.pem", "/path/to/key.pem"),
+		)
+
+		assert.NotNil(t, client.config.TLS)
+		assert.True(t, client.config.TLS.InsecureSkipVerify)
+		assert.Equal(t, "/path/to/ca.pem", client.config.TLS.CAFile)
+		assert.Equal(t, "/path/to/cert.pem", client.config.TLS.CertFile)
+		assert.Equal(t, "/path/to/key.pem", client.config.TLS.KeyFile)
 	})
 }

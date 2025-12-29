@@ -9,6 +9,7 @@ import (
 	"github.com/artpar/currier/internal/history"
 	"github.com/artpar/currier/internal/interfaces"
 	"github.com/artpar/currier/internal/script"
+	"github.com/artpar/currier/internal/storage/filesystem"
 	"github.com/artpar/currier/internal/tui/components"
 	"github.com/stretchr/testify/assert"
 )
@@ -2590,5 +2591,148 @@ func TestMainView_ViewRendering(t *testing.T) {
 		output := view.View()
 		// Help content should be in the output
 		assert.Contains(t, output, "Help")
+	})
+}
+
+func TestMainView_SetCookieJar(t *testing.T) {
+	t.Run("sets cookie jar", func(t *testing.T) {
+		view := NewMainView()
+		view.SetCookieJar(nil)
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_EnvironmentSwitcherUI(t *testing.T) {
+	t.Run("Esc closes environment switcher", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvSwitcher = true
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showEnvSwitcher)
+	})
+
+	t.Run("j/k navigates in environment switcher", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvSwitcher = true
+		view.envList = []filesystem.EnvironmentMeta{
+			{ID: "1", Name: "Dev"},
+			{ID: "2", Name: "Prod"},
+		}
+		view.envCursor = 0
+
+		msgJ := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := view.Update(msgJ)
+		view = updated.(*MainView)
+		assert.Equal(t, 1, view.envCursor)
+
+		msgK := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+		updated, _ = view.Update(msgK)
+		view = updated.(*MainView)
+		assert.Equal(t, 0, view.envCursor)
+	})
+
+	t.Run("renders environment switcher", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvSwitcher = true
+		view.envList = []filesystem.EnvironmentMeta{
+			{ID: "1", Name: "Development", VarCount: 5, IsActive: true},
+			{ID: "2", Name: "Production", VarCount: 3},
+		}
+		view.envCursor = 0
+
+		output := view.View()
+		assert.Contains(t, output, "Select Environment")
+	})
+}
+
+func TestMainView_ProxyDialog(t *testing.T) {
+	t.Run("P key opens proxy dialog", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.True(t, view.showProxyDialog)
+	})
+
+	t.Run("Esc closes proxy dialog", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showProxyDialog = true
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showProxyDialog)
+	})
+
+	t.Run("renders proxy dialog", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showProxyDialog = true
+
+		output := view.View()
+		assert.Contains(t, output, "Proxy")
+	})
+}
+
+func TestMainView_TLSDialog(t *testing.T) {
+	t.Run("Ctrl+T opens TLS dialog", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := tea.KeyMsg{Type: tea.KeyCtrlT}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.True(t, view.showTLSDialog)
+	})
+
+	t.Run("Esc closes TLS dialog", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showTLSDialog)
+	})
+
+	t.Run("renders TLS dialog", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+
+		output := view.View()
+		assert.Contains(t, output, "TLS")
+	})
+}
+
+func TestMainView_EnvironmentEditor(t *testing.T) {
+	t.Run("renders environment editor", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvEditor = true
+		env := core.NewEnvironment("Test Env")
+		env.SetVariable("API_KEY", "secret123")
+		env.SetVariable("BASE_URL", "https://api.example.com")
+		view.editingEnv = env
+		view.envVarKeys = []string{"API_KEY", "BASE_URL"}
+		view.envEditorCursor = 0
+		view.envEditorMode = 0
+
+		output := view.View()
+		assert.Contains(t, output, "Test Env")
 	})
 }
