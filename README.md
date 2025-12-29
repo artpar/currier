@@ -383,10 +383,17 @@ Export requests to:
 
 Currier stores data in:
 
-- `~/.config/currier/collections/` - Collection files
-- `~/.config/currier/environments/` - Environment files
-- `~/.config/currier/history.db` - Request history
-- `~/.config/currier/cookies.db` - Persistent cookie storage
+| Platform | Base Directory |
+|----------|----------------|
+| macOS | `~/Library/Application Support/currier/` |
+| Linux | `~/.config/currier/` |
+| Windows | `%AppData%\currier\` |
+
+Within this directory:
+- `collections/` - Collection files
+- `environments/` - Environment files
+- `history.db` - Request history
+- `cookies.db` - Persistent cookie storage
 
 ## License
 

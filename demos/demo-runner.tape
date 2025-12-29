@@ -14,20 +14,20 @@ Type "currier"
 Enter
 Sleep 1s
 
-# Focus on collections panel
+# Switch to Collections panel
 Type "C"
 Sleep 400ms
 
-# Navigate to a collection
-Type "j"
-Sleep 200ms
+# Expand the first collection
+Type "l"
+Sleep 300ms
 
 # Run collection with Ctrl+R
 Ctrl+R
-Sleep 2s
+Sleep 3s
 
-# Close the runner modal with Enter
-Enter
+# Close the runner modal with Escape
+Escape
 Sleep 500ms
 
 # Quit
