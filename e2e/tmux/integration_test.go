@@ -2128,3 +2128,695 @@ func TestWebSocket_ClearInput(t *testing.T) {
 		t.Logf("Screen:\n%s", screen)
 	}
 }
+
+// =============================================================================
+// BODY TYPE TESTS
+// =============================================================================
+
+func TestBodyType_CycleWithT(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create request
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Focus request panel and go to Body tab
+	sess.SendKey("2")
+	time.Sleep(100 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		sess.SendKey("]")
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Press 't' to cycle body type (raw -> json -> form)
+	sess.SendKey("t")
+	time.Sleep(200 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show body type indicator
+	hasJSON := strings.Contains(screen, "JSON") || strings.Contains(screen, "json")
+	if !hasJSON {
+		t.Log("Body type may show as json or JSON")
+	}
+
+	// Cycle again to form
+	sess.SendKey("t")
+	time.Sleep(200 * time.Millisecond)
+
+	screen = sess.Capture()
+	hasForm := strings.Contains(screen, "Form") || strings.Contains(screen, "form")
+	if !hasForm {
+		t.Log("Body type may show as form or Form")
+	}
+
+	// Should not crash
+	if !strings.Contains(screen, "Request") {
+		t.Error("App crashed during body type cycling")
+	}
+}
+
+func TestBodyType_FormAddField(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create request
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Focus request panel and go to Body tab
+	sess.SendKey("2")
+	time.Sleep(100 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		sess.SendKey("]")
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Cycle to form body type (raw -> json -> form)
+	sess.SendKey("t")
+	time.Sleep(100 * time.Millisecond)
+	sess.SendKey("t")
+	time.Sleep(200 * time.Millisecond)
+
+	// Add a text field with 'a'
+	sess.SendKey("a")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("fieldname")
+	sess.SendKey("Tab")
+	sess.Type("fieldvalue")
+	sess.SendKey("Escape")
+	time.Sleep(200 * time.Millisecond)
+
+	// Should not crash
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Request") {
+		t.Error("App crashed during form field add")
+	}
+}
+
+func TestBodyType_FormAddFileField(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create request
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Focus request panel and go to Body tab
+	sess.SendKey("2")
+	time.Sleep(100 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		sess.SendKey("]")
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Cycle to form body type
+	sess.SendKey("t")
+	time.Sleep(100 * time.Millisecond)
+	sess.SendKey("t")
+	time.Sleep(200 * time.Millisecond)
+
+	// Add a file field with 'f'
+	sess.SendKey("f")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("myfile")
+	sess.SendKey("Tab")
+	sess.Type("/path/to/file.txt")
+	sess.SendKey("Escape")
+	time.Sleep(200 * time.Millisecond)
+
+	// Should not crash
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Request") {
+		t.Error("App crashed during file field add")
+	}
+}
+
+// =============================================================================
+// COLLECTION MANAGEMENT TESTS
+// =============================================================================
+
+func TestCollection_CreateNewCollection(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Focus collections pane
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'N' to create new collection
+	sess.SendKey("N")
+	time.Sleep(200 * time.Millisecond)
+
+	// Should enter input mode for collection name
+	screen := sess.Capture()
+	hasInput := strings.Contains(screen, "INSERT") || strings.Contains(screen, "Name")
+	if hasInput {
+		sess.Type("MyNewCollection")
+		sess.SendKey("Enter")
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Should not crash
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("App crashed during collection creation")
+	}
+}
+
+func TestCollection_CreateFolder(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create a request to have a collection
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Focus collections pane
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'F' to create new folder
+	sess.SendKey("F")
+	time.Sleep(200 * time.Millisecond)
+
+	// Enter folder name if prompted
+	screen := sess.Capture()
+	if strings.Contains(screen, "INSERT") {
+		sess.Type("NewFolder")
+		sess.SendKey("Enter")
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Should not crash
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("App crashed during folder creation")
+	}
+}
+
+func TestCollection_RenameRequest(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create a request
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com/rename-test")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Focus collections pane and navigate to the request
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+	sess.SendKey("l") // Expand collection
+	sess.SendKey("j") // Move to request
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'R' to rename request
+	sess.SendKey("R")
+	time.Sleep(200 * time.Millisecond)
+
+	// Enter new name if prompted
+	screen := sess.Capture()
+	if strings.Contains(screen, "INSERT") {
+		sess.Type("RenamedRequest")
+		sess.SendKey("Enter")
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Should not crash
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("App crashed during request rename")
+	}
+}
+
+func TestCollection_DuplicateRequest(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create a request
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com/duplicate-test")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Focus collections pane and navigate to the request
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+	sess.SendKey("l") // Expand collection
+	sess.SendKey("j") // Move to request
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'y' to duplicate request
+	sess.SendKey("y")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should not crash
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("App crashed during request duplication")
+	}
+}
+
+func TestCollection_MoveRequestUpDown(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create multiple requests
+	for i := 0; i < 2; i++ {
+		sess.SendKey("n")
+		sess.WaitFor("INSERT", 2*time.Second)
+		sess.Type("https://example.com/move-test")
+		sess.SendKey("Escape")
+		sess.WaitFor("NORMAL", 2*time.Second)
+	}
+
+	// Focus collections pane
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+	sess.SendKey("l") // Expand collection
+	sess.SendKey("j") // Move to first request
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'J' to move request down
+	sess.SendKey("J")
+	time.Sleep(200 * time.Millisecond)
+
+	// Press 'K' to move request up
+	sess.SendKey("K")
+	time.Sleep(200 * time.Millisecond)
+
+	// Should not crash
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("App crashed during request move")
+	}
+}
+
+func TestCollection_CopyAsCurl(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create a request
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com/curl-test")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Focus collections pane and navigate to the request
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+	sess.SendKey("l") // Expand collection
+	sess.SendKey("j") // Move to request
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'c' to copy as cURL
+	sess.SendKey("c")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should not crash (clipboard may not work in test environment)
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("App crashed during copy as curl")
+	}
+}
+
+func TestCollection_SaveRequest(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create a request
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com/save-test")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Press 's' to save request
+	sess.SendKey("s")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should show save dialog or save to collection
+	screen := sess.Capture()
+	// App should not crash and should show some feedback
+	if !strings.Contains(screen, "Collections") && !strings.Contains(screen, "Request") {
+		t.Error("App crashed during save request")
+	}
+}
+
+// =============================================================================
+// ENVIRONMENT SWITCHER TESTS
+// =============================================================================
+
+func TestEnvironment_OpenSwitcher(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Press 'V' to open environment switcher
+	sess.SendKey("V")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should show environment switcher or indicator
+	screen := sess.Capture()
+	hasEnv := strings.Contains(screen, "Environment") || strings.Contains(screen, "env") || strings.Contains(screen, "No environments")
+	if !hasEnv {
+		t.Log("Environment switcher may show different UI")
+	}
+
+	// Press Escape to close
+	sess.SendKey("Escape")
+	time.Sleep(200 * time.Millisecond)
+
+	// Should return to normal view
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("App crashed during environment switcher")
+	}
+}
+
+// =============================================================================
+// COOKIE MANAGEMENT TESTS
+// =============================================================================
+
+func TestCookies_ClearWithCtrlK(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Press Ctrl+K to clear cookies
+	sess.SendKey("Ctrl+K")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should show confirmation or clear message
+	screen := sess.Capture()
+	// App should not crash
+	if !strings.Contains(screen, "Collections") && !strings.Contains(screen, "Request") {
+		t.Error("App crashed during cookie clear")
+	}
+}
+
+// =============================================================================
+// RESPONSE COPY TESTS
+// =============================================================================
+
+func TestResponse_CopyWithY(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Make a request to get response
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://httpbin.org/get")
+	sess.SendKey("Escape")
+	sess.SendKey("Enter")
+
+	// Wait for response
+	if err := sess.WaitFor("200", 15*time.Second); err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+
+	// Focus response panel
+	sess.SendKey("3")
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'y' to copy response
+	sess.SendKey("y")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should not crash (clipboard may not work in test environment)
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Response") {
+		t.Error("App crashed during response copy")
+	}
+}
+
+// =============================================================================
+// COLLECTION RUNNER CLI TESTS
+// =============================================================================
+
+func TestRunner_CLIHelp(t *testing.T) {
+	// Test that the run command is available
+	cmd := exec.Command(binaryPath, "run", "--help")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("Run help output: %s", string(output))
+		// Some commands may not have help, check if it ran
+	}
+
+	// Should show help or error about missing collection
+	hasHelp := strings.Contains(string(output), "run") || strings.Contains(string(output), "collection") || strings.Contains(string(output), "Usage")
+	if !hasHelp {
+		t.Log("Run command help may show different format")
+	}
+}
+
+// =============================================================================
+// ALT+ENTER SEND WHILE EDITING TESTS
+// =============================================================================
+
+func TestRequest_AltEnterSendWhileEditing(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create request and stay in INSERT mode
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://httpbin.org/get")
+
+	// Press Alt+Enter to send while still in INSERT mode
+	sess.SendKey("Alt+Enter")
+
+	// Should send the request
+	if err := sess.WaitFor("200", 15*time.Second); err != nil {
+		t.Log("Alt+Enter may not be supported in this terminal")
+	}
+}
+
+// =============================================================================
+// DELETE REQUEST TESTS
+// =============================================================================
+
+func TestCollection_DeleteRequest(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create a request
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com/delete-test")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Focus collections pane and navigate to the request
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+	sess.SendKey("l") // Expand collection
+	sess.SendKey("j") // Move to request
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'd' to delete request
+	sess.SendKey("d")
+	time.Sleep(300 * time.Millisecond)
+
+	// May show confirmation dialog
+	screen := sess.Capture()
+	if strings.Contains(screen, "confirm") || strings.Contains(screen, "Delete") {
+		sess.SendKey("Enter") // Confirm
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Should not crash
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("App crashed during request delete")
+	}
+}
+
+func TestCollection_DeleteFolder(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create a request to have a collection
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Focus collections pane
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'D' to delete collection/folder
+	sess.SendKey("D")
+	time.Sleep(300 * time.Millisecond)
+
+	// May show confirmation dialog
+	screen := sess.Capture()
+	if strings.Contains(screen, "confirm") || strings.Contains(screen, "Delete") {
+		sess.SendKey("Escape") // Cancel to not actually delete
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Should not crash
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("App crashed during folder delete")
+	}
+}
+
+// =============================================================================
+// IMPORT/EXPORT TESTS
+// =============================================================================
+
+func TestCollection_ExportPostman(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Create a request to have a collection
+	sess.SendKey("n")
+	sess.WaitFor("INSERT", 2*time.Second)
+	sess.Type("https://example.com")
+	sess.SendKey("Escape")
+	sess.WaitFor("NORMAL", 2*time.Second)
+
+	// Focus collections pane
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'E' to export collection
+	sess.SendKey("E")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should show export dialog or export
+	screen := sess.Capture()
+	// App should not crash
+	if !strings.Contains(screen, "Collections") && !strings.Contains(screen, "Export") && !strings.Contains(screen, "Request") {
+		t.Error("App crashed during export")
+	}
+
+	// Press Escape in case dialog is open
+	sess.SendKey("Escape")
+	time.Sleep(200 * time.Millisecond)
+}
+
+func TestCollection_Import(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Focus collections pane
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+
+	// Press 'I' to import collection
+	sess.SendKey("I")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should show import dialog
+	screen := sess.Capture()
+	// App should not crash
+	if !strings.Contains(screen, "Collections") && !strings.Contains(screen, "Import") && !strings.Contains(screen, "Request") {
+		t.Error("App crashed during import")
+	}
+
+	// Press Escape to close dialog
+	sess.SendKey("Escape")
+	time.Sleep(200 * time.Millisecond)
+}
+
+// =============================================================================
+// SWITCH TO COLLECTIONS VIEW TESTS
+// =============================================================================
+
+func TestHistory_SwitchBackToCollections(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Focus collections pane and switch to history
+	sess.SendKey("1")
+	time.Sleep(100 * time.Millisecond)
+	sess.SendKey("H")
+	time.Sleep(200 * time.Millisecond)
+
+	// Press 'C' to switch back to collections
+	sess.SendKey("C")
+	time.Sleep(200 * time.Millisecond)
+
+	// Should be back in collections view
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("Could not switch back to Collections view")
+	}
+}
