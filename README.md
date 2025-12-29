@@ -246,6 +246,9 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `s` | Save request to collection |
 | `w` | Toggle WebSocket mode |
 | `V` | Switch environment |
+| `P` | Proxy settings |
+| `Ctrl+T` | TLS/certificate settings |
+| `Ctrl+R` | Run collection |
 | `Ctrl+K` | Clear all cookies |
 | `?` | Show help |
 | `q` | Quit |
