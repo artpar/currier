@@ -88,10 +88,11 @@ type RenameCollectionMsg struct {
 	Collection *core.Collection
 }
 
-// MoveRequestMsg is sent when a request is moved between collections.
+// MoveRequestMsg is sent when a request is moved between collections or into folders.
 type MoveRequestMsg struct {
 	SourceCollection *core.Collection
 	TargetCollection *core.Collection
+	TargetFolder     *core.Folder // nil if moved to collection root
 	Request          *core.RequestDefinition
 }
 
@@ -1084,14 +1085,33 @@ func (c *CollectionTree) startMove() (tui.Component, tea.Cmd) {
 func (c *CollectionTree) getMoveTargets(excludeID string) []TreeItem {
 	var targets []TreeItem
 	for _, coll := range c.collections {
-		if coll.ID() != excludeID {
-			targets = append(targets, TreeItem{
-				ID:         coll.ID(),
-				Name:       coll.Name(),
-				Type:       ItemCollection,
-				Collection: coll,
-			})
-		}
+		// Add the collection itself (can move to any collection, including source)
+		targets = append(targets, TreeItem{
+			ID:         coll.ID(),
+			Name:       coll.Name(),
+			Type:       ItemCollection,
+			Level:      0,
+			Collection: coll,
+		})
+		// Add folders from this collection
+		targets = append(targets, c.getFolderTargets(coll, coll.Folders(), 1)...)
+	}
+	return targets
+}
+
+func (c *CollectionTree) getFolderTargets(coll *core.Collection, folders []*core.Folder, level int) []TreeItem {
+	var targets []TreeItem
+	for _, folder := range folders {
+		targets = append(targets, TreeItem{
+			ID:         folder.ID(),
+			Name:       folder.Name(),
+			Type:       ItemFolder,
+			Level:      level,
+			Collection: coll,
+			Folder:     folder,
+		})
+		// Add nested folders recursively
+		targets = append(targets, c.getFolderTargets(coll, folder.Folders(), level+1)...)
 	}
 	return targets
 }
@@ -1115,6 +1135,7 @@ func (c *CollectionTree) handleMoveInput(msg tea.KeyMsg) (tui.Component, tea.Cmd
 
 		targetItem := c.moveTargets[c.moveCursor]
 		targetColl := targetItem.Collection
+		targetFolder := targetItem.Folder // nil if moving to collection root
 
 		// Find source collection and remove request
 		var sourceColl *core.Collection
@@ -1126,8 +1147,12 @@ func (c *CollectionTree) handleMoveInput(msg tea.KeyMsg) (tui.Component, tea.Cmd
 			}
 		}
 
-		// Add to target collection
-		targetColl.AddRequest(c.movingRequest)
+		// Add to target folder or collection root
+		if targetFolder != nil {
+			targetFolder.AddRequest(c.movingRequest)
+		} else {
+			targetColl.AddRequest(c.movingRequest)
+		}
 
 		movedRequest := c.movingRequest
 
@@ -1144,6 +1169,7 @@ func (c *CollectionTree) handleMoveInput(msg tea.KeyMsg) (tui.Component, tea.Cmd
 				return MoveRequestMsg{
 					SourceCollection: sourceColl,
 					TargetCollection: targetColl,
+					TargetFolder:     targetFolder,
 					Request:          movedRequest,
 				}
 			}
@@ -1538,13 +1564,28 @@ func (c *CollectionTree) renderMoveMode(innerWidth, innerHeight int) string {
 		if i == c.moveCursor {
 			prefix = "→ "
 		}
-		line := prefix + "📁 " + target.Name
+
+		// Indentation based on level
+		indent := strings.Repeat("  ", target.Level)
+
+		// Icon based on type
+		icon := "📁 "
+		if target.Type == ItemFolder {
+			icon = "📂 "
+		}
+
+		line := prefix + indent + icon + target.Name
 
 		// Pad/truncate to width
-		if len(line) > innerWidth {
-			line = line[:innerWidth-3] + "..."
-		} else if len(line) < innerWidth {
-			line += strings.Repeat(" ", innerWidth-len(line))
+		if lipgloss.Width(line) > innerWidth {
+			// Truncate name while keeping structure
+			maxNameLen := innerWidth - lipgloss.Width(prefix+indent+icon) - 3
+			if maxNameLen > 0 && len(target.Name) > maxNameLen {
+				line = prefix + indent + icon + target.Name[:maxNameLen] + "..."
+			}
+		}
+		if lipgloss.Width(line) < innerWidth {
+			line += strings.Repeat(" ", innerWidth-lipgloss.Width(line))
 		}
 
 		// Highlight selected

@@ -1317,7 +1317,7 @@ func TestCollectionTree_MoveRequest(t *testing.T) {
 		assert.False(t, tree.IsMoving())
 	})
 
-	t.Run("m_does_nothing_with_single_collection", func(t *testing.T) {
+	t.Run("m_enters_move_mode_with_single_collection", func(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.SetSize(80, 30)
 		tree.Focus()
@@ -1332,8 +1332,8 @@ func TestCollectionTree_MoveRequest(t *testing.T) {
 
 		tree = sendKey(tree, 'm')
 
-		// Should not enter move mode because there's no other collection to move to
-		assert.False(t, tree.IsMoving())
+		// Should enter move mode - can move to same collection root or folders
+		assert.True(t, tree.IsMoving())
 	})
 
 	t.Run("jk_navigates_move_targets", func(t *testing.T) {
@@ -1405,6 +1405,9 @@ func TestCollectionTree_MoveRequest(t *testing.T) {
 		tree = sendKey(tree, 'j') // Move to request
 		tree = sendKey(tree, 'm') // Enter move mode
 
+		// Navigate to coll2 (first target is coll1, second is coll2)
+		tree = sendKey(tree, 'j')
+
 		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
 
 		assert.False(t, tree.IsMoving())
@@ -1423,6 +1426,111 @@ func TestCollectionTree_MoveRequest(t *testing.T) {
 		// Request should not be in source collection
 		_, foundInSource := coll1.FindRequest(req.ID())
 		assert.False(t, foundInSource)
+	})
+
+	t.Run("move_request_to_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Collection")
+		req := core.NewRequestDefinition("Request", "GET", "http://example.com")
+		coll.AddRequest(req)
+		folder := coll.AddFolder("Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Request starts at collection root
+		assert.Equal(t, 1, len(coll.Requests()))
+		assert.Equal(t, 0, len(folder.Requests()))
+
+		tree = sendKey(tree, 'l') // Expand collection
+		tree = sendKey(tree, 'j') // Move to folder
+		tree = sendKey(tree, 'j') // Move to request
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		assert.True(t, tree.IsMoving())
+
+		// Navigate to folder target (should be second item after collection)
+		tree = sendKey(tree, 'j') // Move to folder in target list
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		assert.False(t, tree.IsMoving())
+		assert.NotNil(t, cmd)
+
+		msg := cmd()
+		moveMsg, ok := msg.(MoveRequestMsg)
+		assert.True(t, ok, "should emit MoveRequestMsg")
+		assert.Equal(t, coll.ID(), moveMsg.TargetCollection.ID())
+		assert.NotNil(t, moveMsg.TargetFolder)
+		assert.Equal(t, folder.ID(), moveMsg.TargetFolder.ID())
+
+		// Request should now be in folder
+		assert.Equal(t, 0, len(coll.Requests()))
+		assert.Equal(t, 1, len(folder.Requests()))
+	})
+
+	t.Run("move_targets_include_folders", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		coll.AddFolder("Folder 1")
+		coll.AddFolder("Folder 2")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to first folder
+		tree = sendKey(tree, 'j') // Move to second folder
+		tree = sendKey(tree, 'j') // Move to request
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		assert.True(t, tree.IsMoving())
+		// Should have 3 targets: collection + 2 folders
+	})
+
+	t.Run("move_to_nested_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Collection")
+		req := core.NewRequestDefinition("Request", "GET", "http://example.com")
+		coll.AddRequest(req)
+		parentFolder := coll.AddFolder("Parent")
+		childFolder := parentFolder.AddFolder("Child")
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Request starts at collection root
+		assert.Equal(t, 1, len(coll.Requests()))
+		assert.Equal(t, 0, len(childFolder.Requests()))
+
+		tree = sendKey(tree, 'l') // Expand collection
+		tree = sendKey(tree, 'j') // Move to parent folder
+		tree = sendKey(tree, 'j') // Move to request
+		tree = sendKey(tree, 'm') // Enter move mode
+
+		// Navigate to nested folder (collection -> parent -> child)
+		tree = sendKey(tree, 'j') // parent folder
+		tree = sendKey(tree, 'j') // child folder
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		moveMsg, ok := msg.(MoveRequestMsg)
+		assert.True(t, ok)
+		assert.NotNil(t, moveMsg.TargetFolder)
+		assert.Equal(t, childFolder.ID(), moveMsg.TargetFolder.ID())
+
+		// Request should now be in child folder
+		assert.Equal(t, 0, len(coll.Requests()))
+		assert.Equal(t, 1, len(childFolder.Requests()))
 	})
 }
 

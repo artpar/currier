@@ -218,8 +218,11 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 				}
 			}()
 		}
+		// Show folder name if moved to folder, otherwise collection name
 		targetName := "collection"
-		if msg.TargetCollection != nil {
+		if msg.TargetFolder != nil {
+			targetName = msg.TargetFolder.Name()
+		} else if msg.TargetCollection != nil {
 			targetName = msg.TargetCollection.Name()
 		}
 		v.notification = fmt.Sprintf("Moved to '%s'", targetName)
@@ -972,7 +975,7 @@ func (v *MainView) renderHelp() string {
 		"│    r                  Rename selected collection        │",
 		"│    D                  Delete selected collection/folder │",
 		"│    d                  Delete selected request           │",
-		"│    m                  Move request to collection        │",
+		"│    m                  Move request to collection/folder │",
 		"│    y                  Duplicate/copy request            │",
 		"│    R                  Rename selected request/folder    │",
 		"│    /                  Start search                      │",
