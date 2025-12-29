@@ -53,6 +53,18 @@ A vim-modal TUI API client for developers and AI agents.
 ![Cookie Demo](demos/demo-cookies.gif?v=0.1.16)
 *Automatic cookie capture • Persists across sessions • Ctrl+K to clear*
 
+### Proxy Settings
+![Proxy Demo](demos/demo-proxy.gif?v=0.1.17)
+*P to open settings • Enter proxy URL • Enter to save • Esc to cancel*
+
+### TLS/Certificate Settings
+![TLS Demo](demos/demo-tls.gif?v=0.1.17)
+*Ctrl+T to open • Configure client certs • Tab between fields • Enter to save*
+
+### Collection Runner
+![Runner Demo](demos/demo-runner.gif?v=0.1.17)
+*Ctrl+R to run collection • Shows progress • Displays test results*
+
 ## Installation
 
 ### Homebrew (macOS/Linux)
