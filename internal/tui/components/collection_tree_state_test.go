@@ -1931,3 +1931,121 @@ func TestCollectionTree_RenameFolder(t *testing.T) {
 		assert.Equal(t, coll.ID(), folderMsg.Collection.ID())
 	})
 }
+
+func TestCollectionTree_DeleteFolder(t *testing.T) {
+	t.Run("D_deletes_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddFolder("My Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		assert.Equal(t, 1, len(coll.Folders()))
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		tree, cmd := sendKeyWithCmd(tree, 'D')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		deleteMsg, ok := msg.(DeleteFolderMsg)
+		assert.True(t, ok, "should emit DeleteFolderMsg")
+		assert.Equal(t, coll.ID(), deleteMsg.Collection.ID())
+		assert.Equal(t, 0, len(coll.Folders()))
+	})
+
+	t.Run("D_does_nothing_on_request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+
+		tree, cmd := sendKeyWithCmd(tree, 'D')
+
+		// D on a request should not emit DeleteFolderMsg
+		if cmd != nil {
+			msg := cmd()
+			_, ok := msg.(DeleteFolderMsg)
+			assert.False(t, ok, "should not emit DeleteFolderMsg on request")
+		}
+	})
+
+	t.Run("D_deletes_collection_when_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Cursor is on collection
+		tree, cmd := sendKeyWithCmd(tree, 'D')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		deleteMsg, ok := msg.(DeleteCollectionMsg)
+		assert.True(t, ok, "should emit DeleteCollectionMsg on collection")
+		assert.Equal(t, coll.ID(), deleteMsg.CollectionID)
+	})
+
+	t.Run("D_deletes_nested_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		parentFolder := coll.AddFolder("Parent Folder")
+		parentFolder.AddFolder("Child Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		assert.Equal(t, 1, len(coll.Folders()))
+		assert.Equal(t, 1, len(parentFolder.Folders()))
+
+		tree = sendKey(tree, 'l') // Expand collection
+		tree = sendKey(tree, 'j') // Move to parent folder
+		tree = sendKey(tree, 'l') // Expand parent folder
+		tree = sendKey(tree, 'j') // Move to child folder
+
+		tree, cmd := sendKeyWithCmd(tree, 'D')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		deleteMsg, ok := msg.(DeleteFolderMsg)
+		assert.True(t, ok, "should emit DeleteFolderMsg")
+		assert.Equal(t, 0, len(parentFolder.Folders()), "nested folder should be deleted")
+		assert.Equal(t, 1, len(coll.Folders()), "parent folder should remain")
+		assert.Equal(t, coll.ID(), deleteMsg.Collection.ID())
+	})
+
+	t.Run("D_does_nothing_when_unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		// Not focused
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddFolder("My Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		tree, cmd := sendKeyWithCmd(tree, 'D')
+
+		assert.Nil(t, cmd)
+		assert.Equal(t, 1, len(coll.Folders()))
+	})
+}

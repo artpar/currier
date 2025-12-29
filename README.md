@@ -199,7 +199,7 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `N` | Create new collection |
 | `F` | Create new folder |
 | `r` | Rename collection |
-| `D` | Delete collection |
+| `D` | Delete collection/folder |
 | `d` | Delete request |
 | `m` | Move request to collection |
 | `y` | Duplicate/copy request |

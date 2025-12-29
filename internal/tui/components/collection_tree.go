@@ -119,6 +119,12 @@ type RenameFolderMsg struct {
 	Folder     *core.Folder
 }
 
+// DeleteFolderMsg is sent when a folder is deleted.
+type DeleteFolderMsg struct {
+	Collection *core.Collection
+	FolderID   string
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -272,8 +278,15 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.gPressed = false
 			return c.handleCreateFolder()
 		case "D":
-			// Delete selected collection
+			// Delete selected collection or folder
 			c.gPressed = false
+			displayItems := c.getDisplayItems()
+			if c.cursor >= 0 && c.cursor < len(displayItems) {
+				item := displayItems[c.cursor]
+				if item.Type == ItemFolder {
+					return c.handleDeleteFolder()
+				}
+			}
 			return c.handleDeleteCollection()
 		case "r":
 			// Rename selected collection
@@ -761,6 +774,53 @@ func (c *CollectionTree) handleDeleteCollection() (tui.Component, tea.Cmd) {
 	return c, func() tea.Msg {
 		return DeleteCollectionMsg{
 			CollectionID: collectionID,
+		}
+	}
+}
+
+func (c *CollectionTree) handleDeleteFolder() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only delete folders
+	if item.Type != ItemFolder {
+		return c, nil
+	}
+
+	folderID := item.ID
+
+	// Find which collection contains this folder
+	var modifiedColl *core.Collection
+	for _, coll := range c.collections {
+		if coll.RemoveFolderRecursive(folderID) {
+			modifiedColl = coll
+			break
+		}
+	}
+
+	if modifiedColl == nil {
+		return c, nil
+	}
+
+	c.rebuildItems()
+
+	// Adjust cursor if needed
+	if c.cursor >= len(c.items) {
+		c.cursor = len(c.items) - 1
+	}
+	if c.cursor < 0 {
+		c.cursor = 0
+	}
+
+	// Emit message for persistence
+	return c, func() tea.Msg {
+		return DeleteFolderMsg{
+			Collection: modifiedColl,
+			FolderID:   folderID,
 		}
 	}
 }

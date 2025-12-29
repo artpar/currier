@@ -288,6 +288,21 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			return clearNotificationMsg{}
 		})
 
+	case components.DeleteFolderMsg:
+		// Persist collection with folder removed
+		if v.collectionStore != nil && msg.Collection != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = v.collectionStore.Save(ctx, msg.Collection)
+			}()
+		}
+		v.notification = "Folder deleted"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
 	case components.SendRequestMsg:
 		v.response.SetLoading(true)
 		v.focusPane(PaneResponse)
@@ -955,7 +970,7 @@ func (v *MainView) renderHelp() string {
 		"│    N                  Create new collection             │",
 		"│    F                  Create new folder                 │",
 		"│    r                  Rename selected collection        │",
-		"│    D                  Delete selected collection        │",
+		"│    D                  Delete selected collection/folder │",
 		"│    d                  Delete selected request           │",
 		"│    m                  Move request to collection        │",
 		"│    y                  Duplicate/copy request            │",

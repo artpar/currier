@@ -163,14 +163,31 @@ func (c *Collection) GetFolderByName(name string) (*Folder, bool) {
 }
 
 // RemoveFolder removes a folder by ID.
-func (c *Collection) RemoveFolder(id string) {
+func (c *Collection) RemoveFolder(id string) bool {
 	for i, f := range c.folders {
 		if f.ID() == id {
 			c.folders = append(c.folders[:i], c.folders[i+1:]...)
 			c.touch()
-			return
+			return true
 		}
 	}
+	return false
+}
+
+// RemoveFolderRecursive removes a folder by ID from anywhere in the hierarchy.
+func (c *Collection) RemoveFolderRecursive(id string) bool {
+	// Try root level first
+	if c.RemoveFolder(id) {
+		return true
+	}
+	// Try nested folders recursively
+	for _, f := range c.folders {
+		if f.RemoveFolderRecursive(id) {
+			c.touch()
+			return true
+		}
+	}
+	return false
 }
 
 // FindFolder searches for a folder by ID recursively.
@@ -429,6 +446,32 @@ func (f *Folder) RemoveRequestRecursive(id string) bool {
 	// Try subfolders recursively
 	for _, sub := range f.folders {
 		if sub.RemoveRequestRecursive(id) {
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveFolder removes a subfolder by ID.
+func (f *Folder) RemoveFolder(id string) bool {
+	for i, sf := range f.folders {
+		if sf.ID() == id {
+			f.folders = append(f.folders[:i], f.folders[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveFolderRecursive removes a folder by ID from this folder or any nested subfolder.
+func (f *Folder) RemoveFolderRecursive(id string) bool {
+	// Try this folder's direct children first
+	if f.RemoveFolder(id) {
+		return true
+	}
+	// Try subfolders recursively
+	for _, sub := range f.folders {
+		if sub.RemoveFolderRecursive(id) {
 			return true
 		}
 	}
