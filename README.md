@@ -18,6 +18,7 @@ A vim-modal TUI API client for developers and AI agents.
 - **Form-data / File Upload** - Multipart form-data body type with file upload support
 - **Proxy Support** - HTTP, HTTPS, and SOCKS5 proxy configuration
 - **Client Certificates** - mTLS support with custom CA certificates
+- **MCP Server** - AI assistant integration via Model Context Protocol (27 tools)
 
 ## Demos
 
@@ -182,6 +183,67 @@ currier send GET https://api.example.com/secure \
 currier send GET https://self-signed.example.com -k
 ```
 
+### MCP Server (AI Assistant Integration)
+
+Currier includes an MCP (Model Context Protocol) server that enables AI assistants like Claude to use Currier for API testing and development.
+
+```bash
+# Start MCP server
+currier mcp
+```
+
+#### Configure with Claude Code
+
+Add to your Claude Code MCP settings (`~/.claude.json` or project `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "currier": {
+      "command": "currier",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+#### Available MCP Tools (27 tools)
+
+| Category | Tools |
+|----------|-------|
+| **Requests** | `send_request`, `send_curl` |
+| **Collections** | `list_collections`, `get_collection`, `create_collection`, `delete_collection`, `rename_collection` |
+| **Requests CRUD** | `get_request`, `save_request`, `update_request`, `delete_request` |
+| **Folders** | `create_folder`, `delete_folder` |
+| **Environments** | `list_environments`, `get_environment`, `create_environment`, `delete_environment`, `set_environment_variable`, `delete_environment_variable` |
+| **History** | `get_history`, `search_history` |
+| **Cookies** | `list_cookies`, `clear_cookies` |
+| **Import/Export** | `import_collection`, `export_collection`, `export_as_curl` |
+| **Runner** | `run_collection` |
+
+#### Example AI Workflows
+
+```
+User: "Test the /users endpoint"
+Claude: [calls send_request with GET /users]
+
+User: "Run the payment API tests"
+Claude: [calls run_collection with "Payment API"]
+
+User: "Import this OpenAPI spec and test all endpoints"
+Claude: [calls import_collection, then run_collection]
+
+User: "Create a new collection for the auth endpoints"
+Claude: [calls create_collection, then save_request for each endpoint]
+```
+
+#### MCP Resources
+
+| Resource | Description |
+|----------|-------------|
+| `collections://list` | List of all collections |
+| `history://recent` | Recent request history |
+
 ### Collection Runner
 
 Run all requests in a collection sequentially:
@@ -324,7 +386,7 @@ currier/
 ├── cmd/currier/       # Application entry point
 ├── internal/
 │   ├── app/           # Application orchestration
-│   ├── cli/           # CLI commands (send, run, curl)
+│   ├── cli/           # CLI commands (send, run, curl, mcp)
 │   ├── cookies/       # Cookie jar with SQLite persistence
 │   ├── core/          # Domain models (Request, Response, Collection)
 │   ├── exporter/      # Export to cURL, Postman formats
@@ -332,6 +394,7 @@ currier/
 │   ├── importer/      # Import from Postman, cURL, HAR, OpenAPI
 │   ├── interfaces/    # Interface definitions
 │   ├── interpolate/   # Variable interpolation engine
+│   ├── mcp/           # MCP server for AI assistant integration
 │   ├── protocol/      # HTTP client (proxy, TLS, cookies)
 │   ├── runner/        # Collection runner for batch execution
 │   ├── script/        # JavaScript scripting engine
