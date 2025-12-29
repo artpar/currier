@@ -279,7 +279,7 @@ func TestOpenAPIImporter_Import_WithParameters(t *testing.T) {
 	require.Len(t, requests, 1)
 
 	req := requests[0]
-	assert.Contains(t, req.URL(), "123") // Path parameter replaced
+	assert.Contains(t, req.URL(), "{{id}}") // Path parameter uses variable placeholder
 	assert.Contains(t, req.URL(), "include=profile") // Query parameter
 	assert.Equal(t, "abc-123", req.GetHeader("X-Request-ID"))
 }
@@ -976,8 +976,8 @@ func TestOpenAPIImporter_Import_PathLevelParameters(t *testing.T) {
 	require.NoError(t, err)
 
 	req := coll.Requests()[0]
-	assert.Contains(t, req.URL(), "42")
-	assert.Contains(t, req.URL(), "123")
+	assert.Contains(t, req.URL(), "{{userId}}")
+	assert.Contains(t, req.URL(), "{{postId}}")
 }
 
 func TestOpenAPIImporter_Import_MultipleContentTypes(t *testing.T) {
