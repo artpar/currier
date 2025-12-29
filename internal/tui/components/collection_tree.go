@@ -108,6 +108,11 @@ type DuplicateFolderMsg struct {
 	Folder     *core.Folder
 }
 
+// CopyAsCurlMsg is sent when a request should be copied as cURL command.
+type CopyAsCurlMsg struct {
+	Request *core.RequestDefinition
+}
+
 // RenameRequestMsg is sent when a request is renamed.
 type RenameRequestMsg struct {
 	Collection *core.Collection
@@ -317,9 +322,13 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.gPressed = false
 			return c.startMove()
 		case "y":
-			// Duplicate/copy request
+			// Duplicate/copy request or folder
 			c.gPressed = false
 			return c.handleDuplicateRequest()
+		case "c":
+			// Copy request as cURL
+			c.gPressed = false
+			return c.handleCopyAsCurl()
 		case "G":
 			displayItems := c.getDisplayItems()
 			if len(displayItems) > 0 {
@@ -708,6 +717,26 @@ func (c *CollectionTree) handleDuplicateFolder(item TreeItem) (tui.Component, te
 		return DuplicateFolderMsg{
 			Collection: targetColl,
 			Folder:     cloned,
+		}
+	}
+}
+
+func (c *CollectionTree) handleCopyAsCurl() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only copy requests
+	if item.Type != ItemRequest || item.Request == nil {
+		return c, nil
+	}
+
+	return c, func() tea.Msg {
+		return CopyAsCurlMsg{
+			Request: item.Request,
 		}
 	}
 }

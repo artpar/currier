@@ -1854,6 +1854,67 @@ func TestCollectionTree_DuplicateFolder(t *testing.T) {
 	})
 }
 
+func TestCollectionTree_CopyAsCurl(t *testing.T) {
+	t.Run("c_emits_CopyAsCurlMsg_on_request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req := core.NewRequestDefinition("Test Request", "POST", "http://example.com/api")
+		req.SetHeader("Content-Type", "application/json")
+		req.SetBody(`{"key": "value"}`)
+		coll.AddRequest(req)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+
+		_, cmd := sendKeyWithCmd(tree, 'c')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		curlMsg, ok := msg.(CopyAsCurlMsg)
+		assert.True(t, ok, "should emit CopyAsCurlMsg")
+		assert.Equal(t, req.ID(), curlMsg.Request.ID())
+	})
+
+	t.Run("c_does_nothing_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Cursor is on collection (not expanded)
+		_, cmd := sendKeyWithCmd(tree, 'c')
+
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("c_does_nothing_on_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddFolder("Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		_, cmd := sendKeyWithCmd(tree, 'c')
+
+		assert.Nil(t, cmd)
+	})
+}
+
 func TestCollectionTree_RenameRequest(t *testing.T) {
 	t.Run("R_enters_rename_mode_on_request", func(t *testing.T) {
 		tree := NewCollectionTree()

@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
+	"github.com/artpar/currier/internal/exporter"
 	"github.com/artpar/currier/internal/history"
 	"github.com/artpar/currier/internal/interfaces"
 	"github.com/artpar/currier/internal/interpolate"
@@ -287,6 +288,30 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
 			return clearNotificationMsg{}
 		})
+
+	case components.CopyAsCurlMsg:
+		// Generate cURL command and copy to clipboard
+		if msg.Request != nil {
+			curlExporter := exporter.NewCurlExporter()
+			curlExporter.Pretty = false // Single line for clipboard
+			ctx := context.Background()
+			curlBytes, err := curlExporter.ExportRequest(ctx, msg.Request)
+			if err == nil {
+				curlCmd := string(curlBytes)
+				err = clipboard.WriteAll(curlCmd)
+				if err != nil {
+					v.notification = "✗ Copy failed"
+				} else {
+					v.notification = "✓ Copied as cURL"
+				}
+			} else {
+				v.notification = "✗ Failed to generate cURL"
+			}
+			v.notifyUntil = time.Now().Add(2 * time.Second)
+			return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+				return clearNotificationMsg{}
+			})
+		}
 
 	case components.RenameRequestMsg:
 		// Persist collection with renamed request
@@ -1019,6 +1044,7 @@ func (v *MainView) renderHelp() string {
 		"│    d                  Delete selected request           │",
 		"│    m                  Move request/folder                │",
 		"│    y                  Duplicate request/folder           │",
+		"│    c                  Copy request as cURL              │",
 		"│    R                  Rename selected request/folder    │",
 		"│    /                  Start search                      │",
 		"│    H                  Switch to History view            │",
