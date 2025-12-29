@@ -18,7 +18,7 @@ A vim-modal TUI API client for developers and AI agents.
 - **Form-data / File Upload** - Multipart form-data body type with file upload support
 - **Proxy Support** - HTTP, HTTPS, and SOCKS5 proxy configuration
 - **Client Certificates** - mTLS support with custom CA certificates
-- **MCP Server** - AI assistant integration via Model Context Protocol (27 tools)
+- **MCP Server** - AI assistant integration via Model Context Protocol (32 tools)
 
 ## Demos
 
@@ -207,7 +207,7 @@ Add to your Claude Code MCP settings (`~/.claude.json` or project `.mcp.json`):
 }
 ```
 
-#### Available MCP Tools (27 tools)
+#### Available MCP Tools (32 tools)
 
 | Category | Tools |
 |----------|-------|
@@ -220,6 +220,7 @@ Add to your Claude Code MCP settings (`~/.claude.json` or project `.mcp.json`):
 | **Cookies** | `list_cookies`, `clear_cookies` |
 | **Import/Export** | `import_collection`, `export_collection`, `export_as_curl` |
 | **Runner** | `run_collection` |
+| **WebSocket** | `websocket_connect`, `websocket_disconnect`, `websocket_send`, `websocket_list_connections`, `websocket_get_messages` |
 
 #### Example AI Workflows
 
@@ -235,6 +236,12 @@ Claude: [calls import_collection, then run_collection]
 
 User: "Create a new collection for the auth endpoints"
 Claude: [calls create_collection, then save_request for each endpoint]
+
+User: "Connect to the WebSocket at wss://example.com/ws and send a ping"
+Claude: [calls websocket_connect, then websocket_send with message]
+
+User: "Show me the messages from the WebSocket connection"
+Claude: [calls websocket_get_messages to retrieve buffered messages]
 ```
 
 #### MCP Resources

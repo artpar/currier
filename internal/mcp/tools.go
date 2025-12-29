@@ -11,6 +11,8 @@ import (
 	"github.com/artpar/currier/internal/exporter"
 	"github.com/artpar/currier/internal/history"
 	"github.com/artpar/currier/internal/importer"
+	"github.com/artpar/currier/internal/interfaces"
+	protows "github.com/artpar/currier/internal/protocol/websocket"
 )
 
 // Constants for pagination and content limits
@@ -143,6 +145,13 @@ func (s *Server) registerTools() {
 	s.registerExportAsCurl()
 	s.registerImportCollection()
 	s.registerExportCollection()
+
+	// WebSocket tools
+	s.registerWebSocketConnect()
+	s.registerWebSocketDisconnect()
+	s.registerWebSocketSend()
+	s.registerWebSocketListConnections()
+	s.registerWebSocketGetMessages()
 }
 
 // ============================================================================
@@ -2432,6 +2441,438 @@ func (s *Server) registerExportCollection() {
 			}
 
 			content, err := JSONContent(result)
+			if err != nil {
+				return nil, err
+			}
+
+			return &ToolCallResult{
+				Content: []ContentBlock{content},
+			}, nil
+		},
+	}
+}
+
+// ============================================================================
+// WebSocket Tools
+// ============================================================================
+
+const (
+	// MaxWebSocketMessages is the maximum number of messages to keep per connection
+	MaxWebSocketMessages = 100
+)
+
+type wsConnectArgs struct {
+	Endpoint    string            `json:"endpoint"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	TLSInsecure bool              `json:"tls_insecure,omitempty"`
+}
+
+func (s *Server) registerWebSocketConnect() {
+	schema := `{
+		"type": "object",
+		"properties": {
+			"endpoint": {
+				"type": "string",
+				"description": "WebSocket URL (ws:// or wss://)"
+			},
+			"headers": {
+				"type": "object",
+				"additionalProperties": {"type": "string"},
+				"description": "Custom headers for the WebSocket handshake"
+			},
+			"tls_insecure": {
+				"type": "boolean",
+				"description": "Skip TLS certificate verification (for self-signed certs)"
+			}
+		},
+		"required": ["endpoint"]
+	}`
+
+	s.tools["websocket_connect"] = &toolDef{
+		tool: Tool{
+			Name:        "websocket_connect",
+			Description: "Connect to a WebSocket endpoint. Returns a connection ID for use with other WebSocket tools.",
+			InputSchema: json.RawMessage(schema),
+		},
+		handler: func(args json.RawMessage) (*ToolCallResult, error) {
+			var params wsConnectArgs
+			if err := json.Unmarshal(args, &params); err != nil {
+				return nil, fmt.Errorf("invalid arguments: %w", err)
+			}
+
+			if params.Endpoint == "" {
+				return nil, fmt.Errorf("endpoint is required")
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			opts := interfaces.ConnectionOptions{
+				Headers:     params.Headers,
+				Timeout:     30 * time.Second,
+				TLSInsecure: params.TLSInsecure,
+			}
+
+			conn, err := s.wsClient.Connect(ctx, params.Endpoint, opts)
+			if err != nil {
+				return nil, fmt.Errorf("failed to connect: %w", err)
+			}
+
+			// Initialize message buffer for this connection
+			s.wsMessagesMu.Lock()
+			s.wsMessages[conn.ID()] = make([]*protows.Message, 0, MaxWebSocketMessages)
+			s.wsMessagesMu.Unlock()
+
+			// Set up message handler to buffer messages
+			if wsConn, err := s.wsClient.GetWebSocketConnection(conn.ID()); err == nil {
+				wsConn.OnMessage(func(msg *protows.Message) {
+					s.wsMessagesMu.Lock()
+					defer s.wsMessagesMu.Unlock()
+					msgs := s.wsMessages[conn.ID()]
+					if len(msgs) >= MaxWebSocketMessages {
+						// Remove oldest message
+						msgs = msgs[1:]
+					}
+					s.wsMessages[conn.ID()] = append(msgs, msg)
+				})
+			}
+
+			content, err := JSONContent(map[string]any{
+				"connection_id": conn.ID(),
+				"endpoint":      conn.Endpoint(),
+				"state":         conn.State().String(),
+				"message":       "WebSocket connection established",
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return &ToolCallResult{
+				Content: []ContentBlock{content},
+			}, nil
+		},
+	}
+}
+
+type wsDisconnectArgs struct {
+	ConnectionID string `json:"connection_id"`
+}
+
+func (s *Server) registerWebSocketDisconnect() {
+	schema := `{
+		"type": "object",
+		"properties": {
+			"connection_id": {
+				"type": "string",
+				"description": "Connection ID returned by websocket_connect"
+			}
+		},
+		"required": ["connection_id"]
+	}`
+
+	s.tools["websocket_disconnect"] = &toolDef{
+		tool: Tool{
+			Name:        "websocket_disconnect",
+			Description: "Disconnect from a WebSocket connection",
+			InputSchema: json.RawMessage(schema),
+		},
+		handler: func(args json.RawMessage) (*ToolCallResult, error) {
+			var params wsDisconnectArgs
+			if err := json.Unmarshal(args, &params); err != nil {
+				return nil, fmt.Errorf("invalid arguments: %w", err)
+			}
+
+			if params.ConnectionID == "" {
+				return nil, fmt.Errorf("connection_id is required")
+			}
+
+			err := s.wsClient.Disconnect(params.ConnectionID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to disconnect: %w", err)
+			}
+
+			// Clean up message buffer
+			s.wsMessagesMu.Lock()
+			delete(s.wsMessages, params.ConnectionID)
+			s.wsMessagesMu.Unlock()
+
+			return &ToolCallResult{
+				Content: []ContentBlock{TextContent(fmt.Sprintf("WebSocket connection '%s' closed successfully", params.ConnectionID))},
+			}, nil
+		},
+	}
+}
+
+type wsSendArgs struct {
+	ConnectionID string `json:"connection_id"`
+	Message      string `json:"message"`
+	WaitForReply bool   `json:"wait_for_reply,omitempty"`
+	TimeoutMs    int    `json:"timeout_ms,omitempty"`
+}
+
+func (s *Server) registerWebSocketSend() {
+	schema := `{
+		"type": "object",
+		"properties": {
+			"connection_id": {
+				"type": "string",
+				"description": "Connection ID returned by websocket_connect"
+			},
+			"message": {
+				"type": "string",
+				"description": "Message to send (text or JSON string)"
+			},
+			"wait_for_reply": {
+				"type": "boolean",
+				"description": "Wait for a reply message after sending (default false)"
+			},
+			"timeout_ms": {
+				"type": "integer",
+				"description": "Timeout in milliseconds when waiting for reply (default 5000)"
+			}
+		},
+		"required": ["connection_id", "message"]
+	}`
+
+	s.tools["websocket_send"] = &toolDef{
+		tool: Tool{
+			Name:        "websocket_send",
+			Description: "Send a message over a WebSocket connection. Optionally wait for a reply.",
+			InputSchema: json.RawMessage(schema),
+		},
+		handler: func(args json.RawMessage) (*ToolCallResult, error) {
+			var params wsSendArgs
+			if err := json.Unmarshal(args, &params); err != nil {
+				return nil, fmt.Errorf("invalid arguments: %w", err)
+			}
+
+			if params.ConnectionID == "" {
+				return nil, fmt.Errorf("connection_id is required")
+			}
+			if params.Message == "" {
+				return nil, fmt.Errorf("message is required")
+			}
+
+			conn, err := s.wsClient.GetConnection(params.ConnectionID)
+			if err != nil {
+				return nil, fmt.Errorf("connection not found: %w", err)
+			}
+
+			timeout := 5 * time.Second
+			if params.TimeoutMs > 0 {
+				timeout = time.Duration(params.TimeoutMs) * time.Millisecond
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+
+			// Send the message
+			if err := conn.Send(ctx, []byte(params.Message)); err != nil {
+				return nil, fmt.Errorf("failed to send message: %w", err)
+			}
+
+			result := map[string]any{
+				"success":       true,
+				"connection_id": params.ConnectionID,
+				"message_sent":  params.Message,
+			}
+
+			// If waiting for reply, receive the next message
+			if params.WaitForReply {
+				replyData, err := conn.Receive(ctx)
+				if err != nil {
+					result["reply_error"] = err.Error()
+				} else {
+					replyStr := string(replyData)
+					replyStr, isTruncated := truncateBody(replyStr, MaxResponseBodySize)
+					result["reply"] = replyStr
+					result["reply_truncated"] = isTruncated
+				}
+			}
+
+			content, err := JSONContent(result)
+			if err != nil {
+				return nil, err
+			}
+
+			return &ToolCallResult{
+				Content: []ContentBlock{content},
+			}, nil
+		},
+	}
+}
+
+func (s *Server) registerWebSocketListConnections() {
+	schema := `{
+		"type": "object",
+		"properties": {}
+	}`
+
+	s.tools["websocket_list_connections"] = &toolDef{
+		tool: Tool{
+			Name:        "websocket_list_connections",
+			Description: "List all active WebSocket connections",
+			InputSchema: json.RawMessage(schema),
+		},
+		handler: func(args json.RawMessage) (*ToolCallResult, error) {
+			connections := s.wsClient.ListConnections()
+
+			result := make([]map[string]any, 0, len(connections))
+			for _, c := range connections {
+				// Get message count
+				s.wsMessagesMu.RLock()
+				msgCount := len(s.wsMessages[c.ID])
+				s.wsMessagesMu.RUnlock()
+
+				result = append(result, map[string]any{
+					"connection_id": c.ID,
+					"endpoint":      c.Endpoint,
+					"state":         c.State.String(),
+					"protocol":      c.Protocol,
+					"message_count": msgCount,
+				})
+			}
+
+			content, err := JSONContent(map[string]any{
+				"connections": result,
+				"count":       len(result),
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return &ToolCallResult{
+				Content: []ContentBlock{content},
+			}, nil
+		},
+	}
+}
+
+type wsGetMessagesArgs struct {
+	ConnectionID string `json:"connection_id"`
+	Limit        int    `json:"limit,omitempty"`
+	Offset       int    `json:"offset,omitempty"`
+	Direction    string `json:"direction,omitempty"`
+}
+
+func (s *Server) registerWebSocketGetMessages() {
+	schema := `{
+		"type": "object",
+		"properties": {
+			"connection_id": {
+				"type": "string",
+				"description": "Connection ID returned by websocket_connect"
+			},
+			"limit": {
+				"type": "integer",
+				"description": "Maximum number of messages to return (default 50)"
+			},
+			"offset": {
+				"type": "integer",
+				"description": "Number of messages to skip for pagination"
+			},
+			"direction": {
+				"type": "string",
+				"enum": ["all", "sent", "received"],
+				"description": "Filter by message direction (default: all)"
+			}
+		},
+		"required": ["connection_id"]
+	}`
+
+	s.tools["websocket_get_messages"] = &toolDef{
+		tool: Tool{
+			Name:        "websocket_get_messages",
+			Description: "Get buffered messages from a WebSocket connection. Messages are stored in memory (max 100 per connection).",
+			InputSchema: json.RawMessage(schema),
+		},
+		handler: func(args json.RawMessage) (*ToolCallResult, error) {
+			var params wsGetMessagesArgs
+			if err := json.Unmarshal(args, &params); err != nil {
+				return nil, fmt.Errorf("invalid arguments: %w", err)
+			}
+
+			if params.ConnectionID == "" {
+				return nil, fmt.Errorf("connection_id is required")
+			}
+
+			s.wsMessagesMu.RLock()
+			allMessages, ok := s.wsMessages[params.ConnectionID]
+			s.wsMessagesMu.RUnlock()
+
+			if !ok {
+				return nil, fmt.Errorf("connection not found or no messages: %s", params.ConnectionID)
+			}
+
+			// Filter by direction if specified
+			var filtered []*protows.Message
+			if params.Direction == "" || params.Direction == "all" {
+				filtered = allMessages
+			} else {
+				filtered = make([]*protows.Message, 0)
+				for _, msg := range allMessages {
+					if params.Direction == "sent" && msg.Direction == protows.DirectionSent {
+						filtered = append(filtered, msg)
+					} else if params.Direction == "received" && msg.Direction == protows.DirectionReceived {
+						filtered = append(filtered, msg)
+					}
+				}
+			}
+
+			// Apply pagination
+			limit := params.Limit
+			if limit <= 0 {
+				limit = DefaultPageSize
+			}
+			if limit > MaxPageSize {
+				limit = MaxPageSize
+			}
+
+			total := len(filtered)
+			offset := params.Offset
+			if offset < 0 {
+				offset = 0
+			}
+
+			var paged []*protows.Message
+			hasMore := false
+			if offset < total {
+				end := offset + limit
+				if end > total {
+					end = total
+				} else {
+					hasMore = true
+				}
+				paged = filtered[offset:end]
+			}
+
+			// Convert messages to result format
+			result := make([]map[string]any, 0, len(paged))
+			for _, msg := range paged {
+				content := msg.Content()
+				content, isTruncated := truncateBody(content, 10*1024) // 10KB per message max
+
+				result = append(result, map[string]any{
+					"id":           msg.ID,
+					"type":         msg.Type.String(),
+					"direction":    msg.Direction.String(),
+					"content":      content,
+					"is_truncated": isTruncated,
+					"timestamp":    msg.Timestamp.Format(time.RFC3339Nano),
+				})
+			}
+
+			content, err := JSONContent(map[string]any{
+				"connection_id": params.ConnectionID,
+				"messages":      result,
+				"pagination": paginationResult{
+					Offset:     offset,
+					Limit:      limit,
+					Total:      total,
+					HasMore:    hasMore,
+					TotalPages: (total + limit - 1) / limit,
+				},
+			})
 			if err != nil {
 				return nil, err
 			}

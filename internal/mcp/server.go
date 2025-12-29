@@ -16,6 +16,7 @@ import (
 	"github.com/artpar/currier/internal/importer"
 	"github.com/artpar/currier/internal/interpolate"
 	protohttp "github.com/artpar/currier/internal/protocol/http"
+	protows "github.com/artpar/currier/internal/protocol/websocket"
 	"github.com/artpar/currier/internal/runner"
 	"github.com/artpar/currier/internal/storage/filesystem"
 )
@@ -28,9 +29,14 @@ type Server struct {
 	history     *historysqlite.Store
 	cookieJar   *cookies.PersistentJar
 	httpClient  *protohttp.Client
+	wsClient    *protows.Client
 
 	tools     map[string]*toolDef
 	resources map[string]*resourceDef
+
+	// WebSocket message buffers per connection
+	wsMessages   map[string][]*protows.Message
+	wsMessagesMu sync.RWMutex
 
 	initialized bool
 	mu          sync.RWMutex
@@ -98,14 +104,18 @@ func NewServer(config ServerConfig) (*Server, error) {
 		protohttp.WithCookieJar(cookieJar),
 	)
 
+	wsClient := protows.NewClient(nil) // Use default config
+
 	s := &Server{
 		collections: collectionStore,
 		envStore:    envStore,
 		history:     historyStore,
 		cookieJar:   cookieJar,
 		httpClient:  httpClient,
+		wsClient:    wsClient,
 		tools:       make(map[string]*toolDef),
 		resources:   make(map[string]*resourceDef),
+		wsMessages:  make(map[string][]*protows.Message),
 	}
 
 	s.registerTools()
@@ -172,7 +182,7 @@ func (s *Server) handleInitialize(req *Request) *Response {
 		},
 		ServerInfo: ServerInfo{
 			Name:    "currier",
-			Version: "0.1.33",
+			Version: "0.1.34",
 		},
 	}
 
@@ -279,6 +289,9 @@ func (s *Server) handleResourcesRead(req *Request) *Response {
 func (s *Server) Close() error {
 	if s.history != nil {
 		s.history.Close()
+	}
+	if s.wsClient != nil {
+		s.wsClient.CloseAll()
 	}
 	return nil
 }
