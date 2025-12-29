@@ -172,7 +172,7 @@ func (s *Server) handleInitialize(req *Request) *Response {
 		},
 		ServerInfo: ServerInfo{
 			Name:    "currier",
-			Version: "0.1.32",
+			Version: "0.1.33",
 		},
 	}
 
