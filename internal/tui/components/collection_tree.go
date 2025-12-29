@@ -325,7 +325,7 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.gPressed = false
 			return c.handleExportCollection()
 		case "I":
-			// Import collection from Postman JSON
+			// Import collection from Postman JSON or OpenAPI spec
 			c.gPressed = false
 			c.importing = true
 			c.importBuffer = ""
@@ -2063,12 +2063,12 @@ func (c *CollectionTree) renderImportMode(innerWidth, innerHeight int) string {
 		Foreground(lipgloss.Color("229")).
 		Background(lipgloss.Color("62"))
 
-	header := headerStyle.Render("Import Postman Collection")
+	header := headerStyle.Render("Import Collection")
 
 	var lines []string
 	lines = append(lines, header)
 	lines = append(lines, "") // Empty line
-	lines = append(lines, "Enter file path (.json or .postman_collection.json):")
+	lines = append(lines, "Enter file path (Postman JSON, OpenAPI JSON/YAML):")
 	lines = append(lines, "")
 
 	// Show input with cursor

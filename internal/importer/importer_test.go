@@ -169,3 +169,61 @@ func TestRegistry_ListFormats(t *testing.T) {
 	assert.Contains(t, formats, FormatCurl)
 	assert.Contains(t, formats, FormatHAR)
 }
+
+func TestRegistry_DetectAndImport_RealImporters(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(NewPostmanImporter())
+	registry.Register(NewOpenAPIImporter())
+	ctx := context.Background()
+
+	t.Run("auto-detects Postman JSON", func(t *testing.T) {
+		postmanJSON := []byte(`{
+			"info": {
+				"name": "My Postman Collection",
+				"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+			},
+			"item": []
+		}`)
+
+		result, err := registry.DetectAndImport(ctx, postmanJSON)
+		require.NoError(t, err)
+		assert.Equal(t, FormatPostman, result.SourceFormat)
+		assert.Equal(t, "My Postman Collection", result.Collection.Name())
+	})
+
+	t.Run("auto-detects OpenAPI JSON", func(t *testing.T) {
+		openapiJSON := []byte(`{
+			"openapi": "3.0.0",
+			"info": {
+				"title": "My OpenAPI Spec",
+				"version": "1.0.0"
+			},
+			"paths": {}
+		}`)
+
+		result, err := registry.DetectAndImport(ctx, openapiJSON)
+		require.NoError(t, err)
+		assert.Equal(t, FormatOpenAPI, result.SourceFormat)
+		assert.Equal(t, "My OpenAPI Spec", result.Collection.Name())
+	})
+
+	t.Run("auto-detects OpenAPI YAML", func(t *testing.T) {
+		openapiYAML := []byte(`openapi: "3.0.0"
+info:
+  title: YAML API Spec
+  version: "1.0.0"
+paths: {}
+`)
+
+		result, err := registry.DetectAndImport(ctx, openapiYAML)
+		require.NoError(t, err)
+		assert.Equal(t, FormatOpenAPI, result.SourceFormat)
+		assert.Equal(t, "YAML API Spec", result.Collection.Name())
+	})
+
+	t.Run("returns error for unknown format", func(t *testing.T) {
+		unknownContent := []byte(`this is not a valid format`)
+		_, err := registry.DetectAndImport(ctx, unknownContent)
+		assert.ErrorIs(t, err, ErrInvalidFormat)
+	})
+}

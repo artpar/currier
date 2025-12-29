@@ -341,30 +341,33 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		}
 
 	case components.ImportCollectionMsg:
-		// Import collection from Postman JSON
+		// Import collection from Postman JSON or OpenAPI spec (auto-detected)
 		if msg.FilePath != "" {
 			data, err := os.ReadFile(msg.FilePath)
 			if err != nil {
 				v.notification = fmt.Sprintf("✗ Failed to read file: %s", err.Error())
 			} else {
-				postmanImporter := importer.NewPostmanImporter()
+				// Use registry with auto-detection to support multiple formats
+				registry := importer.NewRegistry()
+				registry.Register(importer.NewPostmanImporter())
+				registry.Register(importer.NewOpenAPIImporter())
 				ctx := context.Background()
-				coll, err := postmanImporter.Import(ctx, data)
+				result, err := registry.DetectAndImport(ctx, data)
 				if err != nil {
 					v.notification = fmt.Sprintf("✗ Import failed: %s", err.Error())
 				} else {
 					// Add to collections and save
 					collections := v.tree.Collections()
-					collections = append(collections, coll)
+					collections = append(collections, result.Collection)
 					v.tree.SetCollections(collections)
 					if v.collectionStore != nil {
 						go func() {
 							ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 							defer cancel()
-							_ = v.collectionStore.Save(ctx, coll)
+							_ = v.collectionStore.Save(ctx, result.Collection)
 						}()
 					}
-					v.notification = fmt.Sprintf("✓ Imported %s", coll.Name())
+					v.notification = fmt.Sprintf("✓ Imported %s (%s)", result.Collection.Name(), result.SourceFormat)
 				}
 			}
 			v.notifyUntil = time.Now().Add(3 * time.Second)
@@ -1116,7 +1119,7 @@ func (v *MainView) renderHelp() string {
 		"│    y                  Duplicate request/folder           │",
 		"│    c                  Copy request as cURL              │",
 		"│    E                  Export collection to Postman      │",
-		"│    I                  Import collection from Postman    │",
+		"│    I                  Import (Postman/OpenAPI)          │",
 		"│    K/J                Move request up/down              │",
 		"│    R                  Rename selected request/folder    │",
 		"│    /                  Start search                      │",
