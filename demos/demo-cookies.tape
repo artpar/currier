@@ -26,14 +26,22 @@ Sleep 500ms
 Enter
 Sleep 3s
 
-# Create another request to see cookies sent back
+# Focus response panel and switch to Cookies tab
+Type "3"
+Sleep 300ms
+Type "]"
+Sleep 300ms
+Type "]"
+Sleep 1s
+
+# Create another request to verify cookies are sent
 Type "n"
 Sleep 500ms
 
 Type "https://httpbin.org/cookies"
 Sleep 500ms
 
-# Send request (cookies automatically included)
+# Send request (cookies automatically included in response body)
 Enter
 Sleep 3s
 

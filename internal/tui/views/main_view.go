@@ -1711,9 +1711,29 @@ func (v *MainView) SetHistoryStore(store history.Store) {
 	v.tree.SetHistoryStore(store)
 }
 
-// SetCollectionStore sets the collection store for persistence.
+// SetCollectionStore sets the collection store for persistence and loads existing collections.
 func (v *MainView) SetCollectionStore(store *filesystem.CollectionStore) {
 	v.collectionStore = store
+
+	// Load existing collections from storage
+	if store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		metas, err := store.List(ctx)
+		if err == nil {
+			var collections []*core.Collection
+			for _, meta := range metas {
+				coll, err := store.Get(ctx, meta.ID)
+				if err == nil {
+					collections = append(collections, coll)
+				}
+			}
+			if len(collections) > 0 {
+				v.tree.SetCollections(collections)
+			}
+		}
+	}
 }
 
 // SetEnvironmentStore sets the environment store for switching environments.
