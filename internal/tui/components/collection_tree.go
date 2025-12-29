@@ -113,6 +113,11 @@ type CopyAsCurlMsg struct {
 	Request *core.RequestDefinition
 }
 
+// ExportCollectionMsg is sent when a collection should be exported.
+type ExportCollectionMsg struct {
+	Collection *core.Collection
+}
+
 // RenameRequestMsg is sent when a request is renamed.
 type RenameRequestMsg struct {
 	Collection *core.Collection
@@ -294,6 +299,10 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Create new collection
 			c.gPressed = false
 			return c.handleCreateCollection()
+		case "E":
+			// Export collection to Postman JSON
+			c.gPressed = false
+			return c.handleExportCollection()
 		case "F":
 			// Create new folder in current collection
 			c.gPressed = false
@@ -737,6 +746,49 @@ func (c *CollectionTree) handleCopyAsCurl() (tui.Component, tea.Cmd) {
 	return c, func() tea.Msg {
 		return CopyAsCurlMsg{
 			Request: item.Request,
+		}
+	}
+}
+
+func (c *CollectionTree) handleExportCollection() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Find the collection for the current item
+	var coll *core.Collection
+
+	switch item.Type {
+	case ItemCollection:
+		coll = item.Collection
+	case ItemFolder:
+		// Find the collection containing this folder
+		for _, c := range c.collections {
+			if c.FindFolder(item.ID) != nil {
+				coll = c
+				break
+			}
+		}
+	case ItemRequest:
+		// Find the collection containing this request
+		for _, c := range c.collections {
+			if _, found := c.FindRequest(item.Request.ID()); found {
+				coll = c
+				break
+			}
+		}
+	}
+
+	if coll == nil {
+		return c, nil
+	}
+
+	return c, func() tea.Msg {
+		return ExportCollectionMsg{
+			Collection: coll,
 		}
 	}
 }

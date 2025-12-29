@@ -3,6 +3,8 @@ package views
 import (
 	"context"
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -309,6 +311,30 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			}
 			v.notifyUntil = time.Now().Add(2 * time.Second)
 			return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+				return clearNotificationMsg{}
+			})
+		}
+
+	case components.ExportCollectionMsg:
+		// Export collection to Postman JSON
+		if msg.Collection != nil {
+			postmanExporter := exporter.NewPostmanExporter()
+			ctx := context.Background()
+			data, err := postmanExporter.Export(ctx, msg.Collection)
+			if err != nil {
+				v.notification = "✗ Export failed"
+			} else {
+				// Write to file in current directory
+				filename := sanitizeFilename(msg.Collection.Name()) + ".postman_collection.json"
+				err = writeFile(filename, data)
+				if err != nil {
+					v.notification = fmt.Sprintf("✗ Failed to write %s", filename)
+				} else {
+					v.notification = fmt.Sprintf("✓ Exported to %s", filename)
+				}
+			}
+			v.notifyUntil = time.Now().Add(3 * time.Second)
+			return v, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 				return clearNotificationMsg{}
 			})
 		}
@@ -1045,6 +1071,7 @@ func (v *MainView) renderHelp() string {
 		"│    m                  Move request/folder                │",
 		"│    y                  Duplicate request/folder           │",
 		"│    c                  Copy request as cURL              │",
+		"│    E                  Export collection to Postman      │",
 		"│    R                  Rename selected request/folder    │",
 		"│    /                  Start search                      │",
 		"│    H                  Switch to History view            │",
@@ -1502,4 +1529,22 @@ func (v *MainView) SetWebSocketDefinition(def *core.WebSocketDefinition) {
 	v.viewMode = ViewModeWebSocket
 	v.focusPane(PaneWebSocket)
 	v.updatePaneSizes()
+}
+
+// sanitizeFilename removes or replaces characters that are invalid in filenames.
+func sanitizeFilename(name string) string {
+	// Replace invalid characters with underscores
+	re := regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
+	sanitized := re.ReplaceAllString(name, "_")
+	// Trim spaces and dots from the end
+	sanitized = strings.TrimRight(sanitized, " .")
+	if sanitized == "" {
+		sanitized = "collection"
+	}
+	return sanitized
+}
+
+// writeFile writes data to a file in the current directory.
+func writeFile(filename string, data []byte) error {
+	return os.WriteFile(filename, data, 0644)
 }

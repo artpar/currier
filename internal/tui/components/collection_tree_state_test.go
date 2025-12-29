@@ -2441,3 +2441,83 @@ func TestCollectionTree_DeleteFolder(t *testing.T) {
 		assert.Equal(t, 1, len(coll.Folders()))
 	})
 }
+
+func TestCollectionTree_ExportCollection(t *testing.T) {
+	t.Run("E_emits_ExportCollectionMsg_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Cursor is on collection
+		_, cmd := sendKeyWithCmd(tree, 'E')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		exportMsg, ok := msg.(ExportCollectionMsg)
+		assert.True(t, ok, "should emit ExportCollectionMsg")
+		assert.Equal(t, coll.ID(), exportMsg.Collection.ID())
+	})
+
+	t.Run("E_emits_ExportCollectionMsg_on_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddFolder("Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		_, cmd := sendKeyWithCmd(tree, 'E')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		exportMsg, ok := msg.(ExportCollectionMsg)
+		assert.True(t, ok, "should emit ExportCollectionMsg")
+		assert.Equal(t, coll.ID(), exportMsg.Collection.ID())
+	})
+
+	t.Run("E_emits_ExportCollectionMsg_on_request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+
+		_, cmd := sendKeyWithCmd(tree, 'E')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		exportMsg, ok := msg.(ExportCollectionMsg)
+		assert.True(t, ok, "should emit ExportCollectionMsg")
+		assert.Equal(t, coll.ID(), exportMsg.Collection.ID())
+	})
+
+	t.Run("E_does_nothing_when_unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		// Not focused
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		tree.SetCollections([]*core.Collection{coll})
+
+		_, cmd := sendKeyWithCmd(tree, 'E')
+
+		assert.Nil(t, cmd)
+	})
+}
