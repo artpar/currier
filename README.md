@@ -91,7 +91,16 @@ curl -L https://github.com/artpar/currier/releases/latest/download/currier_darwi
 sudo mv currier /usr/local/bin/
 ```
 
-### Linux (Debian/Ubuntu)
+### Linux (Debian/Ubuntu - APT Repository)
+
+```bash
+# Add the APT repository
+echo "deb [trusted=yes] https://raw.githubusercontent.com/artpar/apt-repo/main stable main" | sudo tee /etc/apt/sources.list.d/artpar.list
+sudo apt update
+sudo apt install currier
+```
+
+Or download directly:
 
 ```bash
 curl -LO https://github.com/artpar/currier/releases/latest/download/currier_linux_amd64.deb
