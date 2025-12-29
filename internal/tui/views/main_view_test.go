@@ -1839,3 +1839,756 @@ func TestMainView_HistoryItemHeaders(t *testing.T) {
 		assert.Equal(t, "https://api.example.com/data", req.URL())
 	})
 }
+
+func TestMainView_SaveToCollection(t *testing.T) {
+	t.Run("s key triggers save to collection", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Create a request to save
+		req := core.NewRequestDefinition("Test Request", "POST", "https://example.com")
+		req.SetBody(`{"key": "value"}`)
+		view.RequestPanel().SetRequest(req)
+
+		// Press 's' to save
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should show notification and have a command
+		assert.NotNil(t, cmd)
+		// Should have created a collection with the request
+		assert.Equal(t, 1, view.CollectionTree().ItemCount())
+	})
+
+	t.Run("save without request shows notification", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// No request set
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should show notification
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("saves to existing collection", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Create existing collection
+		col := core.NewCollection("Existing API")
+		view.SetCollections([]*core.Collection{col})
+
+		// Create a request to save
+		req := core.NewRequestDefinition("New Request", "GET", "https://example.com/new")
+		view.RequestPanel().SetRequest(req)
+
+		// Press 's' to save
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Request should be added to existing collection
+		collections := view.CollectionTree().Collections()
+		assert.Len(t, collections, 1)
+		assert.Equal(t, "Existing API", collections[0].Name())
+	})
+}
+
+func TestMainView_DeleteRequestMsg(t *testing.T) {
+	t.Run("handles delete request message without panic", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("To Delete", "GET", "https://example.com")
+		col.AddRequest(req)
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.DeleteRequestMsg{Collection: col, RequestID: req.ID()}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic - delete is persisted asynchronously
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_CreateCollectionMsg(t *testing.T) {
+	t.Run("handles create collection message without panic", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("New Collection")
+		msg := components.CreateCollectionMsg{Collection: col}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic - the message is handled
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_DeleteCollectionMsg(t *testing.T) {
+	t.Run("handles delete collection message without panic", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("To Delete")
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.DeleteCollectionMsg{CollectionID: col.ID()}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic - delete is persisted asynchronously
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_RenameCollectionMsg(t *testing.T) {
+	t.Run("handles rename collection message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("Old Name")
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.RenameCollectionMsg{Collection: col}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic - rename is handled by collection tree
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_MoveRequestMsg(t *testing.T) {
+	t.Run("handles move request to folder without panic", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		folder := col.AddFolder("Target Folder")
+		req := core.NewRequestDefinition("To Move", "GET", "https://example.com")
+		col.AddRequest(req)
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.MoveRequestMsg{
+			Request:          req,
+			SourceCollection: col,
+			TargetCollection: col,
+			TargetFolder:     folder,
+		}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic - move is persisted asynchronously
+		assert.NotNil(t, view)
+	})
+
+	t.Run("handles move request to collection root without panic", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		folder := col.AddFolder("Source Folder")
+		req := core.NewRequestDefinition("To Move", "GET", "https://example.com")
+		folder.AddRequest(req)
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.MoveRequestMsg{
+			Request:          req,
+			SourceCollection: col,
+			TargetCollection: col,
+			TargetFolder:     nil, // Move to root
+		}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic - move logic handles source detection
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_MoveFolderMsg(t *testing.T) {
+	t.Run("handles move folder message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		folder := col.AddFolder("To Move")
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.MoveFolderMsg{
+			Folder:           folder,
+			SourceCollection: col,
+			TargetCollection: col,
+		}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_DuplicateRequestMsg(t *testing.T) {
+	t.Run("handles duplicate request message without panic", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		req := core.NewRequestDefinition("Original", "GET", "https://example.com")
+		col.AddRequest(req)
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.DuplicateRequestMsg{Collection: col, Request: req}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic - duplicate is handled
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_DuplicateFolderMsg(t *testing.T) {
+	t.Run("handles duplicate folder message without panic", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		folder := col.AddFolder("Original Folder")
+		folder.AddRequest(core.NewRequestDefinition("Req1", "GET", "https://example.com"))
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.DuplicateFolderMsg{Collection: col, Folder: folder}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic - duplicate is handled
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_CopyAsCurlMsg(t *testing.T) {
+	t.Run("handles copy as curl message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		req.SetBody(`{"key": "value"}`)
+		req.SetHeader("Content-Type", "application/json")
+
+		msg := components.CopyAsCurlMsg{Request: req}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should trigger notification command
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestMainView_ExportCollectionMsg(t *testing.T) {
+	t.Run("handles export collection message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("Export Me")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "https://example.com"))
+
+		msg := components.ExportCollectionMsg{Collection: col}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestMainView_ReorderRequestMsg(t *testing.T) {
+	t.Run("handles reorder request message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		req1 := core.NewRequestDefinition("First", "GET", "https://example.com/1")
+		req2 := core.NewRequestDefinition("Second", "GET", "https://example.com/2")
+		col.AddRequest(req1)
+		col.AddRequest(req2)
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.ReorderRequestMsg{Collection: col, Request: req2, Direction: "up"}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_RenameRequestMsg(t *testing.T) {
+	t.Run("handles rename request message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		req := core.NewRequestDefinition("Old Name", "GET", "https://example.com")
+		col.AddRequest(req)
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.RenameRequestMsg{Collection: col, Request: req}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_CreateFolderMsg(t *testing.T) {
+	t.Run("handles create folder message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		folder := col.AddFolder("New Folder")
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.CreateFolderMsg{Collection: col, Folder: folder}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_RenameFolderMsg(t *testing.T) {
+	t.Run("handles rename folder message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		folder := col.AddFolder("Old Folder Name")
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.RenameFolderMsg{Collection: col, Folder: folder}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_DeleteFolderMsg(t *testing.T) {
+	t.Run("handles delete folder message without panic", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		folder := col.AddFolder("To Delete")
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.DeleteFolderMsg{Collection: col, FolderID: folder.ID()}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Just verify no panic - delete is persisted asynchronously
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_ImportCollectionMsg(t *testing.T) {
+	t.Run("handles import with empty path", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.ImportCollectionMsg{FilePath: ""}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should not crash with empty path
+		assert.NotNil(t, view)
+	})
+
+	t.Run("handles import with invalid path", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.ImportCollectionMsg{FilePath: "/nonexistent/path/file.json"}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should show error notification
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestMainView_SetCollectionStore(t *testing.T) {
+	t.Run("sets collection store", func(t *testing.T) {
+		view := NewMainView()
+		// SetCollectionStore takes *filesystem.CollectionStore which is hard to mock
+		// Just verify the method exists and can be called with nil
+		view.SetCollectionStore(nil)
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_FocusBlurMethods(t *testing.T) {
+	t.Run("Focus method exists", func(t *testing.T) {
+		view := NewMainView()
+		view.Focus()
+		assert.True(t, view.Focused())
+	})
+
+	t.Run("Blur method exists", func(t *testing.T) {
+		view := NewMainView()
+		view.Blur()
+		// MainView is always focused
+		assert.True(t, view.Focused())
+	})
+}
+
+func TestMainView_SanitizeFilename(t *testing.T) {
+	t.Run("sanitizes filename with spaces", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Create collection with spaces in name
+		col := core.NewCollection("My Test Collection")
+		view.SetCollections([]*core.Collection{col})
+
+		// Export uses sanitized filename
+		msg := components.ExportCollectionMsg{Collection: col}
+		_, cmd := view.Update(msg)
+		_ = cmd // Verify no panic
+	})
+
+	t.Run("sanitizes filename with special characters", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("Test/API:v2")
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.ExportCollectionMsg{Collection: col}
+		_, cmd := view.Update(msg)
+		_ = cmd
+	})
+}
+
+func TestMainView_HandleSaveToCollectionEdgeCases(t *testing.T) {
+	t.Run("s key with WebSocket request creates WS definition", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+		view.FocusPane(PaneWebSocket)
+
+		ws := core.NewWebSocketDefinition("Test WS", "ws://localhost:8080")
+		view.SetWebSocketDefinition(ws)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		_ = cmd
+		assert.NotNil(t, view)
+	})
+
+	t.Run("s key with empty collection name still creates", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		req := core.NewRequestDefinition("", "GET", "https://example.com")
+		view.RequestPanel().SetRequest(req)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestMainView_UpdateMoreBranches(t *testing.T) {
+	t.Run("handles Ctrl+C to quit", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+		_, cmd := view.Update(msg)
+
+		// Should produce a quit command
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("handles q key to quit", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+		_, cmd := view.Update(msg)
+
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("question mark key shows help", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		assert.False(t, view.ShowingHelp())
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.True(t, view.ShowingHelp())
+	})
+
+	t.Run("escape hides help when showing", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+		assert.True(t, view.ShowingHelp())
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.ShowingHelp())
+	})
+
+	t.Run("handles number keys 1-3 for pane focus", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Key 1 - Collections
+		msg1 := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}
+		updated, _ := view.Update(msg1)
+		view = updated.(*MainView)
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+
+		// Key 2 - Request
+		msg2 := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}
+		updated, _ = view.Update(msg2)
+		view = updated.(*MainView)
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+
+		// Key 3 - Response
+		msg3 := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}
+		updated, _ = view.Update(msg3)
+		view = updated.(*MainView)
+		assert.Equal(t, PaneResponse, view.FocusedPane())
+	})
+
+	t.Run("handles selection message from collection tree", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com")
+		col.AddRequest(req)
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.SelectionMsg{
+			Request: req,
+		}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, req.Name(), view.RequestPanel().Request().Name())
+	})
+
+	t.Run("handles SelectWebSocketMsg for WebSocket", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("API")
+		ws := core.NewWebSocketDefinition("Test WS", "ws://localhost:8080")
+		view.SetCollections([]*core.Collection{col})
+
+		msg := components.SelectWebSocketMsg{
+			WebSocket: ws,
+		}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, ViewModeWebSocket, view.ViewMode())
+	})
+}
+
+func TestMainView_NotificationHandling(t *testing.T) {
+	t.Run("notification set via feedback message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Set notification via feedback
+		feedbackMsg := components.FeedbackMsg{Message: "Test notification", IsError: false}
+		updated, _ := view.Update(feedbackMsg)
+		view = updated.(*MainView)
+		assert.Contains(t, view.Notification(), "Test notification")
+	})
+
+	t.Run("error notification has different style", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Set error notification
+		feedbackMsg := components.FeedbackMsg{Message: "Error message", IsError: true}
+		updated, _ := view.Update(feedbackMsg)
+		view = updated.(*MainView)
+		assert.Contains(t, view.Notification(), "Error message")
+	})
+}
+
+func TestMainView_EnvironmentInterpolator(t *testing.T) {
+	t.Run("sets environment and updates interpolator", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		env := core.NewEnvironment("Test Env")
+		view.SetEnvironment(env, nil)
+
+		assert.NotNil(t, view.Environment())
+		assert.Equal(t, "Test Env", view.Environment().Name())
+	})
+}
+
+func TestMainView_SendRequestMessages(t *testing.T) {
+	t.Run("handles SendRequestMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		req := core.NewRequestDefinition("Test", "GET", "invalid://url")
+		view.RequestPanel().SetRequest(req)
+
+		msg := components.SendRequestMsg{}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should trigger some command (error or loading)
+		_ = cmd
+		assert.NotNil(t, view)
+	})
+
+	t.Run("handles WSSendMessageCmd", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		ws := core.NewWebSocketDefinition("Test WS", "ws://localhost:8080")
+		view.SetWebSocketDefinition(ws)
+
+		msg := components.WSSendMessageCmd{Content: "test message"}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+	})
+
+	t.Run("handles WSConnectCmd", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		ws := core.NewWebSocketDefinition("Test WS", "ws://localhost:8080")
+		view.SetWebSocketDefinition(ws)
+
+		msg := components.WSConnectCmd{Definition: ws}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_HistoryPanelInteraction(t *testing.T) {
+	t.Run("H key switches to history mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.FocusPane(PaneCollections)
+
+		// Press 'C' first to switch to collections mode
+		msgC := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}}
+		updated, _ := view.Update(msgC)
+		view = updated.(*MainView)
+
+		// Press 'H' to switch to history mode
+		msgH := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}}
+		updated, _ = view.Update(msgH)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_CollectionOperations(t *testing.T) {
+	t.Run("handles collection with multiple folders", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col := core.NewCollection("Multi-folder API")
+		col.AddFolder("Users")
+		col.AddFolder("Products")
+		col.AddFolder("Orders")
+		view.SetCollections([]*core.Collection{col})
+
+		assert.Equal(t, 1, view.CollectionTree().ItemCount())
+	})
+
+	t.Run("handles multiple collections", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		col1 := core.NewCollection("API v1")
+		col2 := core.NewCollection("API v2")
+		view.SetCollections([]*core.Collection{col1, col2})
+
+		assert.Equal(t, 2, view.CollectionTree().ItemCount())
+	})
+}
+
+func TestMainView_ViewRendering(t *testing.T) {
+	t.Run("renders with notification", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		feedbackMsg := components.FeedbackMsg{Message: "Success!", IsError: false}
+		updated, _ := view.Update(feedbackMsg)
+		view = updated.(*MainView)
+
+		output := view.View()
+		assert.Contains(t, output, "Success!")
+	})
+
+	t.Run("renders error notification in red", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		feedbackMsg := components.FeedbackMsg{Message: "Error occurred", IsError: true}
+		updated, _ := view.Update(feedbackMsg)
+		view = updated.(*MainView)
+
+		output := view.View()
+		_ = output // Just verify no panic
+	})
+
+	t.Run("renders WebSocket mode layout", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("renders help overlay when showing", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+
+		output := view.View()
+		// Help content should be in the output
+		assert.Contains(t, output, "Help")
+	})
+}

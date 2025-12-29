@@ -386,3 +386,165 @@ func TestTokenize(t *testing.T) {
 		})
 	}
 }
+
+func TestCurlImporter_Import_EdgeCases(t *testing.T) {
+	imp := NewCurlImporter()
+	ctx := context.Background()
+
+	t.Run("long option names", func(t *testing.T) {
+		content := []byte(`curl --request POST --header "Content-Type: application/json" --data '{"test":1}' https://api.example.com/endpoint`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+
+		req := requests[0]
+		assert.Equal(t, "POST", req.Method())
+		assert.Contains(t, req.Headers(), "Content-Type")
+	})
+
+	t.Run("data-raw option", func(t *testing.T) {
+		content := []byte(`curl --data-raw '{"key":"value"}' https://api.example.com/endpoint`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "POST", requests[0].Method())
+		assert.Equal(t, `{"key":"value"}`, requests[0].Body())
+	})
+
+	t.Run("data-binary option", func(t *testing.T) {
+		content := []byte(`curl --data-binary '{"key":"value"}' https://api.example.com/endpoint`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "POST", requests[0].Method())
+	})
+
+	t.Run("json flag", func(t *testing.T) {
+		content := []byte(`curl --json '{"name":"test"}' https://api.example.com/endpoint`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "POST", requests[0].Method())
+		assert.Contains(t, requests[0].Headers(), "Content-Type")
+	})
+
+	t.Run("cookie option", func(t *testing.T) {
+		content := []byte(`curl -b "session=abc123" https://api.example.com/endpoint`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		assert.Contains(t, requests[0].Headers(), "Cookie")
+	})
+
+	t.Run("referer option", func(t *testing.T) {
+		content := []byte(`curl -e "https://referer.com" https://api.example.com/endpoint`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		assert.Contains(t, requests[0].Headers(), "Referer")
+	})
+
+	t.Run("user-agent option", func(t *testing.T) {
+		content := []byte(`curl -A "CustomAgent/1.0" https://api.example.com/endpoint`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		assert.Contains(t, requests[0].Headers(), "User-Agent")
+	})
+
+	t.Run("head request", func(t *testing.T) {
+		content := []byte(`curl -I https://api.example.com/endpoint`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "HEAD", requests[0].Method())
+	})
+
+	t.Run("compressed option noted", func(t *testing.T) {
+		content := []byte(`curl --compressed https://api.example.com/endpoint`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+	})
+
+	t.Run("location option noted", func(t *testing.T) {
+		content := []byte(`curl -L https://api.example.com/redirect`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+	})
+
+	t.Run("insecure option noted", func(t *testing.T) {
+		content := []byte(`curl -k https://self-signed.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+	})
+
+	t.Run("URL with query params", func(t *testing.T) {
+		content := []byte(`curl "https://api.example.com/search?q=test&limit=10"`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		assert.Contains(t, requests[0].URL(), "q=test")
+	})
+
+	t.Run("generates name from URL path", func(t *testing.T) {
+		content := []byte(`curl https://api.example.com/api/v1/users/123/profile`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		requests := coll.Requests()
+		require.Len(t, requests, 1)
+		// Should contain some part of the path
+		assert.NotEmpty(t, requests[0].Name())
+	})
+}
+
+func TestTokenize_EdgeCases(t *testing.T) {
+	t.Run("escaped quotes", func(t *testing.T) {
+		result := tokenize(`curl -H "X-Header: \"value\"" https://example.com`)
+		assert.Contains(t, result, "-H")
+	})
+
+	t.Run("backslash continuation", func(t *testing.T) {
+		result := tokenize(`curl \
+			https://example.com`)
+		assert.Contains(t, result, "curl")
+		assert.Contains(t, result, "https://example.com")
+	})
+
+	t.Run("empty string", func(t *testing.T) {
+		result := tokenize("")
+		assert.Empty(t, result)
+	})
+
+	t.Run("whitespace only", func(t *testing.T) {
+		result := tokenize("   ")
+		assert.Empty(t, result)
+	})
+}

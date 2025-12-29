@@ -1013,3 +1013,239 @@ func TestOpenAPIImporter_Import_MultipleContentTypes(t *testing.T) {
 	req := coll.Requests()[0]
 	assert.Equal(t, "multipart/form-data", req.GetHeader("Content-Type"))
 }
+
+func TestOpenAPIImporter_Import_SchemaWithArray(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"paths": {
+			"/items": {
+				"post": {
+					"requestBody": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {"type": "integer"},
+											"name": {"type": "string"}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	req := coll.Requests()[0]
+	body := req.Body()
+	assert.NotEmpty(t, body)
+	// Should be an array
+	assert.Contains(t, body, "[")
+}
+
+func TestOpenAPIImporter_Import_SchemaWithBoolean(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"paths": {
+			"/flags": {
+				"post": {
+					"requestBody": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"enabled": {"type": "boolean"},
+										"active": {"type": "boolean", "example": true}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	req := coll.Requests()[0]
+	body := req.Body()
+	assert.NotEmpty(t, body)
+	assert.Contains(t, body, "enabled")
+}
+
+func TestOpenAPIImporter_Import_SchemaWithNumber(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"paths": {
+			"/metrics": {
+				"post": {
+					"requestBody": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"count": {"type": "integer"},
+										"price": {"type": "number"},
+										"ratio": {"type": "number", "format": "float"}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	req := coll.Requests()[0]
+	body := req.Body()
+	assert.NotEmpty(t, body)
+}
+
+func TestOpenAPIImporter_Import_DeeplyNestedObjects(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"paths": {
+			"/user": {
+				"post": {
+					"requestBody": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"user": {
+											"type": "object",
+											"properties": {
+												"profile": {
+													"type": "object",
+													"properties": {
+														"name": {"type": "string"}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	req := coll.Requests()[0]
+	body := req.Body()
+	assert.NotEmpty(t, body)
+	assert.Contains(t, body, "user")
+	assert.Contains(t, body, "profile")
+}
+
+func TestOpenAPIImporter_Import_WithDefaultValue(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"paths": {
+			"/settings": {
+				"post": {
+					"requestBody": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"theme": {"type": "string", "default": "dark"},
+										"limit": {"type": "integer", "default": 100}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	req := coll.Requests()[0]
+	body := req.Body()
+	assert.NotEmpty(t, body)
+	// Default string value is used when generating examples
+	assert.Contains(t, body, "dark")
+	assert.Contains(t, body, "limit")
+}
+
+func TestOpenAPIImporter_Import_FormURLEncodedLogin(t *testing.T) {
+	imp := NewOpenAPIImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"openapi": "3.0.0",
+		"info": {"title": "Test", "version": "1.0"},
+		"paths": {
+			"/login": {
+				"post": {
+					"requestBody": {
+						"content": {
+							"application/x-www-form-urlencoded": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"username": {"type": "string"},
+										"password": {"type": "string"}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	req := coll.Requests()[0]
+	assert.Equal(t, "application/x-www-form-urlencoded", req.GetHeader("Content-Type"))
+}

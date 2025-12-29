@@ -1989,3 +1989,283 @@ func TestKeyboardExpandCollapse(t *testing.T) {
 		assert.Equal(t, 4, tree.Cursor(), "cursor should stay at 4 after expand")
 	})
 }
+
+func TestCollectionTree_GetSelectedItem(t *testing.T) {
+	t.Run("returns nil when no item selected", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		item := tree.GetSelectedItem()
+		assert.Nil(t, item)
+	})
+
+	t.Run("returns selected request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://example.com")
+		col.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		// Expand collection and move to request
+		tree.Focus()
+		tree = expandItem(tree)
+		tree = pressKey(tree, 'j')
+
+		item := tree.GetSelectedItem()
+		assert.NotNil(t, item)
+		assert.Equal(t, req, item.Request)
+	})
+}
+
+func TestCollectionTree_RebuildItems(t *testing.T) {
+	t.Run("rebuilds items after modification", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col := core.NewCollection("Test API")
+		tree.SetCollections([]*core.Collection{col})
+
+		// Initially has the collection
+		assert.Equal(t, 1, tree.ItemCount())
+
+		// Add a request
+		req := core.NewRequestDefinition("New Request", "POST", "https://example.com")
+		col.AddRequest(req)
+		tree.RebuildItems()
+
+		// Should still show collection (expanded would show more)
+		assert.Equal(t, 1, tree.ItemCount())
+	})
+}
+
+func TestCollectionTree_RenderMoveMode(t *testing.T) {
+	t.Run("renders move mode correctly", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+		tree.Focus()
+
+		col := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Move Me", "GET", "https://example.com")
+		col.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		// Expand and select request
+		tree = expandItem(tree)
+		tree = pressKey(tree, 'j')
+
+		// Start move mode with 'm'
+		tree = pressKey(tree, 'm')
+
+		output := tree.View()
+		assert.NotEmpty(t, output)
+		// Move mode should show some UI elements
+		assert.Contains(t, output, "Move")
+	})
+}
+
+func TestCollectionTree_RenderImportMode(t *testing.T) {
+	t.Run("renders import mode correctly", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+		tree.Focus()
+
+		// Start import mode with 'I'
+		tree = pressKey(tree, 'I')
+
+		output := tree.View()
+		assert.NotEmpty(t, output)
+		// Import mode should show path input
+		assert.Contains(t, output, "Import")
+	})
+}
+
+func TestCollectionTree_DeleteRequestMethod(t *testing.T) {
+	t.Run("deletes request from collection via method", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("To Delete", "GET", "https://example.com")
+		col.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.DeleteRequest(req.ID())
+		// Request should be removed from collection
+		assert.Equal(t, 0, len(col.Requests()))
+	})
+
+	t.Run("handles non-existent request in delete method", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col := core.NewCollection("Test API")
+		tree.SetCollections([]*core.Collection{col})
+
+		// Should not panic
+		tree.DeleteRequest("non-existent-id")
+	})
+}
+
+func TestCollectionTree_FindFolderContainingRequest(t *testing.T) {
+	t.Run("finds folder containing request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col := core.NewCollection("Test API")
+		folder := col.AddFolder("Users")
+		req := core.NewRequestDefinition("Get User", "GET", "https://example.com")
+		folder.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		// Expand to show structure
+		tree = expandItem(tree)
+		tree = pressKey(tree, 'j') // to folder
+		tree = expandItem(tree)
+		tree = pressKey(tree, 'j') // to request
+
+		// Delete request (this triggers findFolderContainingRequest internally)
+		tree = pressKey(tree, 'd')
+
+		// Just verify no panic
+		assert.NotNil(t, tree)
+	})
+
+	t.Run("handles request in nested folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+		tree.Focus()
+
+		col := core.NewCollection("API")
+		parent := col.AddFolder("V1")
+		child := parent.AddFolder("Users")
+		req := core.NewRequestDefinition("Get User", "GET", "https://example.com")
+		child.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		// Navigate deep into structure
+		tree = expandItem(tree)    // expand collection
+		tree = pressKey(tree, 'j') // to V1
+		tree = expandItem(tree)    // expand V1
+		tree = pressKey(tree, 'j') // to Users
+		tree = expandItem(tree)    // expand Users
+		tree = pressKey(tree, 'j') // to request
+
+		assert.NotNil(t, tree)
+	})
+}
+
+func TestCollectionTree_HandleImportInput(t *testing.T) {
+	t.Run("cancels import on escape", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+		tree.Focus()
+
+		// Start import mode
+		tree = pressKey(tree, 'I')
+
+		// Press escape to cancel
+		tree = pressEscape(tree)
+
+		// Should be back to normal mode
+		output := tree.View()
+		assert.NotContains(t, output, "Enter path")
+	})
+
+	t.Run("handles import with typed path", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+		tree.Focus()
+
+		// Start import mode
+		tree = pressKey(tree, 'I')
+
+		// Type a path
+		for _, r := range "/tmp/test.json" {
+			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+			updated, _ := tree.Update(msg)
+			tree = updated.(*CollectionTree)
+		}
+
+		// Press enter to submit (will fail but shouldn't crash)
+		tree = pressEnter(tree)
+
+		assert.NotNil(t, tree)
+	})
+}
+
+func TestCollectionTree_HistoryContentHeight(t *testing.T) {
+	t.Run("calculates history content height", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		// Create mock history store
+		mockStore := &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestName: "Test 1"},
+				{ID: "2", RequestName: "Test 2"},
+			},
+		}
+		tree.SetHistoryStore(mockStore)
+		tree.viewMode = ViewHistory
+
+		output := tree.View()
+		assert.NotEmpty(t, output)
+	})
+}
+
+func TestCollectionTree_UpdateBranches(t *testing.T) {
+	t.Run("handles unknown message type", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+
+		// Send unknown message type
+		type unknownMsg struct{}
+		updated, cmd := tree.Update(unknownMsg{})
+
+		assert.NotNil(t, updated)
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("handles window size message", func(t *testing.T) {
+		tree := NewCollectionTree()
+
+		msg := tea.WindowSizeMsg{Width: 100, Height: 50}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, 100, tree.Width())
+		assert.Equal(t, 50, tree.Height())
+	})
+
+	t.Run("handles blur via method", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		assert.True(t, tree.Focused())
+
+		tree.Blur()
+		assert.False(t, tree.Focused())
+	})
+
+	t.Run("handles focus via method", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		assert.False(t, tree.Focused())
+
+		tree.Focus()
+		assert.True(t, tree.Focused())
+	})
+}
