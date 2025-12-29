@@ -206,6 +206,7 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `c` | Copy request as cURL |
 | `E` | Export collection to Postman |
 | `I` | Import collection from Postman |
+| `K/J` | Move request up/down |
 | `R` | Rename request/folder |
 | `/` | Search |
 | `H` | Switch to History |

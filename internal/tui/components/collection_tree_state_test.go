@@ -2628,3 +2628,190 @@ func TestCollectionTree_ImportCollection(t *testing.T) {
 		assert.False(t, tree.IsImporting())
 	})
 }
+
+func TestCollectionTree_ReorderRequest(t *testing.T) {
+	t.Run("K_moves_request_up", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req1 := core.NewRequestDefinition("Request 1", "GET", "http://example.com/1")
+		req2 := core.NewRequestDefinition("Request 2", "GET", "http://example.com/2")
+		req3 := core.NewRequestDefinition("Request 3", "GET", "http://example.com/3")
+		coll.AddRequest(req1)
+		coll.AddRequest(req2)
+		coll.AddRequest(req3)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to req1
+		tree = sendKey(tree, 'j') // Move to req2
+
+		// req2 is at index 1
+		assert.Equal(t, "Request 2", coll.Requests()[1].Name())
+
+		_, cmd := sendKeyWithCmd(tree, 'K')
+
+		// req2 should now be at index 0
+		assert.Equal(t, "Request 2", coll.Requests()[0].Name())
+		assert.Equal(t, "Request 1", coll.Requests()[1].Name())
+		assert.NotNil(t, cmd)
+
+		msg := cmd()
+		reorderMsg, ok := msg.(ReorderRequestMsg)
+		assert.True(t, ok, "should emit ReorderRequestMsg")
+		assert.Equal(t, "up", reorderMsg.Direction)
+	})
+
+	t.Run("J_moves_request_down", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req1 := core.NewRequestDefinition("Request 1", "GET", "http://example.com/1")
+		req2 := core.NewRequestDefinition("Request 2", "GET", "http://example.com/2")
+		req3 := core.NewRequestDefinition("Request 3", "GET", "http://example.com/3")
+		coll.AddRequest(req1)
+		coll.AddRequest(req2)
+		coll.AddRequest(req3)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to req1
+
+		// req1 is at index 0
+		assert.Equal(t, "Request 1", coll.Requests()[0].Name())
+
+		_, cmd := sendKeyWithCmd(tree, 'J')
+
+		// req1 should now be at index 1
+		assert.Equal(t, "Request 2", coll.Requests()[0].Name())
+		assert.Equal(t, "Request 1", coll.Requests()[1].Name())
+		assert.NotNil(t, cmd)
+
+		msg := cmd()
+		reorderMsg, ok := msg.(ReorderRequestMsg)
+		assert.True(t, ok, "should emit ReorderRequestMsg")
+		assert.Equal(t, "down", reorderMsg.Direction)
+	})
+
+	t.Run("K_does_nothing_at_top", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req1 := core.NewRequestDefinition("Request 1", "GET", "http://example.com/1")
+		req2 := core.NewRequestDefinition("Request 2", "GET", "http://example.com/2")
+		coll.AddRequest(req1)
+		coll.AddRequest(req2)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to req1 (first request)
+
+		// req1 is already at index 0
+		_, cmd := sendKeyWithCmd(tree, 'K')
+
+		// Order should be unchanged
+		assert.Equal(t, "Request 1", coll.Requests()[0].Name())
+		assert.Equal(t, "Request 2", coll.Requests()[1].Name())
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("J_does_nothing_at_bottom", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req1 := core.NewRequestDefinition("Request 1", "GET", "http://example.com/1")
+		req2 := core.NewRequestDefinition("Request 2", "GET", "http://example.com/2")
+		coll.AddRequest(req1)
+		coll.AddRequest(req2)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to req1
+		tree = sendKey(tree, 'j') // Move to req2 (last request)
+
+		// req2 is already at last index
+		_, cmd := sendKeyWithCmd(tree, 'J')
+
+		// Order should be unchanged
+		assert.Equal(t, "Request 1", coll.Requests()[0].Name())
+		assert.Equal(t, "Request 2", coll.Requests()[1].Name())
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("K_does_nothing_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Cursor is on collection (not expanded)
+		_, cmd := sendKeyWithCmd(tree, 'K')
+
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("J_does_nothing_on_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddFolder("Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		_, cmd := sendKeyWithCmd(tree, 'J')
+
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("reorder_request_in_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		folder := coll.AddFolder("Folder")
+		req1 := core.NewRequestDefinition("Request 1", "GET", "http://example.com/1")
+		req2 := core.NewRequestDefinition("Request 2", "GET", "http://example.com/2")
+		folder.AddRequest(req1)
+		folder.AddRequest(req2)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand collection
+		tree = sendKey(tree, 'j') // Move to folder
+		tree = sendKey(tree, 'l') // Expand folder
+		tree = sendKey(tree, 'j') // Move to req1
+		tree = sendKey(tree, 'j') // Move to req2
+
+		// req2 is at index 1 in folder
+		assert.Equal(t, "Request 2", folder.Requests()[1].Name())
+
+		_, cmd := sendKeyWithCmd(tree, 'K')
+
+		// req2 should now be at index 0
+		assert.Equal(t, "Request 2", folder.Requests()[0].Name())
+		assert.Equal(t, "Request 1", folder.Requests()[1].Name())
+		assert.NotNil(t, cmd)
+	})
+}

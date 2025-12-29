@@ -373,6 +373,16 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			})
 		}
 
+	case components.ReorderRequestMsg:
+		// Persist collection after reorder
+		if v.collectionStore != nil && msg.Collection != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = v.collectionStore.Save(ctx, msg.Collection)
+			}()
+		}
+
 	case components.RenameRequestMsg:
 		// Persist collection with renamed request
 		if v.collectionStore != nil && msg.Collection != nil {
@@ -1107,6 +1117,7 @@ func (v *MainView) renderHelp() string {
 		"│    c                  Copy request as cURL              │",
 		"│    E                  Export collection to Postman      │",
 		"│    I                  Import collection from Postman    │",
+		"│    K/J                Move request up/down              │",
 		"│    R                  Rename selected request/folder    │",
 		"│    /                  Start search                      │",
 		"│    H                  Switch to History view            │",

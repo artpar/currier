@@ -155,6 +155,13 @@ type ImportCollectionMsg struct {
 	FilePath string
 }
 
+// ReorderRequestMsg is sent when a request is reordered within its container.
+type ReorderRequestMsg struct {
+	Collection *core.Collection
+	Request    *core.RequestDefinition
+	Direction  string // "up" or "down"
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -323,6 +330,14 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.importing = true
 			c.importBuffer = ""
 			return c, nil
+		case "K":
+			// Move request up
+			c.gPressed = false
+			return c.handleReorderRequest("up")
+		case "J":
+			// Move request down
+			c.gPressed = false
+			return c.handleReorderRequest("down")
 		case "F":
 			// Create new folder in current collection
 			c.gPressed = false
@@ -811,6 +826,106 @@ func (c *CollectionTree) handleExportCollection() (tui.Component, tea.Cmd) {
 			Collection: coll,
 		}
 	}
+}
+
+func (c *CollectionTree) handleReorderRequest(direction string) (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only requests can be reordered
+	if item.Type != ItemRequest || item.Request == nil {
+		return c, nil
+	}
+
+	// Find the collection and potentially the folder containing this request
+	var coll *core.Collection
+	var folder *core.Folder
+
+	for _, collection := range c.collections {
+		// Check root level requests
+		for _, req := range collection.Requests() {
+			if req.ID() == item.Request.ID() {
+				coll = collection
+				break
+			}
+		}
+		if coll != nil {
+			break
+		}
+
+		// Check folders
+		for _, f := range collection.Folders() {
+			if foundFolder := c.findFolderContainingRequest(f, item.Request.ID()); foundFolder != nil {
+				coll = collection
+				folder = foundFolder
+				break
+			}
+		}
+		if coll != nil {
+			break
+		}
+	}
+
+	if coll == nil {
+		return c, nil
+	}
+
+	// Perform the reorder
+	var moved bool
+	if folder != nil {
+		if direction == "up" {
+			moved = folder.MoveRequestUp(item.Request.ID())
+		} else {
+			moved = folder.MoveRequestDown(item.Request.ID())
+		}
+	} else {
+		if direction == "up" {
+			moved = coll.MoveRequestUp(item.Request.ID())
+		} else {
+			moved = coll.MoveRequestDown(item.Request.ID())
+		}
+	}
+
+	if !moved {
+		return c, nil
+	}
+
+	// Rebuild the tree and adjust cursor
+	c.rebuildItems()
+
+	// Move cursor to follow the request
+	for i, di := range c.getDisplayItems() {
+		if di.Type == ItemRequest && di.Request != nil && di.Request.ID() == item.Request.ID() {
+			c.cursor = i
+			break
+		}
+	}
+
+	return c, func() tea.Msg {
+		return ReorderRequestMsg{
+			Collection: coll,
+			Request:    item.Request,
+			Direction:  direction,
+		}
+	}
+}
+
+func (c *CollectionTree) findFolderContainingRequest(folder *core.Folder, requestID string) *core.Folder {
+	for _, req := range folder.Requests() {
+		if req.ID() == requestID {
+			return folder
+		}
+	}
+	for _, sub := range folder.Folders() {
+		if found := c.findFolderContainingRequest(sub, requestID); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 func (c *CollectionTree) handleCreateCollection() (tui.Component, tea.Cmd) {

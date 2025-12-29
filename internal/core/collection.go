@@ -282,6 +282,36 @@ func (c *Collection) RemoveRequestRecursive(id string) bool {
 	return false
 }
 
+// MoveRequestUp moves a request up in the root level list (decreases index).
+func (c *Collection) MoveRequestUp(id string) bool {
+	for i, r := range c.requests {
+		if r.ID() == id {
+			if i == 0 {
+				return false // Already at top
+			}
+			c.requests[i], c.requests[i-1] = c.requests[i-1], c.requests[i]
+			c.touch()
+			return true
+		}
+	}
+	return false
+}
+
+// MoveRequestDown moves a request down in the root level list (increases index).
+func (c *Collection) MoveRequestDown(id string) bool {
+	for i, r := range c.requests {
+		if r.ID() == id {
+			if i == len(c.requests)-1 {
+				return false // Already at bottom
+			}
+			c.requests[i], c.requests[i+1] = c.requests[i+1], c.requests[i]
+			c.touch()
+			return true
+		}
+	}
+	return false
+}
+
 // WebSockets returns all WebSocket definitions.
 func (c *Collection) WebSockets() []*WebSocketDefinition {
 	return c.websockets
@@ -446,6 +476,34 @@ func (f *Folder) RemoveRequestRecursive(id string) bool {
 	// Try subfolders recursively
 	for _, sub := range f.folders {
 		if sub.RemoveRequestRecursive(id) {
+			return true
+		}
+	}
+	return false
+}
+
+// MoveRequestUp moves a request up in this folder's list (decreases index).
+func (f *Folder) MoveRequestUp(id string) bool {
+	for i, r := range f.requests {
+		if r.ID() == id {
+			if i == 0 {
+				return false // Already at top
+			}
+			f.requests[i], f.requests[i-1] = f.requests[i-1], f.requests[i]
+			return true
+		}
+	}
+	return false
+}
+
+// MoveRequestDown moves a request down in this folder's list (increases index).
+func (f *Folder) MoveRequestDown(id string) bool {
+	for i, r := range f.requests {
+		if r.ID() == id {
+			if i == len(f.requests)-1 {
+				return false // Already at bottom
+			}
+			f.requests[i], f.requests[i+1] = f.requests[i+1], f.requests[i]
 			return true
 		}
 	}
