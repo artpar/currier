@@ -1779,3 +1779,155 @@ func TestCollectionTree_CreateFolder(t *testing.T) {
 		assert.Nil(t, cmd)
 	})
 }
+
+func TestCollectionTree_RenameFolder(t *testing.T) {
+	t.Run("R_enters_rename_mode_on_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddFolder("My Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		assert.False(t, tree.IsRenaming())
+
+		tree = sendKey(tree, 'R')
+
+		assert.True(t, tree.IsRenaming())
+	})
+
+	t.Run("rename_folder_updates_name_on_enter", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		folder := coll.AddFolder("Old Name")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		tree = sendKey(tree, 'R') // Start rename
+		assert.True(t, tree.IsRenaming())
+
+		// Clear and type new name (clear "Old Name" first)
+		for i := 0; i < 10; i++ {
+			tree = sendSpecialKey(tree, tea.KeyBackspace)
+		}
+		tree = sendKey(tree, 'N')
+		tree = sendKey(tree, 'e')
+		tree = sendKey(tree, 'w')
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		assert.False(t, tree.IsRenaming())
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		folderMsg, ok := msg.(RenameFolderMsg)
+		assert.True(t, ok, "should emit RenameFolderMsg")
+		assert.Equal(t, "New", folderMsg.Folder.Name())
+		assert.Equal(t, "New", folder.Name())
+	})
+
+	t.Run("rename_folder_cancelled_on_escape", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		folder := coll.AddFolder("Original Name")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		tree = sendKey(tree, 'R') // Start rename
+		// Type something
+		tree = sendKey(tree, 'X')
+
+		tree = sendSpecialKey(tree, tea.KeyEsc)
+
+		assert.False(t, tree.IsRenaming())
+		assert.Equal(t, "Original Name", folder.Name()) // Name unchanged
+	})
+
+	t.Run("R_does_nothing_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Cursor is on collection, R should do nothing
+		tree = sendKey(tree, 'R')
+
+		assert.False(t, tree.IsRenaming())
+	})
+
+	t.Run("rename_folder_does_not_allow_empty_name", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		folder := coll.AddFolder("Original Name")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		tree = sendKey(tree, 'R') // Start rename
+		// Clear buffer completely
+		for i := 0; i < 15; i++ {
+			tree = sendSpecialKey(tree, tea.KeyBackspace)
+		}
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		// Should still be in rename mode, not accept empty name
+		assert.True(t, tree.IsRenaming())
+		assert.Nil(t, cmd)
+		assert.Equal(t, "Original Name", folder.Name())
+	})
+
+	t.Run("rename_folder_persists_collection_reference", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddFolder("Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to folder
+
+		tree = sendKey(tree, 'R')
+		// Clear buffer and type new name
+		for i := 0; i < 10; i++ {
+			tree = sendSpecialKey(tree, tea.KeyBackspace)
+		}
+		tree = sendKey(tree, 'R')
+		tree = sendKey(tree, 'e')
+		tree = sendKey(tree, 'n')
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		msg := cmd()
+		folderMsg, ok := msg.(RenameFolderMsg)
+		assert.True(t, ok)
+		assert.Equal(t, coll.ID(), folderMsg.Collection.ID())
+	})
+}

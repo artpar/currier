@@ -356,6 +356,7 @@ func NewFolder(name string) *Folder {
 
 func (f *Folder) ID() string          { return f.id }
 func (f *Folder) Name() string        { return f.name }
+func (f *Folder) SetName(name string) { f.name = name }
 func (f *Folder) Description() string { return f.description }
 func (f *Folder) Folders() []*Folder  { return f.folders }
 func (f *Folder) Requests() []*RequestDefinition { return f.requests }

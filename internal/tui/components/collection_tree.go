@@ -113,6 +113,12 @@ type CreateFolderMsg struct {
 	Folder     *core.Folder
 }
 
+// RenameFolderMsg is sent when a folder is renamed.
+type RenameFolderMsg struct {
+	Collection *core.Collection
+	Folder     *core.Folder
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -130,10 +136,11 @@ type CollectionTree struct {
 	gPressed      bool // For gg sequence
 
 	// Rename mode
-	renaming       bool   // True when renaming a collection or request
-	renameBuffer   string // Buffer for the new name
-	renamingCollID string // ID of collection being renamed
-	renamingReqID  string // ID of request being renamed (empty if renaming collection)
+	renaming        bool   // True when renaming a collection, folder, or request
+	renameBuffer    string // Buffer for the new name
+	renamingCollID  string // ID of collection being renamed or containing the item
+	renamingReqID   string // ID of request being renamed
+	renamingFolderID string // ID of folder being renamed
 
 	// Move mode
 	moving          bool                    // True when moving a request
@@ -788,29 +795,55 @@ func (c *CollectionTree) startRenameRequest() (tui.Component, tea.Cmd) {
 
 	item := displayItems[c.cursor]
 
-	// Only rename requests
-	if item.Type != ItemRequest {
-		return c, nil
-	}
-
-	// Find the collection containing this request
-	var collID string
-	for _, coll := range c.collections {
-		if _, found := coll.FindRequest(item.Request.ID()); found {
-			collID = coll.ID()
-			break
+	// Handle requests
+	if item.Type == ItemRequest {
+		// Find the collection containing this request
+		var collID string
+		for _, coll := range c.collections {
+			if _, found := coll.FindRequest(item.Request.ID()); found {
+				collID = coll.ID()
+				break
+			}
 		}
-	}
 
-	if collID == "" {
+		if collID == "" {
+			return c, nil
+		}
+
+		// Start rename mode with current name
+		c.renaming = true
+		c.renamingCollID = collID
+		c.renamingReqID = item.Request.ID()
+		c.renamingFolderID = ""
+		c.renameBuffer = item.Request.Name()
+
 		return c, nil
 	}
 
-	// Start rename mode with current name
-	c.renaming = true
-	c.renamingCollID = collID
-	c.renamingReqID = item.Request.ID()
-	c.renameBuffer = item.Request.Name()
+	// Handle folders
+	if item.Type == ItemFolder {
+		// Find the collection containing this folder
+		var collID string
+		for _, coll := range c.collections {
+			if coll.FindFolder(item.ID) != nil {
+				collID = coll.ID()
+				break
+			}
+		}
+
+		if collID == "" {
+			return c, nil
+		}
+
+		// Start rename mode with current name
+		c.renaming = true
+		c.renamingCollID = collID
+		c.renamingReqID = ""
+		c.renamingFolderID = item.ID
+		c.renameBuffer = item.Name
+
+		return c, nil
+	}
 
 	return c, nil
 }
@@ -823,6 +856,7 @@ func (c *CollectionTree) handleRenameInput(msg tea.KeyMsg) (tui.Component, tea.C
 		c.renameBuffer = ""
 		c.renamingCollID = ""
 		c.renamingReqID = ""
+		c.renamingFolderID = ""
 		return c, nil
 
 	case tea.KeyEnter:
@@ -832,7 +866,7 @@ func (c *CollectionTree) handleRenameInput(msg tea.KeyMsg) (tui.Component, tea.C
 			return c, nil
 		}
 
-		// Check if we're renaming a request or collection
+		// Check if we're renaming a request
 		if c.renamingReqID != "" {
 			// Renaming a request
 			var renamedColl *core.Collection
@@ -852,11 +886,42 @@ func (c *CollectionTree) handleRenameInput(msg tea.KeyMsg) (tui.Component, tea.C
 			c.renameBuffer = ""
 			c.renamingCollID = ""
 			c.renamingReqID = ""
+			c.renamingFolderID = ""
 			c.rebuildItems()
 
 			if renamedColl != nil && renamedReq != nil {
 				return c, func() tea.Msg {
 					return RenameRequestMsg{Collection: renamedColl, Request: renamedReq}
+				}
+			}
+			return c, nil
+		}
+
+		// Check if we're renaming a folder
+		if c.renamingFolderID != "" {
+			var renamedColl *core.Collection
+			var renamedFolder *core.Folder
+			for _, coll := range c.collections {
+				if coll.ID() == c.renamingCollID {
+					if folder := coll.FindFolder(c.renamingFolderID); folder != nil {
+						folder.SetName(c.renameBuffer)
+						renamedColl = coll
+						renamedFolder = folder
+					}
+					break
+				}
+			}
+
+			c.renaming = false
+			c.renameBuffer = ""
+			c.renamingCollID = ""
+			c.renamingReqID = ""
+			c.renamingFolderID = ""
+			c.rebuildItems()
+
+			if renamedColl != nil && renamedFolder != nil {
+				return c, func() tea.Msg {
+					return RenameFolderMsg{Collection: renamedColl, Folder: renamedFolder}
 				}
 			}
 			return c, nil
@@ -876,6 +941,7 @@ func (c *CollectionTree) handleRenameInput(msg tea.KeyMsg) (tui.Component, tea.C
 		c.renameBuffer = ""
 		c.renamingCollID = ""
 		c.renamingReqID = ""
+		c.renamingFolderID = ""
 		c.rebuildItems()
 
 		if renamedColl != nil {
@@ -1587,9 +1653,12 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 		icon = c.methodBadge(item.Method) + " "
 	}
 
-	// Name - show rename buffer if renaming this collection or request
+	// Name - show rename buffer if renaming this collection, folder, or request
 	name := item.Name
-	if c.renaming && item.Type == ItemCollection && item.ID == c.renamingCollID && c.renamingReqID == "" {
+	if c.renaming && item.Type == ItemCollection && item.ID == c.renamingCollID && c.renamingReqID == "" && c.renamingFolderID == "" {
+		name = c.renameBuffer + "▏" // Show cursor
+	}
+	if c.renaming && item.Type == ItemFolder && item.ID == c.renamingFolderID {
 		name = c.renameBuffer + "▏" // Show cursor
 	}
 	if c.renaming && item.Type == ItemRequest && item.Request != nil && item.Request.ID() == c.renamingReqID {
