@@ -142,6 +142,14 @@ func runTUI(collections []*core.Collection, env *core.Environment) error {
 		view.SetCollectionStore(collectionStore)
 	}
 
+	// Initialize environment store for switching environments
+	environmentStore, err := initEnvironmentStore()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Could not initialize environment store: %v\n", err)
+	} else {
+		view.SetEnvironmentStore(environmentStore)
+	}
+
 	// Load collections if provided
 	if len(collections) > 0 {
 		view.SetCollections(collections)
@@ -211,6 +219,28 @@ func initCollectionStore() (*filesystem.CollectionStore, error) {
 	store, err := filesystem.NewCollectionStore(collectionsDir)
 	if err != nil {
 		return nil, fmt.Errorf("could not create collection store: %w", err)
+	}
+
+	return store, nil
+}
+
+// initEnvironmentStore creates and initializes the filesystem environment store.
+func initEnvironmentStore() (*filesystem.EnvironmentStore, error) {
+	// Get user config directory
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("could not determine config directory: %w", err)
+		}
+		configDir = filepath.Join(homeDir, ".config")
+	}
+
+	// Create environments directory
+	environmentsDir := filepath.Join(configDir, "currier", "environments")
+	store, err := filesystem.NewEnvironmentStore(environmentsDir)
+	if err != nil {
+		return nil, fmt.Errorf("could not create environment store: %w", err)
 	}
 
 	return store, nil

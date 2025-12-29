@@ -62,10 +62,27 @@ type MainView struct {
 	historyStore    history.Store             // Store for request history
 	collectionStore *filesystem.CollectionStore // Store for collection persistence
 	lastRequest     *core.RequestDefinition   // Last sent request for history
+
+	// Environment switcher state
+	environmentStore *filesystem.EnvironmentStore  // Store for environment persistence
+	showEnvSwitcher  bool                          // Whether env switcher popup is visible
+	envList          []filesystem.EnvironmentMeta  // Available environments
+	envCursor        int                           // Current selection in env list
 }
 
 // clearNotificationMsg is sent to clear the notification.
 type clearNotificationMsg struct{}
+
+// environmentSwitchedMsg is sent when an environment is successfully switched.
+type environmentSwitchedMsg struct {
+	Environment *core.Environment
+	Engine      *interpolate.Engine
+}
+
+// environmentLoadErrorMsg is sent when environment loading fails.
+type environmentLoadErrorMsg struct {
+	Error error
+}
 
 // NewMainView creates a new main view.
 func NewMainView() *MainView {
@@ -97,6 +114,14 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 				v.showHelp = false
 				return v, nil
 			}
+		}
+		return v, nil
+	}
+
+	// Handle environment switcher overlay
+	if v.showEnvSwitcher {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return v.handleEnvSwitcherKey(keyMsg)
 		}
 		return v, nil
 	}
@@ -488,6 +513,22 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		v.notification = ""
 		return v, nil
 
+	case environmentSwitchedMsg:
+		v.environment = msg.Environment
+		v.interpolator = msg.Engine
+		v.notification = fmt.Sprintf("Switched to '%s'", msg.Environment.Name())
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case environmentLoadErrorMsg:
+		v.notification = "Failed to switch environment"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
 	// WebSocket messages
 	case components.WSConnectCmd:
 		return v, v.connectWebSocket(msg.Definition)
@@ -722,6 +763,9 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		case "s":
 			// Save current request to collection
 			return v.handleSaveToCollection()
+		case "V":
+			// Open environment switcher (capital V for Variables)
+			return v.openEnvSwitcher()
 		}
 	}
 
@@ -851,6 +895,11 @@ func (v *MainView) View() string {
 	// Render help overlay if showing
 	if v.showHelp {
 		return v.renderHelp()
+	}
+
+	// Render environment switcher overlay if showing
+	if v.showEnvSwitcher {
+		return v.renderEnvSwitcher()
 	}
 
 	// Render sidebar (Collections)
@@ -1158,6 +1207,7 @@ func (v *MainView) renderHelp() string {
 		"│  General                                                 │",
 		"│    n                  Create new request                │",
 		"│    s                  Save request to collection        │",
+		"│    V                  Switch environment                │",
 		"│    ?                  Toggle this help                  │",
 		"│    q / Ctrl+C         Quit                              │",
 		"│                                                          │",
@@ -1171,6 +1221,101 @@ func (v *MainView) renderHelp() string {
 		Align(lipgloss.Center, lipgloss.Center)
 
 	return helpStyle.Render(strings.Join(helpContent, "\n"))
+}
+
+// renderEnvSwitcher renders the environment switcher popup.
+func (v *MainView) renderEnvSwitcher() string {
+	// Box dimensions
+	boxWidth := 50
+	if boxWidth > v.width-4 {
+		boxWidth = v.width - 4
+	}
+
+	// Header style
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("62")).
+		Width(boxWidth - 4).
+		Align(lipgloss.Center).
+		Padding(0, 1)
+
+	// Build content lines
+	var lines []string
+	lines = append(lines, headerStyle.Render("Select Environment"))
+	lines = append(lines, "") // Empty line
+
+	for i, env := range v.envList {
+		prefix := "  "
+		if i == v.envCursor {
+			prefix = "→ "
+		}
+
+		// Active indicator
+		active := ""
+		if env.IsActive {
+			active = " (active)"
+		}
+
+		// Variable count
+		varInfo := fmt.Sprintf(" [%d vars]", env.VarCount)
+
+		name := env.Name
+		// Truncate if needed
+		maxNameLen := boxWidth - len(prefix) - len(active) - len(varInfo) - 6
+		if maxNameLen > 3 && len(name) > maxNameLen {
+			name = name[:maxNameLen-3] + "..."
+		}
+
+		line := prefix + name + active + varInfo
+
+		// Style selected item
+		style := lipgloss.NewStyle()
+		if i == v.envCursor {
+			style = style.
+				Background(lipgloss.Color("62")).
+				Foreground(lipgloss.Color("229"))
+		} else if env.IsActive {
+			style = style.
+				Foreground(lipgloss.Color("34")).
+				Bold(true)
+		}
+
+		// Pad line to width
+		padding := boxWidth - 4 - len(line)
+		if padding > 0 {
+			line += strings.Repeat(" ", padding)
+		}
+
+		lines = append(lines, style.Render(line))
+	}
+
+	lines = append(lines, "") // Empty line
+
+	// Footer
+	footerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Width(boxWidth - 4).
+		Align(lipgloss.Center)
+	lines = append(lines, footerStyle.Render("j/k: navigate  Enter: select  Esc: cancel"))
+
+	content := strings.Join(lines, "\n")
+
+	// Box style with border
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(0, 1)
+
+	box := boxStyle.Render(content)
+
+	// Center the box on screen
+	containerStyle := lipgloss.NewStyle().
+		Width(v.width).
+		Height(v.height).
+		Align(lipgloss.Center, lipgloss.Center)
+
+	return containerStyle.Render(box)
 }
 
 // Name returns the view name.
@@ -1266,6 +1411,123 @@ func (v *MainView) SetHistoryStore(store history.Store) {
 // SetCollectionStore sets the collection store for persistence.
 func (v *MainView) SetCollectionStore(store *filesystem.CollectionStore) {
 	v.collectionStore = store
+}
+
+// SetEnvironmentStore sets the environment store for switching environments.
+func (v *MainView) SetEnvironmentStore(store *filesystem.EnvironmentStore) {
+	v.environmentStore = store
+}
+
+// openEnvSwitcher opens the environment switcher popup.
+func (v *MainView) openEnvSwitcher() (tui.Component, tea.Cmd) {
+	if v.environmentStore == nil {
+		v.notification = "No environment store available"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+	}
+
+	// Load environments list
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	envList, err := v.environmentStore.List(ctx)
+	if err != nil {
+		v.notification = "Failed to load environments"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+	}
+
+	if len(envList) == 0 {
+		v.notification = "No environments available"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+	}
+
+	v.envList = envList
+	v.showEnvSwitcher = true
+
+	// Set cursor to current active environment if exists
+	v.envCursor = 0
+	for i, env := range envList {
+		if env.IsActive {
+			v.envCursor = i
+			break
+		}
+	}
+
+	return v, nil
+}
+
+// handleEnvSwitcherKey handles keyboard input when the environment switcher is open.
+func (v *MainView) handleEnvSwitcherKey(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		v.showEnvSwitcher = false
+		return v, nil
+
+	case tea.KeyEnter:
+		return v.selectEnvironment()
+
+	case tea.KeyRunes:
+		switch string(msg.Runes) {
+		case "j":
+			if v.envCursor < len(v.envList)-1 {
+				v.envCursor++
+			}
+		case "k":
+			if v.envCursor > 0 {
+				v.envCursor--
+			}
+		case "q":
+			v.showEnvSwitcher = false
+		}
+	}
+
+	return v, nil
+}
+
+// selectEnvironment selects the currently highlighted environment.
+func (v *MainView) selectEnvironment() (tui.Component, tea.Cmd) {
+	if v.envCursor < 0 || v.envCursor >= len(v.envList) {
+		v.showEnvSwitcher = false
+		return v, nil
+	}
+
+	selectedMeta := v.envList[v.envCursor]
+	v.showEnvSwitcher = false
+
+	// Load the full environment asynchronously
+	store := v.environmentStore
+	return v, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Set this environment as active
+		if err := store.SetActive(ctx, selectedMeta.ID); err != nil {
+			return environmentLoadErrorMsg{Error: err}
+		}
+
+		// Load the full environment
+		env, err := store.Get(ctx, selectedMeta.ID)
+		if err != nil {
+			return environmentLoadErrorMsg{Error: err}
+		}
+
+		// Create new interpolation engine
+		engine := interpolate.NewEngine()
+		engine.SetVariables(env.ExportAll())
+
+		return environmentSwitchedMsg{
+			Environment: env,
+			Engine:      engine,
+		}
+	}
 }
 
 // saveToHistory saves a request/response pair to history.
