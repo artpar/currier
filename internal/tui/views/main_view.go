@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -70,6 +71,16 @@ type MainView struct {
 	showEnvSwitcher  bool                          // Whether env switcher popup is visible
 	envList          []filesystem.EnvironmentMeta  // Available environments
 	envCursor        int                           // Current selection in env list
+
+	// Environment editor state
+	showEnvEditor     bool              // Whether env editor popup is visible
+	editingEnv        *core.Environment // Environment being edited
+	envVarKeys        []string          // Ordered list of variable keys for display
+	envEditorCursor   int               // Current selection in variable list
+	envEditorMode     int               // 0=browse, 1=add key, 2=add value, 3=edit key, 4=edit value
+	envEditorKeyInput string            // Input buffer for key
+	envEditorValInput string            // Input buffer for value
+	envEditorOrigKey  string            // Original key when editing (for replacement)
 
 	// Cookie jar for automatic cookie handling
 	cookieJar *cookies.PersistentJar
@@ -164,6 +175,14 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 	if v.showEnvSwitcher {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			return v.handleEnvSwitcherKey(keyMsg)
+		}
+		return v, nil
+	}
+
+	// Handle environment editor overlay
+	if v.showEnvEditor {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return v.handleEnvEditorKey(keyMsg)
 		}
 		return v, nil
 	}
@@ -1021,6 +1040,11 @@ func (v *MainView) View() string {
 		return v.renderEnvSwitcher()
 	}
 
+	// Render environment editor overlay if showing
+	if v.showEnvEditor {
+		return v.renderEnvEditor()
+	}
+
 	// Render proxy settings dialog if showing
 	if v.showProxyDialog {
 		return v.renderProxyDialog()
@@ -1435,7 +1459,7 @@ func (v *MainView) renderEnvSwitcher() string {
 		Foreground(lipgloss.Color("243")).
 		Width(boxWidth - 4).
 		Align(lipgloss.Center)
-	lines = append(lines, footerStyle.Render("j/k: navigate  Enter: select  Esc: cancel"))
+	lines = append(lines, footerStyle.Render("j/k: navigate  Enter: select  e: edit  Esc: cancel"))
 
 	content := strings.Join(lines, "\n")
 
@@ -1814,6 +1838,9 @@ func (v *MainView) handleEnvSwitcherKey(msg tea.KeyMsg) (tui.Component, tea.Cmd)
 			}
 		case "q":
 			v.showEnvSwitcher = false
+		case "e":
+			// Open environment editor for selected environment
+			return v.openEnvEditor()
 		}
 	}
 
@@ -1856,6 +1883,434 @@ func (v *MainView) selectEnvironment() (tui.Component, tea.Cmd) {
 			Engine:      engine,
 		}
 	}
+}
+
+// openEnvEditor opens the environment editor for the selected environment.
+func (v *MainView) openEnvEditor() (tui.Component, tea.Cmd) {
+	if len(v.envList) == 0 || v.envCursor >= len(v.envList) {
+		return v, nil
+	}
+
+	selectedMeta := v.envList[v.envCursor]
+	v.showEnvSwitcher = false
+
+	// Load the environment to edit
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	env, err := v.environmentStore.Get(ctx, selectedMeta.ID)
+	if err != nil {
+		v.notification = "Failed to load environment"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, nil
+	}
+
+	// Initialize editor state
+	v.editingEnv = env
+	v.envVarKeys = make([]string, 0, len(env.Variables()))
+	for k := range env.Variables() {
+		v.envVarKeys = append(v.envVarKeys, k)
+	}
+	// Sort keys for consistent display
+	sort.Strings(v.envVarKeys)
+
+	v.envEditorCursor = 0
+	v.envEditorMode = 0
+	v.envEditorKeyInput = ""
+	v.envEditorValInput = ""
+	v.showEnvEditor = true
+
+	return v, nil
+}
+
+// handleEnvEditorKey handles keyboard input when the environment editor is open.
+func (v *MainView) handleEnvEditorKey(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	// Handle input modes (adding/editing)
+	if v.envEditorMode != 0 {
+		return v.handleEnvEditorInput(msg)
+	}
+
+	// Browse mode
+	switch msg.Type {
+	case tea.KeyEsc:
+		return v.saveAndCloseEnvEditor()
+
+	case tea.KeyUp, tea.KeyCtrlP:
+		if v.envEditorCursor > 0 {
+			v.envEditorCursor--
+		}
+
+	case tea.KeyDown, tea.KeyCtrlN:
+		if v.envEditorCursor < len(v.envVarKeys)-1 {
+			v.envEditorCursor++
+		}
+
+	case tea.KeyEnter:
+		// Edit selected variable
+		if len(v.envVarKeys) > 0 && v.envEditorCursor < len(v.envVarKeys) {
+			key := v.envVarKeys[v.envEditorCursor]
+			v.envEditorOrigKey = key
+			v.envEditorKeyInput = key
+			v.envEditorValInput = v.editingEnv.GetVariable(key)
+			v.envEditorMode = 3 // Edit key
+		}
+
+	case tea.KeyRunes:
+		switch string(msg.Runes) {
+		case "j":
+			if v.envEditorCursor < len(v.envVarKeys)-1 {
+				v.envEditorCursor++
+			}
+		case "k":
+			if v.envEditorCursor > 0 {
+				v.envEditorCursor--
+			}
+		case "a":
+			// Add new variable
+			v.envEditorKeyInput = ""
+			v.envEditorValInput = ""
+			v.envEditorMode = 1 // Add key
+		case "e":
+			// Edit selected variable
+			if len(v.envVarKeys) > 0 && v.envEditorCursor < len(v.envVarKeys) {
+				key := v.envVarKeys[v.envEditorCursor]
+				v.envEditorOrigKey = key
+				v.envEditorKeyInput = key
+				v.envEditorValInput = v.editingEnv.GetVariable(key)
+				v.envEditorMode = 3 // Edit key
+			}
+		case "d":
+			// Delete selected variable
+			if len(v.envVarKeys) > 0 && v.envEditorCursor < len(v.envVarKeys) {
+				key := v.envVarKeys[v.envEditorCursor]
+				v.editingEnv.DeleteVariable(key)
+				v.envVarKeys = append(v.envVarKeys[:v.envEditorCursor], v.envVarKeys[v.envEditorCursor+1:]...)
+				if v.envEditorCursor >= len(v.envVarKeys) && v.envEditorCursor > 0 {
+					v.envEditorCursor--
+				}
+			}
+		case "g":
+			v.envEditorCursor = 0
+		case "G":
+			if len(v.envVarKeys) > 0 {
+				v.envEditorCursor = len(v.envVarKeys) - 1
+			}
+		}
+	}
+
+	return v, nil
+}
+
+// handleEnvEditorInput handles text input when adding/editing variables.
+func (v *MainView) handleEnvEditorInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Cancel input
+		v.envEditorMode = 0
+		v.envEditorKeyInput = ""
+		v.envEditorValInput = ""
+		return v, nil
+
+	case tea.KeyTab:
+		// Switch between key and value fields
+		switch v.envEditorMode {
+		case 1: // Add key -> Add value
+			if v.envEditorKeyInput != "" {
+				v.envEditorMode = 2
+			}
+		case 2: // Add value -> Add key
+			v.envEditorMode = 1
+		case 3: // Edit key -> Edit value
+			v.envEditorMode = 4
+		case 4: // Edit value -> Edit key
+			v.envEditorMode = 3
+		}
+		return v, nil
+
+	case tea.KeyEnter:
+		// Save the variable
+		key := strings.TrimSpace(v.envEditorKeyInput)
+		if key == "" {
+			v.envEditorMode = 0
+			return v, nil
+		}
+
+		value := v.envEditorValInput
+
+		if v.envEditorMode == 1 || v.envEditorMode == 2 {
+			// Adding new variable
+			v.editingEnv.SetVariable(key, value)
+			// Add to keys list if not exists
+			found := false
+			for _, k := range v.envVarKeys {
+				if k == key {
+					found = true
+					break
+				}
+			}
+			if !found {
+				v.envVarKeys = append(v.envVarKeys, key)
+				sort.Strings(v.envVarKeys)
+				// Update cursor to the new key
+				for i, k := range v.envVarKeys {
+					if k == key {
+						v.envEditorCursor = i
+						break
+					}
+				}
+			}
+		} else {
+			// Editing existing variable
+			if v.envEditorOrigKey != key {
+				// Key changed - delete old, add new
+				v.editingEnv.DeleteVariable(v.envEditorOrigKey)
+				// Update keys list
+				for i, k := range v.envVarKeys {
+					if k == v.envEditorOrigKey {
+						v.envVarKeys[i] = key
+						break
+					}
+				}
+				sort.Strings(v.envVarKeys)
+			}
+			v.editingEnv.SetVariable(key, value)
+		}
+
+		v.envEditorMode = 0
+		v.envEditorKeyInput = ""
+		v.envEditorValInput = ""
+		return v, nil
+
+	case tea.KeyBackspace:
+		// Delete character from current field
+		if v.envEditorMode == 1 || v.envEditorMode == 3 {
+			if len(v.envEditorKeyInput) > 0 {
+				v.envEditorKeyInput = v.envEditorKeyInput[:len(v.envEditorKeyInput)-1]
+			}
+		} else {
+			if len(v.envEditorValInput) > 0 {
+				v.envEditorValInput = v.envEditorValInput[:len(v.envEditorValInput)-1]
+			}
+		}
+		return v, nil
+
+	case tea.KeyRunes:
+		// Add character to current field
+		if v.envEditorMode == 1 || v.envEditorMode == 3 {
+			v.envEditorKeyInput += string(msg.Runes)
+		} else {
+			v.envEditorValInput += string(msg.Runes)
+		}
+		return v, nil
+
+	case tea.KeySpace:
+		// Add space to current field
+		if v.envEditorMode == 1 || v.envEditorMode == 3 {
+			v.envEditorKeyInput += " "
+		} else {
+			v.envEditorValInput += " "
+		}
+		return v, nil
+	}
+
+	return v, nil
+}
+
+// saveAndCloseEnvEditor saves the environment and closes the editor.
+func (v *MainView) saveAndCloseEnvEditor() (tui.Component, tea.Cmd) {
+	v.showEnvEditor = false
+
+	if v.editingEnv == nil || v.environmentStore == nil {
+		return v, nil
+	}
+
+	// Save the environment
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := v.environmentStore.Save(ctx, v.editingEnv); err != nil {
+		v.notification = "Failed to save environment"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+	} else {
+		v.notification = "Environment saved: " + v.editingEnv.Name()
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+
+		// Update the current environment if it's the one being edited
+		if v.environment != nil && v.environment.ID() == v.editingEnv.ID() {
+			v.environment = v.editingEnv
+			if v.interpolator != nil {
+				v.interpolator.SetVariables(v.editingEnv.ExportAll())
+			}
+		}
+	}
+
+	v.editingEnv = nil
+	return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return clearNotificationMsg{}
+	})
+}
+
+// renderEnvEditor renders the environment editor popup.
+func (v *MainView) renderEnvEditor() string {
+	if v.editingEnv == nil {
+		return ""
+	}
+
+	// Box dimensions
+	boxWidth := 60
+	if boxWidth > v.width-4 {
+		boxWidth = v.width - 4
+	}
+	boxHeight := 20
+	if boxHeight > v.height-4 {
+		boxHeight = v.height - 4
+	}
+
+	// Styles
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("62")).
+		Width(boxWidth - 4).
+		Align(lipgloss.Center).
+		Padding(0, 1)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243"))
+
+	inputStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("236")).
+		Padding(0, 1)
+
+	activeInputStyle := inputStyle.
+		Background(lipgloss.Color("62"))
+
+	selectedStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("229"))
+
+	// Build content lines
+	var lines []string
+	lines = append(lines, headerStyle.Render("Edit Environment: "+v.editingEnv.Name()))
+	lines = append(lines, "")
+
+	// Show input fields if in add/edit mode
+	if v.envEditorMode != 0 {
+		keyLabel := "Key:"
+		valLabel := "Value:"
+		if v.envEditorMode == 1 || v.envEditorMode == 2 {
+			lines = append(lines, labelStyle.Render("  Add New Variable"))
+		} else {
+			lines = append(lines, labelStyle.Render("  Edit Variable"))
+		}
+		lines = append(lines, "")
+
+		// Key input
+		keyStyle := inputStyle
+		if v.envEditorMode == 1 || v.envEditorMode == 3 {
+			keyStyle = activeInputStyle
+		}
+		keyDisplay := v.envEditorKeyInput
+		if v.envEditorMode == 1 || v.envEditorMode == 3 {
+			keyDisplay += "█"
+		}
+		keyField := fmt.Sprintf("  %s %s", keyLabel, keyStyle.Render(keyDisplay))
+		lines = append(lines, keyField)
+
+		// Value input
+		valStyle := inputStyle
+		if v.envEditorMode == 2 || v.envEditorMode == 4 {
+			valStyle = activeInputStyle
+		}
+		valDisplay := v.envEditorValInput
+		if v.envEditorMode == 2 || v.envEditorMode == 4 {
+			valDisplay += "█"
+		}
+		valField := fmt.Sprintf("  %s %s", valLabel, valStyle.Render(valDisplay))
+		lines = append(lines, valField)
+
+		lines = append(lines, "")
+		lines = append(lines, labelStyle.Render("  Tab: switch field  Enter: save  Esc: cancel"))
+	} else {
+		// Show variables list
+		if len(v.envVarKeys) == 0 {
+			lines = append(lines, labelStyle.Render("  No variables defined"))
+			lines = append(lines, "")
+		} else {
+			// Calculate visible range
+			maxVisible := boxHeight - 8
+			startIdx := 0
+			if v.envEditorCursor >= maxVisible {
+				startIdx = v.envEditorCursor - maxVisible + 1
+			}
+			endIdx := startIdx + maxVisible
+			if endIdx > len(v.envVarKeys) {
+				endIdx = len(v.envVarKeys)
+			}
+
+			for i := startIdx; i < endIdx; i++ {
+				key := v.envVarKeys[i]
+				value := v.editingEnv.GetVariable(key)
+
+				// Truncate value if too long
+				maxValLen := boxWidth - len(key) - 12
+				if maxValLen > 3 && len(value) > maxValLen {
+					value = value[:maxValLen-3] + "..."
+				}
+
+				prefix := "  "
+				if i == v.envEditorCursor {
+					prefix = "→ "
+				}
+
+				line := fmt.Sprintf("%s%s = %s", prefix, key, value)
+
+				// Style selected line
+				style := lipgloss.NewStyle()
+				if i == v.envEditorCursor {
+					style = selectedStyle
+					// Pad to width
+					padding := boxWidth - 4 - len(line)
+					if padding > 0 {
+						line += strings.Repeat(" ", padding)
+					}
+				}
+
+				lines = append(lines, style.Render(line))
+			}
+		}
+
+		lines = append(lines, "")
+
+		// Footer with help
+		footerStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Width(boxWidth - 4).
+			Align(lipgloss.Center)
+		lines = append(lines, footerStyle.Render("a: add  e/Enter: edit  d: delete  Esc: save & close"))
+	}
+
+	// Create bordered box
+	content := strings.Join(lines, "\n")
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Width(boxWidth)
+
+	box := boxStyle.Render(content)
+
+	// Center the box
+	centered := lipgloss.Place(
+		v.width,
+		v.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		box,
+	)
+
+	return centered
 }
 
 // handleProxyDialogKey handles keyboard input for the proxy settings dialog.
