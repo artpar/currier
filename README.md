@@ -6,7 +6,9 @@ A vim-modal TUI API client for developers and AI agents.
 
 - **Vim-style keybindings** - Navigate and edit with familiar modal controls
 - **Collections & Environments** - Organize requests with Postman-like collections
+- **Environment Switcher** - Press `V` to switch between environments on the fly
 - **Variable interpolation** - Use `{{variable}}` syntax in URLs, headers, and bodies
+- **Automatic Cookie Management** - Captures Set-Cookie headers and persists cookies to SQLite
 - **Pre/Post-request scripts** - JavaScript-based scripting with assertions
 - **Request history** - SQLite-backed history with search and replay
 - **Import/Export** - Support for Postman, cURL, HAR, and OpenAPI formats
@@ -38,6 +40,14 @@ A vim-modal TUI API client for developers and AI agents.
 ### Search
 ![Search Demo](demos/demo-search.gif?v=0.1.15)
 */ to search • Filter history/collections • Enter to select*
+
+### Environment Switcher
+![Environment Demo](demos/demo-environment.gif?v=0.1.16)
+*V to open switcher • j/k to navigate • Enter to select • Esc to cancel*
+
+### Cookie Management
+![Cookie Demo](demos/demo-cookies.gif?v=0.1.16)
+*Automatic cookie capture • Persists across sessions • Ctrl+K to clear*
 
 ## Installation
 
@@ -187,6 +197,8 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `n` | Create new request |
 | `s` | Save request to collection |
 | `w` | Toggle WebSocket mode |
+| `V` | Switch environment |
+| `Ctrl+K` | Clear all cookies |
 | `?` | Show help |
 | `q` | Quit |
 
@@ -236,6 +248,7 @@ currier/
 ├── internal/
 │   ├── app/           # Application orchestration
 │   ├── cli/           # CLI commands
+│   ├── cookies/       # Cookie jar with SQLite persistence
 │   ├── core/          # Domain models (Request, Response, Collection)
 │   ├── exporter/      # Export to cURL, Postman formats
 │   ├── history/       # Request history storage
@@ -301,9 +314,10 @@ Export requests to:
 
 Currier stores data in:
 
-- `~/.currier/collections/` - Collection files
-- `~/.currier/environments/` - Environment files
-- `~/.currier/history.db` - Request history
+- `~/.config/currier/collections/` - Collection files
+- `~/.config/currier/environments/` - Environment files
+- `~/.config/currier/history.db` - Request history
+- `~/.config/currier/cookies.db` - Persistent cookie storage
 
 ## License
 
