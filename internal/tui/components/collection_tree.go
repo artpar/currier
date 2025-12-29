@@ -95,6 +95,12 @@ type MoveRequestMsg struct {
 	Request          *core.RequestDefinition
 }
 
+// DuplicateRequestMsg is sent when a request is duplicated.
+type DuplicateRequestMsg struct {
+	Collection *core.Collection
+	Request    *core.RequestDefinition
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -253,6 +259,10 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Move request to another collection
 			c.gPressed = false
 			return c.startMove()
+		case "y":
+			// Duplicate/copy request
+			c.gPressed = false
+			return c.handleDuplicateRequest()
 		case "G":
 			displayItems := c.getDisplayItems()
 			if len(displayItems) > 0 {
@@ -544,6 +554,58 @@ func (c *CollectionTree) handleDeleteRequest() (tui.Component, tea.Cmd) {
 		return DeleteRequestMsg{
 			Collection: modifiedCollection,
 			RequestID:  requestID,
+		}
+	}
+}
+
+func (c *CollectionTree) handleDuplicateRequest() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only duplicate requests
+	if item.Type != ItemRequest {
+		return c, nil
+	}
+
+	// Find the collection containing this request
+	var targetColl *core.Collection
+	for _, coll := range c.collections {
+		if _, found := coll.FindRequest(item.Request.ID()); found {
+			targetColl = coll
+			break
+		}
+	}
+
+	if targetColl == nil {
+		return c, nil
+	}
+
+	// Clone the request with a new name
+	cloned := item.Request.Clone()
+	cloned.SetName(item.Request.Name() + " (Copy)")
+
+	// Add to the same collection
+	targetColl.AddRequest(cloned)
+	c.rebuildItems()
+
+	// Move cursor to the new request
+	for i, treeItem := range c.items {
+		if treeItem.Type == ItemRequest && treeItem.Request != nil && treeItem.Request.ID() == cloned.ID() {
+			c.cursor = i
+			c.offset = AdjustOffset(c.cursor, c.offset, c.contentHeight())
+			break
+		}
+	}
+
+	// Emit message for persistence
+	return c, func() tea.Msg {
+		return DuplicateRequestMsg{
+			Collection: targetColl,
+			Request:    cloned,
 		}
 	}
 }

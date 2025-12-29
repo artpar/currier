@@ -495,6 +495,10 @@ func (r *RequestDefinition) SetDescription(desc string) {
 	r.description = desc
 }
 
+func (r *RequestDefinition) SetName(name string) {
+	r.name = name
+}
+
 func (r *RequestDefinition) SetHeader(key, value string) {
 	r.headers[key] = value
 }

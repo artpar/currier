@@ -1425,3 +1425,100 @@ func TestCollectionTree_MoveRequest(t *testing.T) {
 		assert.False(t, foundInSource)
 	})
 }
+
+func TestCollectionTree_DuplicateRequest(t *testing.T) {
+	t.Run("y_duplicates_request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req := core.NewRequestDefinition("Original Request", "GET", "http://example.com")
+		coll.AddRequest(req)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+
+		// Should have 1 request before duplicate
+		assert.Equal(t, 1, len(coll.Requests()))
+
+		tree, cmd := sendKeyWithCmd(tree, 'y')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		dupMsg, ok := msg.(DuplicateRequestMsg)
+		assert.True(t, ok, "should emit DuplicateRequestMsg")
+		assert.Equal(t, coll.ID(), dupMsg.Collection.ID())
+		assert.Equal(t, "Original Request (Copy)", dupMsg.Request.Name())
+
+		// Should have 2 requests after duplicate
+		assert.Equal(t, 2, len(coll.Requests()))
+	})
+
+	t.Run("y_does_nothing_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Cursor is on collection (not expanded)
+		tree, cmd := sendKeyWithCmd(tree, 'y')
+
+		assert.Nil(t, cmd)
+		assert.Equal(t, 1, len(coll.Requests()))
+	})
+
+	t.Run("y_does_nothing_when_unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		// Not focused
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree, cmd := sendKeyWithCmd(tree, 'y')
+
+		assert.Nil(t, cmd)
+		assert.Equal(t, 1, len(coll.Requests()))
+	})
+
+	t.Run("duplicate_preserves_original_properties", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req := core.NewRequestDefinition("Original", "POST", "http://example.com/api")
+		req.SetHeader("Content-Type", "application/json")
+		req.SetBody(`{"key": "value"}`)
+		coll.AddRequest(req)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+
+		_, cmd := sendKeyWithCmd(tree, 'y')
+
+		msg := cmd()
+		dupMsg := msg.(DuplicateRequestMsg)
+
+		// Check duplicated request has same properties
+		assert.Equal(t, "POST", dupMsg.Request.Method())
+		assert.Equal(t, "http://example.com/api", dupMsg.Request.URL())
+		assert.Equal(t, "application/json", dupMsg.Request.GetHeader("Content-Type"))
+		assert.Equal(t, `{"key": "value"}`, dupMsg.Request.Body())
+
+		// But different ID and name
+		assert.NotEqual(t, req.ID(), dupMsg.Request.ID())
+		assert.Equal(t, "Original (Copy)", dupMsg.Request.Name())
+	})
+}
