@@ -8,23 +8,23 @@ Set FontSize 14
 Set Width 1200
 Set Height 600
 Set Theme "Catppuccin Mocha"
-Set PlaybackSpeed 1
+Set TypingSpeed 50ms
 
 Type "currier"
 Enter
-Sleep 1s
+Sleep 2s
 
 # Switch to Collections panel
 Type "C"
-Sleep 400ms
+Sleep 500ms
 
 # Expand the first collection
 Type "l"
-Sleep 300ms
+Sleep 500ms
 
 # Run collection with Ctrl+R
 Ctrl+R
-Sleep 3s
+Sleep 4s
 
 # Close the runner modal with Escape
 Escape
@@ -32,4 +32,4 @@ Sleep 500ms
 
 # Quit
 Type "q"
-Sleep 300ms
+Sleep 500ms

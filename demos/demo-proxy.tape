@@ -8,32 +8,32 @@ Set FontSize 14
 Set Width 1200
 Set Height 600
 Set Theme "Catppuccin Mocha"
-Set PlaybackSpeed 1
+Set TypingSpeed 50ms
 
 Type "currier"
 Enter
-Sleep 1s
+Sleep 2s
 
 # Open proxy settings with P
 Type "P"
-Sleep 600ms
+Sleep 1s
 
 # Type a proxy URL
 Type "http://localhost:8080"
-Sleep 500ms
+Sleep 800ms
 
 # Save with Enter
 Enter
-Sleep 500ms
+Sleep 1s
 
 # Open again to show saved value
 Type "P"
-Sleep 600ms
+Sleep 1s
 
 # Cancel with Escape
 Escape
-Sleep 300ms
+Sleep 500ms
 
 # Quit
 Type "q"
-Sleep 300ms
+Sleep 500ms
