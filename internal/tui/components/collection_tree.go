@@ -101,6 +101,12 @@ type DuplicateRequestMsg struct {
 	Request    *core.RequestDefinition
 }
 
+// RenameRequestMsg is sent when a request is renamed.
+type RenameRequestMsg struct {
+	Collection *core.Collection
+	Request    *core.RequestDefinition
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -118,9 +124,10 @@ type CollectionTree struct {
 	gPressed      bool // For gg sequence
 
 	// Rename mode
-	renaming       bool   // True when renaming a collection
+	renaming       bool   // True when renaming a collection or request
 	renameBuffer   string // Buffer for the new name
 	renamingCollID string // ID of collection being renamed
+	renamingReqID  string // ID of request being renamed (empty if renaming collection)
 
 	// Move mode
 	moving          bool                    // True when moving a request
@@ -255,6 +262,10 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Rename selected collection
 			c.gPressed = false
 			return c.startRename()
+		case "R":
+			// Rename selected request
+			c.gPressed = false
+			return c.startRenameRequest()
 		case "m":
 			// Move request to another collection
 			c.gPressed = false
@@ -691,7 +702,43 @@ func (c *CollectionTree) startRename() (tui.Component, tea.Cmd) {
 	// Start rename mode with current name
 	c.renaming = true
 	c.renamingCollID = item.ID
+	c.renamingReqID = ""
 	c.renameBuffer = item.Name
+
+	return c, nil
+}
+
+func (c *CollectionTree) startRenameRequest() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only rename requests
+	if item.Type != ItemRequest {
+		return c, nil
+	}
+
+	// Find the collection containing this request
+	var collID string
+	for _, coll := range c.collections {
+		if _, found := coll.FindRequest(item.Request.ID()); found {
+			collID = coll.ID()
+			break
+		}
+	}
+
+	if collID == "" {
+		return c, nil
+	}
+
+	// Start rename mode with current name
+	c.renaming = true
+	c.renamingCollID = collID
+	c.renamingReqID = item.Request.ID()
+	c.renameBuffer = item.Request.Name()
 
 	return c, nil
 }
@@ -703,6 +750,7 @@ func (c *CollectionTree) handleRenameInput(msg tea.KeyMsg) (tui.Component, tea.C
 		c.renaming = false
 		c.renameBuffer = ""
 		c.renamingCollID = ""
+		c.renamingReqID = ""
 		return c, nil
 
 	case tea.KeyEnter:
@@ -712,7 +760,37 @@ func (c *CollectionTree) handleRenameInput(msg tea.KeyMsg) (tui.Component, tea.C
 			return c, nil
 		}
 
-		// Find and rename the collection
+		// Check if we're renaming a request or collection
+		if c.renamingReqID != "" {
+			// Renaming a request
+			var renamedColl *core.Collection
+			var renamedReq *core.RequestDefinition
+			for _, coll := range c.collections {
+				if coll.ID() == c.renamingCollID {
+					if req, found := coll.FindRequest(c.renamingReqID); found {
+						req.SetName(c.renameBuffer)
+						renamedColl = coll
+						renamedReq = req
+					}
+					break
+				}
+			}
+
+			c.renaming = false
+			c.renameBuffer = ""
+			c.renamingCollID = ""
+			c.renamingReqID = ""
+			c.rebuildItems()
+
+			if renamedColl != nil && renamedReq != nil {
+				return c, func() tea.Msg {
+					return RenameRequestMsg{Collection: renamedColl, Request: renamedReq}
+				}
+			}
+			return c, nil
+		}
+
+		// Renaming a collection
 		var renamedColl *core.Collection
 		for _, coll := range c.collections {
 			if coll.ID() == c.renamingCollID {
@@ -725,6 +803,7 @@ func (c *CollectionTree) handleRenameInput(msg tea.KeyMsg) (tui.Component, tea.C
 		c.renaming = false
 		c.renameBuffer = ""
 		c.renamingCollID = ""
+		c.renamingReqID = ""
 		c.rebuildItems()
 
 		if renamedColl != nil {
@@ -1436,9 +1515,12 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 		icon = c.methodBadge(item.Method) + " "
 	}
 
-	// Name - show rename buffer if renaming this collection
+	// Name - show rename buffer if renaming this collection or request
 	name := item.Name
-	if c.renaming && item.Type == ItemCollection && item.ID == c.renamingCollID {
+	if c.renaming && item.Type == ItemCollection && item.ID == c.renamingCollID && c.renamingReqID == "" {
+		name = c.renameBuffer + "▏" // Show cursor
+	}
+	if c.renaming && item.Type == ItemRequest && item.Request != nil && item.Request.ID() == c.renamingReqID {
 		name = c.renameBuffer + "▏" // Show cursor
 	}
 	availableWidth := width - len(selPrefix) - len(indent) - len(indicator) - len(icon) - 2

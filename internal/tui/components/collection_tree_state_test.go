@@ -1522,3 +1522,156 @@ func TestCollectionTree_DuplicateRequest(t *testing.T) {
 		assert.Equal(t, "Original (Copy)", dupMsg.Request.Name())
 	})
 }
+
+func TestCollectionTree_RenameRequest(t *testing.T) {
+	t.Run("R_enters_rename_mode_on_request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Original Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+
+		assert.False(t, tree.IsRenaming())
+
+		tree = sendKey(tree, 'R')
+
+		assert.True(t, tree.IsRenaming())
+	})
+
+	t.Run("R_does_nothing_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Cursor is on collection (not expanded)
+		tree = sendKey(tree, 'R')
+
+		assert.False(t, tree.IsRenaming())
+	})
+
+	t.Run("typing_updates_buffer", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req := core.NewRequestDefinition("Original", "GET", "http://example.com")
+		coll.AddRequest(req)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+		tree = sendKey(tree, 'R') // Enter rename mode
+
+		// Type some characters
+		tree = sendKey(tree, 'N')
+		tree = sendKey(tree, 'e')
+		tree = sendKey(tree, 'w')
+
+		// Should still be in rename mode
+		assert.True(t, tree.IsRenaming())
+		// Original name should not be changed yet
+		assert.Equal(t, "Original", req.Name())
+	})
+
+	t.Run("enter_confirms_rename", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req := core.NewRequestDefinition("Old Name", "GET", "http://example.com")
+		coll.AddRequest(req)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+		tree = sendKey(tree, 'R') // Enter rename mode
+
+		// Clear buffer and type new name
+		for i := 0; i < 10; i++ {
+			tree = sendSpecialKey(tree, tea.KeyBackspace)
+		}
+		tree = sendKey(tree, 'N')
+		tree = sendKey(tree, 'e')
+		tree = sendKey(tree, 'w')
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		assert.False(t, tree.IsRenaming())
+		assert.NotNil(t, cmd)
+
+		msg := cmd()
+		renameMsg, ok := msg.(RenameRequestMsg)
+		assert.True(t, ok, "should emit RenameRequestMsg")
+		assert.Equal(t, "New", renameMsg.Request.Name())
+		assert.Equal(t, coll.ID(), renameMsg.Collection.ID())
+	})
+
+	t.Run("escape_cancels_rename", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req := core.NewRequestDefinition("Original", "GET", "http://example.com")
+		coll.AddRequest(req)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+		tree = sendKey(tree, 'R') // Enter rename mode
+
+		// Type something
+		tree = sendKey(tree, 'X')
+		tree = sendKey(tree, 'Y')
+		tree = sendKey(tree, 'Z')
+
+		tree = sendSpecialKey(tree, tea.KeyEsc)
+
+		assert.False(t, tree.IsRenaming())
+		// Name should be unchanged
+		assert.Equal(t, "Original", req.Name())
+	})
+
+	t.Run("empty_name_not_allowed", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		req := core.NewRequestDefinition("Original", "GET", "http://example.com")
+		coll.AddRequest(req)
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+		tree = sendKey(tree, 'R') // Enter rename mode
+
+		// Clear buffer completely
+		for i := 0; i < 15; i++ {
+			tree = sendSpecialKey(tree, tea.KeyBackspace)
+		}
+
+		tree, cmd := sendSpecialKeyWithCmd(tree, tea.KeyEnter)
+
+		// Should still be in rename mode
+		assert.True(t, tree.IsRenaming())
+		assert.Nil(t, cmd)
+	})
+}
