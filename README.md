@@ -197,6 +197,7 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `h/l` | Collapse/expand |
 | `Enter` | Select request |
 | `N` | Create new collection |
+| `F` | Create new folder |
 | `r` | Rename collection |
 | `D` | Delete collection |
 | `d` | Delete request |

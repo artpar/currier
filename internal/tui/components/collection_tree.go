@@ -107,6 +107,12 @@ type RenameRequestMsg struct {
 	Request    *core.RequestDefinition
 }
 
+// CreateFolderMsg is sent when a folder is created in a collection.
+type CreateFolderMsg struct {
+	Collection *core.Collection
+	Folder     *core.Folder
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -254,6 +260,10 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Create new collection
 			c.gPressed = false
 			return c.handleCreateCollection()
+		case "F":
+			// Create new folder in current collection
+			c.gPressed = false
+			return c.handleCreateFolder()
 		case "D":
 			// Delete selected collection
 			c.gPressed = false
@@ -641,6 +651,68 @@ func (c *CollectionTree) handleCreateCollection() (tui.Component, tea.Cmd) {
 	return c, func() tea.Msg {
 		return CreateCollectionMsg{
 			Collection: newCollection,
+		}
+	}
+}
+
+func (c *CollectionTree) handleCreateFolder() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Find the collection to add folder to
+	var targetColl *core.Collection
+
+	switch item.Type {
+	case ItemCollection:
+		// If on a collection, add folder to it
+		targetColl = item.Collection
+	case ItemFolder:
+		// If on a folder, find its parent collection
+		for _, coll := range c.collections {
+			if coll.FindFolder(item.ID) != nil {
+				targetColl = coll
+				break
+			}
+		}
+	case ItemRequest:
+		// If on a request, find its parent collection
+		for _, coll := range c.collections {
+			if _, found := coll.FindRequest(item.Request.ID()); found {
+				targetColl = coll
+				break
+			}
+		}
+	}
+
+	if targetColl == nil {
+		return c, nil
+	}
+
+	// Create new folder
+	newFolder := targetColl.AddFolder("New Folder")
+
+	// Expand the collection so the new folder is visible
+	c.expanded[targetColl.ID()] = true
+	c.rebuildItems()
+
+	// Move cursor to the new folder
+	for i, treeItem := range c.items {
+		if treeItem.Type == ItemFolder && treeItem.ID == newFolder.ID() {
+			c.cursor = i
+			c.offset = AdjustOffset(c.cursor, c.offset, c.contentHeight())
+			break
+		}
+	}
+
+	// Emit message for persistence
+	return c, func() tea.Msg {
+		return CreateFolderMsg{
+			Collection: targetColl,
+			Folder:     newFolder,
 		}
 	}
 }

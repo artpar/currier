@@ -173,6 +173,19 @@ func (c *Collection) RemoveFolder(id string) {
 	}
 }
 
+// FindFolder searches for a folder by ID recursively.
+func (c *Collection) FindFolder(id string) *Folder {
+	for _, f := range c.folders {
+		if f.ID() == id {
+			return f
+		}
+		if found := f.FindFolder(id); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
 // Requests returns all root-level requests.
 func (c *Collection) Requests() []*RequestDefinition {
 	return c.requests
@@ -419,6 +432,19 @@ func (f *Folder) RemoveRequestRecursive(id string) bool {
 		}
 	}
 	return false
+}
+
+// FindFolder searches for a folder by ID recursively.
+func (f *Folder) FindFolder(id string) *Folder {
+	for _, sf := range f.folders {
+		if sf.ID() == id {
+			return sf
+		}
+		if found := sf.FindFolder(id); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 func (f *Folder) Clone() *Folder {

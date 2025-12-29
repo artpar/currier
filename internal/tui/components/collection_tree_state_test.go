@@ -1675,3 +1675,107 @@ func TestCollectionTree_RenameRequest(t *testing.T) {
 		assert.Nil(t, cmd)
 	})
 }
+
+func TestCollectionTree_CreateFolder(t *testing.T) {
+	t.Run("F_creates_folder_when_on_collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Cursor is on collection
+		assert.Equal(t, 0, len(coll.Folders()))
+
+		tree, cmd := sendKeyWithCmd(tree, 'F')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		folderMsg, ok := msg.(CreateFolderMsg)
+		assert.True(t, ok, "should emit CreateFolderMsg")
+		assert.Equal(t, coll.ID(), folderMsg.Collection.ID())
+		assert.Equal(t, "New Folder", folderMsg.Folder.Name())
+		assert.Equal(t, 1, len(coll.Folders()))
+	})
+
+	t.Run("F_creates_folder_when_on_request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddRequest(core.NewRequestDefinition("Request", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand
+		tree = sendKey(tree, 'j') // Move to request
+
+		assert.Equal(t, 0, len(coll.Folders()))
+
+		tree, cmd := sendKeyWithCmd(tree, 'F')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		folderMsg, ok := msg.(CreateFolderMsg)
+		assert.True(t, ok, "should emit CreateFolderMsg")
+		assert.Equal(t, coll.ID(), folderMsg.Collection.ID())
+		assert.Equal(t, 1, len(coll.Folders()))
+	})
+
+	t.Run("F_creates_folder_when_on_folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		coll.AddFolder("Existing Folder")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree = sendKey(tree, 'l') // Expand to see folder
+		tree = sendKey(tree, 'j') // Move to folder
+
+		assert.Equal(t, 1, len(coll.Folders()))
+
+		tree, cmd := sendKeyWithCmd(tree, 'F')
+
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		folderMsg, ok := msg.(CreateFolderMsg)
+		assert.True(t, ok, "should emit CreateFolderMsg")
+		assert.Equal(t, coll.ID(), folderMsg.Collection.ID())
+		// Now should have 2 folders
+		assert.Equal(t, 2, len(coll.Folders()))
+	})
+
+	t.Run("F_does_nothing_when_unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		// Not focused
+		tree = sendKey(tree, 'C')
+
+		coll := core.NewCollection("Test Collection")
+		tree.SetCollections([]*core.Collection{coll})
+
+		tree, cmd := sendKeyWithCmd(tree, 'F')
+
+		assert.Nil(t, cmd)
+		assert.Equal(t, 0, len(coll.Folders()))
+	})
+
+	t.Run("F_does_nothing_with_no_collections", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.Focus()
+		tree = sendKey(tree, 'C')
+
+		// No collections set
+
+		tree, cmd := sendKeyWithCmd(tree, 'F')
+
+		assert.Nil(t, cmd)
+	})
+}
