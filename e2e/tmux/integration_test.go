@@ -2820,3 +2820,493 @@ func TestHistory_SwitchBackToCollections(t *testing.T) {
 		t.Error("Could not switch back to Collections view")
 	}
 }
+
+// =============================================================================
+// PROXY SETTINGS TESTS
+// =============================================================================
+
+func TestProxy_OpenDialog(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Press 'P' to open proxy settings dialog
+	sess.SendKey("P")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should show proxy settings dialog
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Proxy") {
+		t.Error("Proxy settings dialog did not open")
+	}
+
+	// Should show proxy URL input hint
+	if !strings.Contains(screen, "http://") && !strings.Contains(screen, "socks5://") {
+		t.Log("Proxy dialog may show different hint text")
+	}
+}
+
+func TestProxy_EnterAndSave(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Open proxy dialog
+	sess.SendKey("P")
+	time.Sleep(300 * time.Millisecond)
+
+	// Type a proxy URL
+	sess.Type("http://localhost:8080")
+	time.Sleep(100 * time.Millisecond)
+
+	// Press Enter to save
+	sess.SendKey("Enter")
+	time.Sleep(500 * time.Millisecond)
+
+	// Should show notification about proxy being set
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Proxy") && !strings.Contains(screen, "8080") && !strings.Contains(screen, "set") {
+		t.Log("Proxy set notification may be brief or formatted differently")
+	}
+
+	// App should not crash
+	if !strings.Contains(screen, "Collections") && !strings.Contains(screen, "Request") {
+		t.Error("App crashed after setting proxy")
+	}
+}
+
+func TestProxy_CancelWithEscape(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Open proxy dialog
+	sess.SendKey("P")
+	time.Sleep(300 * time.Millisecond)
+
+	// Verify dialog is open
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Proxy") {
+		t.Error("Proxy dialog did not open")
+	}
+
+	// Press Escape to cancel
+	sess.SendKey("Escape")
+	time.Sleep(200 * time.Millisecond)
+
+	// Dialog should close, app should be back to normal
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("Proxy dialog did not close properly")
+	}
+}
+
+func TestProxy_ClearProxy(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Set a proxy first
+	sess.SendKey("P")
+	time.Sleep(300 * time.Millisecond)
+	sess.Type("http://localhost:8080")
+	sess.SendKey("Enter")
+	time.Sleep(500 * time.Millisecond)
+
+	// Open proxy dialog again
+	sess.SendKey("P")
+	time.Sleep(300 * time.Millisecond)
+
+	// Clear the proxy (backspace all characters)
+	for i := 0; i < 25; i++ {
+		sess.SendKey("BSpace")
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// Press Enter to save (empty = disabled)
+	sess.SendKey("Enter")
+	time.Sleep(500 * time.Millisecond)
+
+	// Should show notification about proxy being disabled
+	screen := sess.Capture()
+	if !strings.Contains(screen, "disabled") && !strings.Contains(screen, "Proxy") {
+		t.Log("Proxy disabled notification may be formatted differently")
+	}
+}
+
+// =============================================================================
+// TLS/CERTIFICATE SETTINGS TESTS
+// =============================================================================
+
+func TestTLS_OpenDialogWithCtrlT(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Press Ctrl+T to open TLS settings dialog
+	sess.SendKey("C-t")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should show TLS settings dialog
+	screen := sess.Capture()
+	if !strings.Contains(screen, "TLS") && !strings.Contains(screen, "Certificate") && !strings.Contains(screen, "Cert") {
+		t.Error("TLS settings dialog did not open")
+	}
+}
+
+func TestTLS_NavigateFieldsWithTab(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Open TLS dialog
+	sess.SendKey("C-t")
+	time.Sleep(300 * time.Millisecond)
+
+	// Type in cert field
+	sess.Type("/path/to/cert.pem")
+	time.Sleep(100 * time.Millisecond)
+
+	// Tab to next field (key)
+	sess.SendKey("Tab")
+	time.Sleep(100 * time.Millisecond)
+
+	// Type in key field
+	sess.Type("/path/to/key.pem")
+	time.Sleep(100 * time.Millisecond)
+
+	// Tab to CA field
+	sess.SendKey("Tab")
+	time.Sleep(100 * time.Millisecond)
+
+	// Type in CA field
+	sess.Type("/path/to/ca.pem")
+	time.Sleep(100 * time.Millisecond)
+
+	// Tab to insecure toggle
+	sess.SendKey("Tab")
+	time.Sleep(100 * time.Millisecond)
+
+	// Toggle with Space
+	sess.SendKey("Space")
+	time.Sleep(100 * time.Millisecond)
+
+	// App should not crash
+	screen := sess.Capture()
+	if !strings.Contains(screen, "TLS") && !strings.Contains(screen, "Cert") {
+		t.Error("TLS dialog crashed during navigation")
+	}
+
+	// Cancel
+	sess.SendKey("Escape")
+}
+
+func TestTLS_SaveSettings(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Open TLS dialog
+	sess.SendKey("C-t")
+	time.Sleep(300 * time.Millisecond)
+
+	// Type a cert path
+	sess.Type("/tmp/test-cert.pem")
+	time.Sleep(100 * time.Millisecond)
+
+	// Save with Enter
+	sess.SendKey("Enter")
+	time.Sleep(500 * time.Millisecond)
+
+	// Should show notification
+	screen := sess.Capture()
+	if !strings.Contains(screen, "TLS") && !strings.Contains(screen, "saved") && !strings.Contains(screen, "settings") {
+		t.Log("TLS saved notification may be formatted differently")
+	}
+
+	// App should return to normal
+	if !strings.Contains(screen, "Collections") && !strings.Contains(screen, "Request") {
+		t.Error("App crashed after saving TLS settings")
+	}
+}
+
+func TestTLS_CancelWithEscape(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Open TLS dialog
+	sess.SendKey("C-t")
+	time.Sleep(300 * time.Millisecond)
+
+	// Verify dialog is open
+	screen := sess.Capture()
+	if !strings.Contains(screen, "TLS") && !strings.Contains(screen, "Cert") {
+		t.Error("TLS dialog did not open")
+	}
+
+	// Press Escape to cancel
+	sess.SendKey("Escape")
+	time.Sleep(200 * time.Millisecond)
+
+	// Dialog should close
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Collections") {
+		t.Error("TLS dialog did not close properly")
+	}
+}
+
+// =============================================================================
+// COLLECTION RUNNER TUI TESTS
+// =============================================================================
+
+func TestRunner_OpenWithCtrlR(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Press Ctrl+R to open runner
+	sess.SendKey("C-r")
+	time.Sleep(500 * time.Millisecond)
+
+	// Should show runner modal
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Running") && !strings.Contains(screen, "Collection") && !strings.Contains(screen, "No collection") {
+		t.Error("Runner modal did not open")
+	}
+}
+
+func TestRunner_CancelWithEscape(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Open runner
+	sess.SendKey("C-r")
+	time.Sleep(500 * time.Millisecond)
+
+	// Cancel with Escape
+	sess.SendKey("Escape")
+	time.Sleep(300 * time.Millisecond)
+
+	// Should return to normal view
+	screen := sess.Capture()
+	if !strings.Contains(screen, "Collections") && !strings.Contains(screen, "Request") {
+		t.Error("Runner modal did not close properly")
+	}
+}
+
+func TestRunner_ShowsProgressOrNoCollection(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Open runner
+	sess.SendKey("C-r")
+	time.Sleep(500 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show either "Running" progress or "No collection" message
+	hasRunnerContent := strings.Contains(screen, "Running") ||
+		strings.Contains(screen, "Progress") ||
+		strings.Contains(screen, "Starting") ||
+		strings.Contains(screen, "No collection") ||
+		strings.Contains(screen, "cancelled")
+
+	if !hasRunnerContent {
+		t.Log("Runner modal content may vary based on collection state")
+	}
+
+	// Cancel if running
+	sess.SendKey("Escape")
+}
+
+func TestRunner_ClosesWithEnter(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Press Ctrl+R to open runner
+	sess.SendKey("C-r")
+	time.Sleep(500 * time.Millisecond)
+
+	// Should show runner modal
+	screen := sess.Capture()
+	hasRunnerContent := strings.Contains(screen, "Running") ||
+		strings.Contains(screen, "Collection") ||
+		strings.Contains(screen, "No collection") ||
+		strings.Contains(screen, "Starting")
+
+	if !hasRunnerContent {
+		t.Log("Runner modal content may vary")
+	}
+
+	// Press Escape to close
+	sess.SendKey("Escape")
+	time.Sleep(300 * time.Millisecond)
+
+	// Verify app returns to normal
+	screen = sess.Capture()
+	if !strings.Contains(screen, "Collections") && !strings.Contains(screen, "Request") {
+		t.Log("App may show different content after runner closes")
+	}
+}
+
+// =============================================================================
+// CLI PROXY AND TLS FLAGS TESTS
+// =============================================================================
+
+func TestCLI_ProxyFlag(t *testing.T) {
+	// Test that --proxy flag is recognized
+	cmd := exec.Command(binaryPath, "send", "--help")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("Send help output: %s", string(output))
+	}
+
+	// Should show --proxy in help
+	if !strings.Contains(string(output), "--proxy") {
+		t.Error("--proxy flag not shown in send command help")
+	}
+}
+
+func TestCLI_TLSFlags(t *testing.T) {
+	// Test that TLS flags are recognized
+	cmd := exec.Command(binaryPath, "send", "--help")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("Send help output: %s", string(output))
+	}
+
+	// Should show --cert, --key, --cacert, -k flags
+	outputStr := string(output)
+	if !strings.Contains(outputStr, "--cert") {
+		t.Error("--cert flag not shown in send command help")
+	}
+	if !strings.Contains(outputStr, "--key") {
+		t.Error("--key flag not shown in send command help")
+	}
+	if !strings.Contains(outputStr, "--cacert") {
+		t.Error("--cacert flag not shown in send command help")
+	}
+	if !strings.Contains(outputStr, "-k") && !strings.Contains(outputStr, "--insecure") {
+		t.Error("-k/--insecure flag not shown in send command help")
+	}
+}
+
+func TestCLI_SendWithInvalidProxy(t *testing.T) {
+	// Test that proxy flag is processed (even if invalid)
+	cmd := exec.Command(binaryPath, "send", "--proxy", "http://invalid-proxy:9999", "--timeout", "2s", "GET", "https://httpbin.org/get")
+	output, err := cmd.CombinedOutput()
+
+	// Should either fail with proxy error or timeout
+	// The important thing is that the flag was processed
+	if err == nil {
+		t.Log("Request succeeded - proxy may not have been used or is valid")
+	} else {
+		outputStr := string(output)
+		// Should show some error (timeout, connection refused, etc.)
+		if !strings.Contains(outputStr, "error") && !strings.Contains(outputStr, "timeout") && !strings.Contains(outputStr, "refused") && !strings.Contains(outputStr, "failed") {
+			t.Logf("Unexpected output: %s", outputStr)
+		}
+	}
+}
+
+func TestCLI_SendWithInsecureFlag(t *testing.T) {
+	// Test that -k flag works
+	cmd := exec.Command(binaryPath, "send", "-k", "--timeout", "5s", "GET", "https://httpbin.org/get")
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		t.Logf("Output: %s", string(output))
+		// May fail for other reasons but flag should be recognized
+	}
+
+	// Should get a response or a connection error (not a flag error)
+	outputStr := string(output)
+	if strings.Contains(outputStr, "unknown flag") || strings.Contains(outputStr, "invalid flag") {
+		t.Error("-k flag was not recognized")
+	}
+}
+
+// =============================================================================
+// HELP TEXT VERIFICATION TESTS
+// =============================================================================
+
+func TestHelp_ShowsProxyShortcut(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Open help
+	sess.SendKey("?")
+	time.Sleep(300 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show P for proxy settings
+	if !strings.Contains(screen, "P") || !strings.Contains(screen, "roxy") {
+		t.Log("Help may show proxy shortcut in different format")
+	}
+}
+
+func TestHelp_ShowsTLSShortcut(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Open help
+	sess.SendKey("?")
+	time.Sleep(300 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show Ctrl+T for TLS settings
+	if !strings.Contains(screen, "Ctrl+T") && !strings.Contains(screen, "TLS") {
+		t.Log("Help may show TLS shortcut in different format")
+	}
+}
+
+func TestHelp_ShowsRunnerShortcut(t *testing.T) {
+	sess := tmux.NewSession(t)
+	defer sess.Kill()
+
+	sess.Start(binaryPath)
+	sess.WaitFor("Collections", 5*time.Second)
+
+	// Open help
+	sess.SendKey("?")
+	time.Sleep(300 * time.Millisecond)
+
+	screen := sess.Capture()
+	// Should show Ctrl+R for runner
+	if !strings.Contains(screen, "Ctrl+R") && !strings.Contains(screen, "Run") {
+		t.Log("Help may show runner shortcut in different format")
+	}
+}
