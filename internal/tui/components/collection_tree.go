@@ -2475,6 +2475,107 @@ func (c *CollectionTree) GetSelectedItem() *TreeItem {
 	return nil
 }
 
+// GetSelectedCollection returns the currently selected or active collection.
+// If a collection item is selected, returns that collection.
+// If a folder or request is selected, returns its parent collection.
+// Returns nil if no collection context is available.
+func (c *CollectionTree) GetSelectedCollection() *core.Collection {
+	item := c.GetSelectedItem()
+	if item == nil {
+		// Fallback to first collection if any
+		if len(c.collections) > 0 {
+			return c.collections[0]
+		}
+		return nil
+	}
+
+	switch item.Type {
+	case ItemCollection:
+		return item.Collection
+	case ItemFolder:
+		// Find parent collection
+		if item.Folder != nil {
+			// Walk up to find collection
+			for _, coll := range c.collections {
+				if c.folderBelongsToCollection(item.Folder, coll) {
+					return coll
+				}
+			}
+		}
+	case ItemRequest:
+		// Find parent collection
+		if item.Request != nil {
+			for _, coll := range c.collections {
+				if c.requestBelongsToCollection(item.Request, coll) {
+					return coll
+				}
+			}
+		}
+	}
+
+	// Fallback to first collection
+	if len(c.collections) > 0 {
+		return c.collections[0]
+	}
+	return nil
+}
+
+// folderBelongsToCollection checks if a folder belongs to a collection.
+func (c *CollectionTree) folderBelongsToCollection(folder *core.Folder, coll *core.Collection) bool {
+	for _, f := range coll.Folders() {
+		if f.ID() == folder.ID() {
+			return true
+		}
+		if c.folderBelongsToFolder(folder, f) {
+			return true
+		}
+	}
+	return false
+}
+
+// folderBelongsToFolder checks if a folder belongs to another folder.
+func (c *CollectionTree) folderBelongsToFolder(folder *core.Folder, parent *core.Folder) bool {
+	for _, f := range parent.Folders() {
+		if f.ID() == folder.ID() {
+			return true
+		}
+		if c.folderBelongsToFolder(folder, f) {
+			return true
+		}
+	}
+	return false
+}
+
+// requestBelongsToCollection checks if a request belongs to a collection.
+func (c *CollectionTree) requestBelongsToCollection(req *core.RequestDefinition, coll *core.Collection) bool {
+	for _, r := range coll.Requests() {
+		if r.ID() == req.ID() {
+			return true
+		}
+	}
+	for _, folder := range coll.Folders() {
+		if c.requestBelongsToFolder(req, folder) {
+			return true
+		}
+	}
+	return false
+}
+
+// requestBelongsToFolder checks if a request belongs to a folder.
+func (c *CollectionTree) requestBelongsToFolder(req *core.RequestDefinition, folder *core.Folder) bool {
+	for _, r := range folder.Requests() {
+		if r.ID() == req.ID() {
+			return true
+		}
+	}
+	for _, f := range folder.Folders() {
+		if c.requestBelongsToFolder(req, f) {
+			return true
+		}
+	}
+	return false
+}
+
 // SetHistoryStore sets the history store for browsing request history.
 func (c *CollectionTree) SetHistoryStore(store history.Store) {
 	c.historyStore = store

@@ -19,6 +19,7 @@ import (
 	"github.com/artpar/currier/internal/interfaces"
 	"github.com/artpar/currier/internal/interpolate"
 	httpclient "github.com/artpar/currier/internal/protocol/http"
+	"github.com/artpar/currier/internal/runner"
 	"github.com/artpar/currier/internal/protocol/websocket"
 	"github.com/artpar/currier/internal/script"
 	"github.com/artpar/currier/internal/storage/filesystem"
@@ -88,6 +89,15 @@ type MainView struct {
 	tlsCertInput       string
 	tlsKeyInput        string
 	tlsCAInput         string
+
+	// Collection runner state
+	showRunnerModal   bool
+	runnerRunning     bool
+	runnerProgress    int
+	runnerTotal       int
+	runnerSummary     *runner.RunSummary
+	runnerCurrentReq  string
+	runnerCancelFunc  context.CancelFunc
 }
 
 // clearNotificationMsg is sent to clear the notification.
@@ -102,6 +112,18 @@ type environmentSwitchedMsg struct {
 // environmentLoadErrorMsg is sent when environment loading fails.
 type environmentLoadErrorMsg struct {
 	Error error
+}
+
+// runnerProgressMsg is sent to update runner progress.
+type runnerProgressMsg struct {
+	Current     int
+	Total       int
+	CurrentName string
+}
+
+// runnerCompleteMsg is sent when runner finishes.
+type runnerCompleteMsg struct {
+	Summary *runner.RunSummary
 }
 
 // NewMainView creates a new main view.
@@ -160,6 +182,13 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			return v.handleTLSDialogKey(keyMsg)
 		}
 		return v, nil
+	}
+
+	// Handle runner modal
+	if v.showRunnerModal {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return v.handleRunnerModalKey(keyMsg)
+		}
 	}
 
 	switch msg := msg.(type) {
@@ -573,6 +602,17 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			return clearNotificationMsg{}
 		})
 
+	case runnerProgressMsg:
+		v.runnerProgress = msg.Current
+		v.runnerTotal = msg.Total
+		v.runnerCurrentReq = msg.CurrentName
+		return v, nil
+
+	case runnerCompleteMsg:
+		v.runnerRunning = false
+		v.runnerSummary = msg.Summary
+		return v, nil
+
 	// WebSocket messages
 	case components.WSConnectCmd:
 		return v, v.connectWebSocket(msg.Definition)
@@ -843,6 +883,11 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return v, nil
 	}
 
+	// Handle Ctrl+R to run collection
+	if msg.Type == tea.KeyCtrlR {
+		return v.startCollectionRunner()
+	}
+
 	// Forward to focused pane for other keys
 	return v.forwardToFocusedPane(msg)
 }
@@ -984,6 +1029,11 @@ func (v *MainView) View() string {
 	// Render TLS settings dialog if showing
 	if v.showTLSDialog {
 		return v.renderTLSDialog()
+	}
+
+	// Render runner modal if showing
+	if v.showRunnerModal {
+		return v.renderRunnerModal()
 	}
 
 	// Render sidebar (Collections)
@@ -1294,6 +1344,7 @@ func (v *MainView) renderHelp() string {
 		"│    V                  Switch environment                │",
 		"│    P                  Proxy settings                    │",
 		"│    Ctrl+T             TLS/certificate settings          │",
+		"│    Ctrl+R             Run collection                    │",
 		"│    Ctrl+K             Clear all cookies                 │",
 		"│    ?                  Toggle this help                  │",
 		"│    q / Ctrl+C         Quit                              │",
@@ -1887,6 +1938,244 @@ func (v *MainView) handleTLSDialogKey(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	}
 
 	return v, nil
+}
+
+// startCollectionRunner starts running the current collection.
+func (v *MainView) startCollectionRunner() (tui.Component, tea.Cmd) {
+	// Get the current collection
+	coll := v.tree.GetSelectedCollection()
+	if coll == nil {
+		v.notification = "No collection selected"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+	}
+
+	// Initialize runner state
+	v.showRunnerModal = true
+	v.runnerRunning = true
+	v.runnerProgress = 0
+	v.runnerTotal = 0
+	v.runnerSummary = nil
+	v.runnerCurrentReq = ""
+
+	// Create context with cancel
+	ctx, cancel := context.WithCancel(context.Background())
+	v.runnerCancelFunc = cancel
+
+	// Start runner in background
+	return v, func() tea.Msg {
+		// Build runner options
+		opts := []runner.Option{}
+
+		if v.environment != nil {
+			opts = append(opts, runner.WithEnvironment(v.environment))
+		}
+
+		// Create HTTP client with proxy/TLS settings
+		clientOpts := []httpclient.Option{
+			httpclient.WithTimeout(30 * time.Second),
+		}
+		if v.cookieJar != nil {
+			clientOpts = append(clientOpts, httpclient.WithCookieJar(v.cookieJar))
+		}
+		if v.proxyURL != "" {
+			clientOpts = append(clientOpts, httpclient.WithProxy(v.proxyURL))
+		}
+		if v.tlsCertFile != "" && v.tlsKeyFile != "" {
+			clientOpts = append(clientOpts, httpclient.WithClientCert(v.tlsCertFile, v.tlsKeyFile))
+		}
+		if v.tlsCAFile != "" {
+			clientOpts = append(clientOpts, httpclient.WithCACert(v.tlsCAFile))
+		}
+		if v.tlsInsecureSkip {
+			clientOpts = append(clientOpts, httpclient.WithInsecureSkipVerify())
+		}
+		httpClient := httpclient.NewClient(clientOpts...)
+		opts = append(opts, runner.WithHTTPClient(httpClient))
+
+		// Create runner
+		r := runner.NewRunner(coll, opts...)
+
+		// Run the collection
+		summary := r.Run(ctx)
+
+		return runnerCompleteMsg{Summary: summary}
+	}
+}
+
+// handleRunnerModalKey handles keyboard input for the runner modal.
+func (v *MainView) handleRunnerModalKey(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		if v.runnerRunning && v.runnerCancelFunc != nil {
+			// Cancel the runner
+			v.runnerCancelFunc()
+			v.runnerRunning = false
+			v.notification = "Runner cancelled"
+			v.notifyUntil = time.Now().Add(2 * time.Second)
+		}
+		v.showRunnerModal = false
+		return v, nil
+
+	case tea.KeyEnter:
+		// Close modal if runner is complete
+		if !v.runnerRunning {
+			v.showRunnerModal = false
+		}
+		return v, nil
+	}
+
+	return v, nil
+}
+
+// renderRunnerModal renders the collection runner modal.
+func (v *MainView) renderRunnerModal() string {
+	boxWidth := 70
+	if boxWidth > v.width-4 {
+		boxWidth = v.width - 4
+	}
+
+	boxHeight := 20
+	if boxHeight > v.height-4 {
+		boxHeight = v.height - 4
+	}
+
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("212")).
+		Width(boxWidth - 4).
+		Align(lipgloss.Center)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	passedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("42"))
+
+	failedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("196"))
+
+	hintStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("238"))
+
+	var lines []string
+
+	if v.runnerRunning {
+		lines = append(lines, headerStyle.Render("Running Collection"))
+		lines = append(lines, "")
+
+		if v.runnerTotal > 0 {
+			progress := fmt.Sprintf("Progress: %d / %d", v.runnerProgress, v.runnerTotal)
+			lines = append(lines, labelStyle.Render(progress))
+
+			// Progress bar
+			barWidth := boxWidth - 10
+			filled := int(float64(barWidth) * float64(v.runnerProgress) / float64(v.runnerTotal))
+			bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+			lines = append(lines, labelStyle.Render("  "+bar))
+		} else {
+			lines = append(lines, labelStyle.Render("Starting..."))
+		}
+
+		if v.runnerCurrentReq != "" {
+			lines = append(lines, "")
+			lines = append(lines, labelStyle.Render("Current: "+v.runnerCurrentReq))
+		}
+
+		lines = append(lines, "")
+		lines = append(lines, hintStyle.Render("Press Esc to cancel"))
+	} else if v.runnerSummary != nil {
+		s := v.runnerSummary
+		lines = append(lines, headerStyle.Render("Collection Run Complete"))
+		lines = append(lines, "")
+
+		// Summary stats
+		lines = append(lines, labelStyle.Render(fmt.Sprintf("Collection: %s", s.CollectionName)))
+		lines = append(lines, labelStyle.Render(fmt.Sprintf("Duration: %s", s.TotalDuration.Round(time.Millisecond))))
+		lines = append(lines, "")
+
+		// Request stats
+		requestLine := fmt.Sprintf("Requests: %d/%d passed", s.Passed, s.TotalRequests)
+		if s.Failed > 0 {
+			lines = append(lines, failedStyle.Render(requestLine))
+		} else {
+			lines = append(lines, passedStyle.Render(requestLine))
+		}
+
+		// Test stats
+		if s.TotalTests > 0 {
+			testLine := fmt.Sprintf("Tests: %d/%d passed", s.TestsPassed, s.TotalTests)
+			if s.TestsFailed > 0 {
+				lines = append(lines, failedStyle.Render(testLine))
+			} else {
+				lines = append(lines, passedStyle.Render(testLine))
+			}
+		}
+
+		// Show failed requests
+		if s.Failed > 0 {
+			lines = append(lines, "")
+			lines = append(lines, failedStyle.Render("Failed Requests:"))
+			for _, r := range s.Results {
+				if r.Error != nil {
+					errLine := fmt.Sprintf("  ✗ %s %s", r.Method, r.RequestName)
+					lines = append(lines, failedStyle.Render(errLine))
+					errDetail := fmt.Sprintf("    %s", r.Error.Error())
+					if len(errDetail) > boxWidth-6 {
+						errDetail = errDetail[:boxWidth-9] + "..."
+					}
+					lines = append(lines, hintStyle.Render(errDetail))
+				}
+			}
+		}
+
+		// Show failed tests
+		failedTests := 0
+		for _, r := range s.Results {
+			for _, t := range r.TestResults {
+				if !t.Passed {
+					failedTests++
+				}
+			}
+		}
+		if failedTests > 0 && len(lines) < boxHeight-4 {
+			lines = append(lines, "")
+			lines = append(lines, failedStyle.Render("Failed Tests:"))
+			for _, r := range s.Results {
+				for _, t := range r.TestResults {
+					if !t.Passed && len(lines) < boxHeight-2 {
+						testLine := fmt.Sprintf("  ✗ [%s] %s", r.RequestName, t.Name)
+						if len(testLine) > boxWidth-4 {
+							testLine = testLine[:boxWidth-7] + "..."
+						}
+						lines = append(lines, failedStyle.Render(testLine))
+					}
+				}
+			}
+		}
+
+		lines = append(lines, "")
+		lines = append(lines, hintStyle.Render("Press Enter or Esc to close"))
+	}
+
+	// Build the box
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(1, 2).
+		Width(boxWidth)
+
+	box := boxStyle.Render(strings.Join(lines, "\n"))
+
+	// Center the box
+	containerStyle := lipgloss.NewStyle().
+		Width(v.width).
+		Height(v.height).
+		Align(lipgloss.Center, lipgloss.Center)
+
+	return containerStyle.Render(box)
 }
 
 // saveToHistory saves a request/response pair to history.
