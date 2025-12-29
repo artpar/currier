@@ -14,6 +14,10 @@ A vim-modal TUI API client for developers and AI agents.
 - **Import/Export** - Support for Postman, cURL, HAR, and OpenAPI formats
 - **CLI mode** - Execute requests directly from the command line
 - **curl import** - Run `currier curl <args>` to import any curl command into the TUI
+- **Collection Runner** - Batch execute all requests in a collection with test results
+- **Form-data / File Upload** - Multipart form-data body type with file upload support
+- **Proxy Support** - HTTP, HTTPS, and SOCKS5 proxy configuration
+- **Client Certificates** - mTLS support with custom CA certificates
 
 ## Demos
 
@@ -136,14 +140,58 @@ currier
 
 ```bash
 # Send a GET request
-currier send https://api.example.com/users
+currier send GET https://api.example.com/users
 
 # Send a POST request with JSON body
-currier send -X POST -H "Content-Type: application/json" \
-  -d '{"name": "John"}' https://api.example.com/users
+currier send POST https://api.example.com/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "John"}'
 
 # Use an environment
-currier send -e production https://{{host}}/api/users
+currier send GET https://{{host}}/api/users -e production.json
+
+# Use a proxy
+currier send GET https://api.example.com/users --proxy http://localhost:8080
+
+# Use client certificates (mTLS)
+currier send GET https://api.example.com/secure \
+  --cert client.pem --key client-key.pem
+
+# Skip TLS verification (insecure)
+currier send GET https://self-signed.example.com -k
+```
+
+### Collection Runner
+
+Run all requests in a collection sequentially:
+
+```bash
+# Run a collection
+currier run my-collection.json
+
+# With environment
+currier run my-collection.json -e production.json
+
+# Verbose output (shows each request)
+currier run my-collection.json -v
+
+# JSON output for CI/CD
+currier run my-collection.json --json
+```
+
+Output example:
+```
+Running collection: My API
+✓ GET Get Users (234ms) - 3/3 tests
+✓ POST Create User (156ms) - 2/2 tests
+✗ GET Get User 999 (89ms) - 1/2 tests
+  ✗ Status should be 404
+    Expected 404 to be 500
+
+Summary:
+  Requests: 2/3 passed
+  Tests: 6/7 passed
+  Total time: 479ms
 ```
 
 ### Import curl Commands
@@ -226,11 +274,16 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 ### Request Panel
 | Key | Action |
 |-----|--------|
-| `e` | Edit URL |
+| `e` | Edit URL / Edit field |
 | `m` | Cycle HTTP method |
 | `[/]` | Switch tabs |
 | `Enter` | Send request |
 | `Alt+Enter` | Send (while editing) |
+| `t` | Cycle body type (Raw/JSON/Form) |
+| `a` | Add header/query/form field |
+| `f` | Add file field (form-data) |
+| `d` | Delete field |
+| `T` | Toggle field type (text/file) |
 
 ### Response Panel
 | Key | Action |
@@ -247,7 +300,7 @@ currier/
 ├── cmd/currier/       # Application entry point
 ├── internal/
 │   ├── app/           # Application orchestration
-│   ├── cli/           # CLI commands
+│   ├── cli/           # CLI commands (send, run, curl)
 │   ├── cookies/       # Cookie jar with SQLite persistence
 │   ├── core/          # Domain models (Request, Response, Collection)
 │   ├── exporter/      # Export to cURL, Postman formats
@@ -255,7 +308,8 @@ currier/
 │   ├── importer/      # Import from Postman, cURL, HAR, OpenAPI
 │   ├── interfaces/    # Interface definitions
 │   ├── interpolate/   # Variable interpolation engine
-│   ├── protocol/      # HTTP client implementation
+│   ├── protocol/      # HTTP client (proxy, TLS, cookies)
+│   ├── runner/        # Collection runner for batch execution
 │   ├── script/        # JavaScript scripting engine
 │   ├── storage/       # Collection/environment persistence
 │   └── tui/           # Terminal UI components

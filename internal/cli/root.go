@@ -63,6 +63,7 @@ func NewRootCommand(version string) *cobra.Command {
 	// Add subcommands
 	cmd.AddCommand(NewSendCommand())
 	cmd.AddCommand(NewCurlCommand())
+	cmd.AddCommand(NewRunCommand())
 
 	return cmd
 }

@@ -107,6 +107,21 @@ type RequestPanel struct {
 	testScriptLines      []string // Test script split into lines
 	testScriptCursorLine int      // Current line
 	testScriptCursorCol  int      // Current column
+
+	// Body type state (for form-data support)
+	bodyTypeIndex int // 0=raw, 1=json, 2=form
+
+	// Form field editing state (for form-data body type)
+	formFields        []core.FormField // Local copy of form fields
+	formCursor        int              // Selected field index
+	editingFormField  bool             // True when editing a form field
+	formEditMode      string           // "key", "value", "type"
+	formKeyInput      string           // Current key input
+	formValueInput    string           // Current value input
+	formKeyCursor     int              // Cursor position in key
+	formValueCursor   int              // Cursor position in value
+	formIsNew         bool             // True if adding new field
+	formIsFile        bool             // True if current field is a file
 }
 
 // NewRequestPanel creates a new request panel.
@@ -208,6 +223,11 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return p.handleTestScriptEditInput(msg)
 	}
 
+	// Handle form field editing mode (for form-data body type)
+	if p.editingFormField {
+		return p.handleFormFieldEditInput(msg)
+	}
+
 	switch msg.Type {
 	case tea.KeyEnter:
 		// Send request from any tab when not in edit mode
@@ -262,15 +282,35 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			}
 			// Enter body edit mode
 			if p.activeTab == TabBody && p.request != nil {
-				body := p.request.Body()
-				p.bodyLines = strings.Split(body, "\n")
-				if len(p.bodyLines) == 0 {
-					p.bodyLines = []string{""}
+				if p.bodyTypeIndex == 2 {
+					// Form-data mode: edit selected form field
+					if p.formCursor < len(p.formFields) {
+						field := p.formFields[p.formCursor]
+						p.editingFormField = true
+						p.formIsNew = false
+						p.formEditMode = "key"
+						p.formKeyInput = field.Key
+						p.formValueInput = field.Value
+						if field.IsFile {
+							p.formValueInput = field.FilePath
+						}
+						p.formKeyCursor = len(p.formKeyInput)
+						p.formValueCursor = len(p.formValueInput)
+						p.formIsFile = field.IsFile
+						return p, nil
+					}
+				} else {
+					// Raw/JSON mode: edit body text
+					body := p.request.Body()
+					p.bodyLines = strings.Split(body, "\n")
+					if len(p.bodyLines) == 0 {
+						p.bodyLines = []string{""}
+					}
+					p.bodyCursorLine = 0
+					p.bodyCursorCol = 0
+					p.editingBody = true
+					return p, nil
 				}
-				p.bodyCursorLine = 0
-				p.bodyCursorCol = 0
-				p.editingBody = true
-				return p, nil
 			}
 			// Enter auth edit mode
 			if p.activeTab == TabAuth && p.request != nil {
@@ -341,6 +381,59 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 				p.queryOrigKey = ""
 				return p, nil
 			}
+			// Add new form field (text)
+			if p.activeTab == TabBody && p.request != nil && p.bodyTypeIndex == 2 {
+				p.editingFormField = true
+				p.formIsNew = true
+				p.formEditMode = "key"
+				p.formKeyInput = ""
+				p.formValueInput = ""
+				p.formKeyCursor = 0
+				p.formValueCursor = 0
+				p.formIsFile = false
+				return p, nil
+			}
+		case "f":
+			// Add new form field (file)
+			if p.activeTab == TabBody && p.request != nil && p.bodyTypeIndex == 2 {
+				p.editingFormField = true
+				p.formIsNew = true
+				p.formEditMode = "key"
+				p.formKeyInput = ""
+				p.formValueInput = ""
+				p.formKeyCursor = 0
+				p.formValueCursor = 0
+				p.formIsFile = true
+				return p, nil
+			}
+		case "t":
+			// Cycle body type (raw -> json -> form)
+			if p.activeTab == TabBody && p.request != nil {
+				p.bodyTypeIndex = (p.bodyTypeIndex + 1) % 3
+				// Sync body type to request
+				switch p.bodyTypeIndex {
+				case 0:
+					p.request.SetBodyType("raw")
+				case 1:
+					p.request.SetBodyType("json")
+				case 2:
+					p.request.SetBodyType("form")
+					// Sync form fields
+					p.formFields = p.request.FormFields()
+					p.formCursor = 0
+				}
+				return p, nil
+			}
+		case "T":
+			// Toggle field type (text <-> file) for form-data
+			if p.activeTab == TabBody && p.request != nil && p.bodyTypeIndex == 2 {
+				if p.formCursor < len(p.formFields) {
+					p.formFields[p.formCursor].IsFile = !p.formFields[p.formCursor].IsFile
+					// Sync back to request
+					p.request.SetBodyFormData(p.formFields)
+					return p, nil
+				}
+			}
 		case "d":
 			// Delete header at cursor
 			if p.activeTab == TabHeaders && p.request != nil {
@@ -364,6 +457,18 @@ func (p *RequestPanel) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 					p.syncQueryKeys()
 					if p.cursor >= len(p.queryKeys) && p.cursor > 0 {
 						p.cursor--
+					}
+					return p, nil
+				}
+			}
+			// Delete form field at cursor
+			if p.activeTab == TabBody && p.request != nil && p.bodyTypeIndex == 2 {
+				if p.formCursor < len(p.formFields) {
+					// Remove field at cursor
+					p.formFields = append(p.formFields[:p.formCursor], p.formFields[p.formCursor+1:]...)
+					p.request.SetBodyFormData(p.formFields)
+					if p.formCursor >= len(p.formFields) && p.formCursor > 0 {
+						p.formCursor--
 					}
 					return p, nil
 				}
@@ -752,6 +857,165 @@ func (p *RequestPanel) handleQueryEditInput(msg tea.KeyMsg) (tui.Component, tea.
 		} else {
 			p.queryValueInput = p.queryValueInput[:p.queryValueCursor] + char + p.queryValueInput[p.queryValueCursor:]
 			p.queryValueCursor += len(char)
+		}
+		return p, nil
+	}
+
+	return p, nil
+}
+
+// handleFormFieldEditInput handles keyboard input while editing a form field.
+func (p *RequestPanel) handleFormFieldEditInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		// Save and exit
+		if p.formKeyInput != "" {
+			field := core.FormField{
+				Key:      p.formKeyInput,
+				Value:    p.formValueInput,
+				IsFile:   p.formIsFile,
+				FilePath: "",
+			}
+			if p.formIsFile {
+				field.FilePath = p.formValueInput
+				field.Value = ""
+			}
+			if p.formIsNew {
+				p.formFields = append(p.formFields, field)
+			} else {
+				p.formFields[p.formCursor] = field
+			}
+			p.request.SetBodyFormData(p.formFields)
+		}
+		p.editingFormField = false
+		return p, nil
+
+	case tea.KeyEnter:
+		// Save form field
+		if p.formKeyInput != "" {
+			field := core.FormField{
+				Key:      p.formKeyInput,
+				Value:    p.formValueInput,
+				IsFile:   p.formIsFile,
+				FilePath: "",
+			}
+			if p.formIsFile {
+				field.FilePath = p.formValueInput
+				field.Value = ""
+			}
+			if p.formIsNew {
+				p.formFields = append(p.formFields, field)
+			} else {
+				p.formFields[p.formCursor] = field
+			}
+			p.request.SetBodyFormData(p.formFields)
+		}
+		p.editingFormField = false
+		return p, nil
+
+	case tea.KeyTab:
+		// Switch between key and value
+		if p.formEditMode == "key" {
+			p.formEditMode = "value"
+		} else {
+			p.formEditMode = "key"
+		}
+		return p, nil
+
+	case tea.KeyBackspace:
+		if p.formEditMode == "key" {
+			if p.formKeyCursor > 0 {
+				p.formKeyInput = p.formKeyInput[:p.formKeyCursor-1] + p.formKeyInput[p.formKeyCursor:]
+				p.formKeyCursor--
+			}
+		} else {
+			if p.formValueCursor > 0 {
+				p.formValueInput = p.formValueInput[:p.formValueCursor-1] + p.formValueInput[p.formValueCursor:]
+				p.formValueCursor--
+			}
+		}
+		return p, nil
+
+	case tea.KeyLeft:
+		if p.formEditMode == "key" {
+			if p.formKeyCursor > 0 {
+				p.formKeyCursor--
+			}
+		} else {
+			if p.formValueCursor > 0 {
+				p.formValueCursor--
+			}
+		}
+		return p, nil
+
+	case tea.KeyRight:
+		if p.formEditMode == "key" {
+			if p.formKeyCursor < len(p.formKeyInput) {
+				p.formKeyCursor++
+			}
+		} else {
+			if p.formValueCursor < len(p.formValueInput) {
+				p.formValueCursor++
+			}
+		}
+		return p, nil
+
+	case tea.KeyDelete:
+		if p.formEditMode == "key" {
+			if p.formKeyCursor < len(p.formKeyInput) {
+				p.formKeyInput = p.formKeyInput[:p.formKeyCursor] + p.formKeyInput[p.formKeyCursor+1:]
+			}
+		} else {
+			if p.formValueCursor < len(p.formValueInput) {
+				p.formValueInput = p.formValueInput[:p.formValueCursor] + p.formValueInput[p.formValueCursor+1:]
+			}
+		}
+		return p, nil
+
+	case tea.KeyHome, tea.KeyCtrlA:
+		if p.formEditMode == "key" {
+			p.formKeyCursor = 0
+		} else {
+			p.formValueCursor = 0
+		}
+		return p, nil
+
+	case tea.KeyEnd, tea.KeyCtrlE:
+		if p.formEditMode == "key" {
+			p.formKeyCursor = len(p.formKeyInput)
+		} else {
+			p.formValueCursor = len(p.formValueInput)
+		}
+		return p, nil
+
+	case tea.KeyCtrlU:
+		if p.formEditMode == "key" {
+			p.formKeyInput = ""
+			p.formKeyCursor = 0
+		} else {
+			p.formValueInput = ""
+			p.formValueCursor = 0
+		}
+		return p, nil
+
+	case tea.KeySpace:
+		if p.formEditMode == "key" {
+			p.formKeyInput = p.formKeyInput[:p.formKeyCursor] + " " + p.formKeyInput[p.formKeyCursor:]
+			p.formKeyCursor++
+		} else {
+			p.formValueInput = p.formValueInput[:p.formValueCursor] + " " + p.formValueInput[p.formValueCursor:]
+			p.formValueCursor++
+		}
+		return p, nil
+
+	case tea.KeyRunes:
+		char := string(msg.Runes)
+		if p.formEditMode == "key" {
+			p.formKeyInput = p.formKeyInput[:p.formKeyCursor] + char + p.formKeyInput[p.formKeyCursor:]
+			p.formKeyCursor += len(char)
+		} else {
+			p.formValueInput = p.formValueInput[:p.formValueCursor] + char + p.formValueInput[p.formValueCursor:]
+			p.formValueCursor += len(char)
 		}
 		return p, nil
 	}
@@ -1533,6 +1797,22 @@ func (p *RequestPanel) prevTab() {
 }
 
 func (p *RequestPanel) moveCursor(delta int) {
+	// Handle form cursor separately for Body tab in form-data mode
+	if p.activeTab == TabBody && p.bodyTypeIndex == 2 {
+		p.formCursor += delta
+		if p.formCursor < 0 {
+			p.formCursor = 0
+		}
+		if p.formCursor >= len(p.formFields) {
+			if len(p.formFields) > 0 {
+				p.formCursor = len(p.formFields) - 1
+			} else {
+				p.formCursor = 0
+			}
+		}
+		return
+	}
+
 	p.cursor += delta
 	if p.cursor < 0 {
 		p.cursor = 0
@@ -1555,6 +1835,11 @@ func (p *RequestPanel) maxCursorForTab() int {
 		return len(p.request.Headers()) - 1
 	case TabQuery:
 		return len(p.request.QueryParams()) - 1
+	case TabBody:
+		if p.bodyTypeIndex == 2 {
+			return len(p.formFields) - 1
+		}
+		return 0
 	default:
 		return 0
 	}
@@ -2058,56 +2343,160 @@ func (p *RequestPanel) renderBodyTab() []string {
 
 	var lines []string
 	innerWidth := p.width - 4
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
+	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	fileStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("178"))
 
-	if p.editingBody {
-		// Show editable body with cursor
-		for i, line := range p.bodyLines {
-			displayLine := line
-			if i == p.bodyCursorLine {
-				// Insert cursor at position
-				if p.bodyCursorCol >= len(displayLine) {
-					displayLine += "▌"
-				} else {
-					displayLine = displayLine[:p.bodyCursorCol] + "▌" + displayLine[p.bodyCursorCol:]
-				}
-			}
-			// Truncate if too long
-			if len(displayLine) > innerWidth {
-				displayLine = displayLine[:innerWidth-1] + "…"
-			}
-			// Highlight current line
-			if i == p.bodyCursorLine {
-				lineStyle := lipgloss.NewStyle().Background(lipgloss.Color("238"))
-				displayLine = lineStyle.Render(displayLine)
-			}
-			lines = append(lines, displayLine)
-		}
+	// Body type names
+	bodyTypeNames := []string{"Raw", "JSON", "Form-data"}
 
-		// Add hints
-		lines = append(lines, "")
-		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-		lines = append(lines, hintStyle.Render("  Esc: save and exit │ ↑↓←→: navigate │ Enter: new line"))
-	} else {
-		body := p.request.Body()
-		if body == "" {
-			lines = []string{""}
-			hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-			lines = append(lines, hintStyle.Render("  No body defined. Press 'e' to edit."))
-		} else {
-			bodyLines := strings.Split(body, "\n")
-			for _, line := range bodyLines {
-				if len(line) > innerWidth {
-					line = line[:innerWidth-1] + "…"
-				}
-				lines = append(lines, line)
-			}
-		}
+	// Body type selector
+	bodyTypeLine := fmt.Sprintf("  Body Type: %s  ", selectedStyle.Render("◀ "+bodyTypeNames[p.bodyTypeIndex]+" ▶"))
+	lines = append(lines, bodyTypeLine)
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render(strings.Repeat("─", innerWidth)))
 
-		// Add hint when focused (shows exit behavior before entering edit mode)
-		if p.focused {
+	if p.bodyTypeIndex == 2 {
+		// Form-data mode
+		if p.editingFormField {
+			// Show form field editor
 			lines = append(lines, "")
-			hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
-			lines = append(lines, hintStyle.Render("  Press 'e' to edit (Esc saves and exits)"))
+			typeLabel := "Text Field"
+			if p.formIsFile {
+				typeLabel = "File Field"
+			}
+			lines = append(lines, fmt.Sprintf("  %s", selectedStyle.Render(typeLabel)))
+			lines = append(lines, "")
+
+			// Key field
+			keyPrefix := "  "
+			if p.formEditMode == "key" {
+				keyPrefix = "> "
+			}
+			keyContent := p.formKeyInput
+			if p.formEditMode == "key" {
+				if p.formKeyCursor >= len(keyContent) {
+					keyContent += "▌"
+				} else {
+					keyContent = keyContent[:p.formKeyCursor] + "▌" + keyContent[p.formKeyCursor:]
+				}
+			}
+			lines = append(lines, fmt.Sprintf("%s%s: %s", keyPrefix, labelStyle.Render("Key"), keyContent))
+
+			// Value field
+			valuePrefix := "  "
+			if p.formEditMode == "value" {
+				valuePrefix = "> "
+			}
+			valueContent := p.formValueInput
+			if p.formEditMode == "value" {
+				if p.formValueCursor >= len(valueContent) {
+					valueContent += "▌"
+				} else {
+					valueContent = valueContent[:p.formValueCursor] + "▌" + valueContent[p.formValueCursor:]
+				}
+			}
+			valueLabel := "Value"
+			if p.formIsFile {
+				valueLabel = "File Path"
+			}
+			lines = append(lines, fmt.Sprintf("%s%s: %s", valuePrefix, labelStyle.Render(valueLabel), valueContent))
+
+			lines = append(lines, "")
+			lines = append(lines, hintStyle.Render("  Tab: switch field │ Enter/Esc: save"))
+		} else {
+			// Show form fields list
+			if len(p.formFields) == 0 {
+				lines = append(lines, "")
+				lines = append(lines, hintStyle.Render("  No form fields. Press 'a' to add text, 'f' to add file."))
+			} else {
+				for i, field := range p.formFields {
+					prefix := "  "
+					if i == p.formCursor && p.focused {
+						prefix = "> "
+					}
+
+					var fieldLine string
+					if field.IsFile {
+						filePath := field.FilePath
+						if filePath == "" {
+							filePath = "(no file)"
+						}
+						fieldLine = fmt.Sprintf("%s%s = %s %s",
+							prefix,
+							keyStyle.Render(field.Key),
+							fileStyle.Render("[FILE]"),
+							valueStyle.Render(filePath))
+					} else {
+						fieldLine = fmt.Sprintf("%s%s = %s",
+							prefix,
+							keyStyle.Render(field.Key),
+							valueStyle.Render(field.Value))
+					}
+
+					if len(fieldLine) > innerWidth {
+						fieldLine = fieldLine[:innerWidth-1] + "…"
+					}
+					lines = append(lines, fieldLine)
+				}
+			}
+
+			if p.focused {
+				lines = append(lines, "")
+				lines = append(lines, hintStyle.Render("  t: cycle body type │ a: add text │ f: add file │ e: edit │ d: delete │ T: toggle type"))
+			}
+		}
+	} else {
+		// Raw or JSON mode
+		if p.editingBody {
+			// Show editable body with cursor
+			for i, line := range p.bodyLines {
+				displayLine := line
+				if i == p.bodyCursorLine {
+					// Insert cursor at position
+					if p.bodyCursorCol >= len(displayLine) {
+						displayLine += "▌"
+					} else {
+						displayLine = displayLine[:p.bodyCursorCol] + "▌" + displayLine[p.bodyCursorCol:]
+					}
+				}
+				// Truncate if too long
+				if len(displayLine) > innerWidth {
+					displayLine = displayLine[:innerWidth-1] + "…"
+				}
+				// Highlight current line
+				if i == p.bodyCursorLine {
+					lineStyle := lipgloss.NewStyle().Background(lipgloss.Color("238"))
+					displayLine = lineStyle.Render(displayLine)
+				}
+				lines = append(lines, displayLine)
+			}
+
+			// Add hints
+			lines = append(lines, "")
+			lines = append(lines, hintStyle.Render("  Esc: save and exit │ ↑↓←→: navigate │ Enter: new line"))
+		} else {
+			body := p.request.Body()
+			if body == "" {
+				lines = append(lines, "")
+				lines = append(lines, hintStyle.Render("  No body defined. Press 'e' to edit."))
+			} else {
+				bodyLines := strings.Split(body, "\n")
+				for _, line := range bodyLines {
+					if len(line) > innerWidth {
+						line = line[:innerWidth-1] + "…"
+					}
+					lines = append(lines, line)
+				}
+			}
+
+			// Add hint when focused
+			if p.focused {
+				lines = append(lines, "")
+				lines = append(lines, hintStyle.Render("  t: cycle body type │ e: edit body"))
+			}
 		}
 	}
 
@@ -2462,6 +2851,24 @@ func (p *RequestPanel) Request() *core.RequestDefinition {
 func (p *RequestPanel) SetRequest(req *core.RequestDefinition) {
 	p.request = req
 	p.cursor = 0
+
+	// Sync body type from request
+	if req != nil {
+		switch req.BodyType() {
+		case "json":
+			p.bodyTypeIndex = 1
+		case "form":
+			p.bodyTypeIndex = 2
+			p.formFields = req.FormFields()
+			p.formCursor = 0
+		default:
+			p.bodyTypeIndex = 0
+		}
+	} else {
+		p.bodyTypeIndex = 0
+		p.formFields = nil
+		p.formCursor = 0
+	}
 }
 
 // ActiveTab returns the currently active tab.

@@ -16,11 +16,16 @@ import (
 
 // SendOptions holds options for the send command.
 type SendOptions struct {
-	Headers  []string
-	Body     string
-	JSON     bool
-	Timeout  time.Duration
-	EnvFiles []string
+	Headers            []string
+	Body               string
+	JSON               bool
+	Timeout            time.Duration
+	EnvFiles           []string
+	ProxyURL           string
+	CertFile           string
+	KeyFile            string
+	CAFile             string
+	InsecureSkipVerify bool
 }
 
 // NewSendCommand creates the send command.
@@ -44,6 +49,15 @@ func NewSendCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.JSON, "json", false, "Output response as JSON")
 	cmd.Flags().DurationVar(&opts.Timeout, "timeout", 30*time.Second, "Request timeout")
 	cmd.Flags().StringArrayVarP(&opts.EnvFiles, "env", "e", nil, "Environment file(s) for variable substitution")
+
+	// Proxy settings
+	cmd.Flags().StringVar(&opts.ProxyURL, "proxy", "", "Proxy URL (http://, https://, or socks5://)")
+
+	// TLS/Certificate settings
+	cmd.Flags().StringVar(&opts.CertFile, "cert", "", "Client certificate PEM file for mTLS")
+	cmd.Flags().StringVar(&opts.KeyFile, "key", "", "Client private key PEM file for mTLS")
+	cmd.Flags().StringVar(&opts.CAFile, "cacert", "", "Custom CA certificate PEM file")
+	cmd.Flags().BoolVarP(&opts.InsecureSkipVerify, "insecure", "k", false, "Skip server certificate verification")
 
 	return cmd
 }
@@ -70,11 +84,34 @@ func runSend(cmd *cobra.Command, method, url string, opts *SendOptions) error {
 		return fmt.Errorf("failed to interpolate URL: %w", err)
 	}
 
+	// Build HTTP client options
+	clientOpts := []httpclient.Option{
+		httpclient.WithTimeout(opts.Timeout),
+	}
+
+	// Add proxy if specified
+	if opts.ProxyURL != "" {
+		clientOpts = append(clientOpts, httpclient.WithProxy(opts.ProxyURL))
+	}
+
+	// Add client certificate if specified
+	if opts.CertFile != "" && opts.KeyFile != "" {
+		clientOpts = append(clientOpts, httpclient.WithClientCert(opts.CertFile, opts.KeyFile))
+	}
+
+	// Add custom CA certificate if specified
+	if opts.CAFile != "" {
+		clientOpts = append(clientOpts, httpclient.WithCACert(opts.CAFile))
+	}
+
+	// Add insecure skip verify if specified
+	if opts.InsecureSkipVerify {
+		clientOpts = append(clientOpts, httpclient.WithInsecureSkipVerify())
+	}
+
 	// Create the app with HTTP protocol
 	application := app.New(
-		app.WithProtocol("http", httpclient.NewClient(
-			httpclient.WithTimeout(opts.Timeout),
-		)),
+		app.WithProtocol("http", httpclient.NewClient(clientOpts...)),
 	)
 
 	// Create request with interpolated URL

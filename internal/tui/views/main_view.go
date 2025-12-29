@@ -72,6 +72,22 @@ type MainView struct {
 
 	// Cookie jar for automatic cookie handling
 	cookieJar *cookies.PersistentJar
+
+	// Proxy and TLS configuration
+	proxyURL           string
+	tlsCertFile        string
+	tlsKeyFile         string
+	tlsCAFile          string
+	tlsInsecureSkip    bool
+
+	// Settings dialogs
+	showProxyDialog    bool
+	proxyInput         string
+	showTLSDialog      bool
+	tlsDialogField     int // 0=cert, 1=key, 2=ca, 3=insecure
+	tlsCertInput       string
+	tlsKeyInput        string
+	tlsCAInput         string
 }
 
 // clearNotificationMsg is sent to clear the notification.
@@ -126,6 +142,22 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 	if v.showEnvSwitcher {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			return v.handleEnvSwitcherKey(keyMsg)
+		}
+		return v, nil
+	}
+
+	// Handle proxy settings dialog
+	if v.showProxyDialog {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return v.handleProxyDialogKey(keyMsg)
+		}
+		return v, nil
+	}
+
+	// Handle TLS settings dialog
+	if v.showTLSDialog {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return v.handleTLSDialogKey(keyMsg)
 		}
 		return v, nil
 	}
@@ -479,7 +511,15 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		v.response.SetLoading(true)
 		v.focusPane(PaneResponse)
 		v.lastRequest = msg.Request // Save for history
-		return v, sendRequest(msg.Request, v.interpolator, v.cookieJar)
+		httpConfig := HTTPClientConfig{
+			CookieJar:    v.cookieJar,
+			ProxyURL:     v.proxyURL,
+			CertFile:     v.tlsCertFile,
+			KeyFile:      v.tlsKeyFile,
+			CAFile:       v.tlsCAFile,
+			InsecureSkip: v.tlsInsecureSkip,
+		}
+		return v, sendRequest(msg.Request, v.interpolator, httpConfig)
 
 	case components.ResponseReceivedMsg:
 		v.response.SetLoading(false)
@@ -785,7 +825,22 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		case "V":
 			// Open environment switcher (capital V for Variables)
 			return v.openEnvSwitcher()
+		case "P":
+			// Open proxy settings dialog
+			v.showProxyDialog = true
+			v.proxyInput = v.proxyURL
+			return v, nil
 		}
+	}
+
+	// Handle Ctrl+T for TLS settings
+	if msg.Type == tea.KeyCtrlT {
+		v.showTLSDialog = true
+		v.tlsDialogField = 0
+		v.tlsCertInput = v.tlsCertFile
+		v.tlsKeyInput = v.tlsKeyFile
+		v.tlsCAInput = v.tlsCAFile
+		return v, nil
 	}
 
 	// Forward to focused pane for other keys
@@ -919,6 +974,16 @@ func (v *MainView) View() string {
 	// Render environment switcher overlay if showing
 	if v.showEnvSwitcher {
 		return v.renderEnvSwitcher()
+	}
+
+	// Render proxy settings dialog if showing
+	if v.showProxyDialog {
+		return v.renderProxyDialog()
+	}
+
+	// Render TLS settings dialog if showing
+	if v.showTLSDialog {
+		return v.renderTLSDialog()
 	}
 
 	// Render sidebar (Collections)
@@ -1227,6 +1292,8 @@ func (v *MainView) renderHelp() string {
 		"│    n                  Create new request                │",
 		"│    s                  Save request to collection        │",
 		"│    V                  Switch environment                │",
+		"│    P                  Proxy settings                    │",
+		"│    Ctrl+T             TLS/certificate settings          │",
 		"│    Ctrl+K             Clear all cookies                 │",
 		"│    ?                  Toggle this help                  │",
 		"│    q / Ctrl+C         Quit                              │",
@@ -1330,6 +1397,171 @@ func (v *MainView) renderEnvSwitcher() string {
 	box := boxStyle.Render(content)
 
 	// Center the box on screen
+	containerStyle := lipgloss.NewStyle().
+		Width(v.width).
+		Height(v.height).
+		Align(lipgloss.Center, lipgloss.Center)
+
+	return containerStyle.Render(box)
+}
+
+// renderProxyDialog renders the proxy settings dialog.
+func (v *MainView) renderProxyDialog() string {
+	boxWidth := 60
+	if boxWidth > v.width-4 {
+		boxWidth = v.width - 4
+	}
+
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("62")).
+		Width(boxWidth - 4).
+		Align(lipgloss.Center).
+		Padding(0, 1)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	inputStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("236")).
+		Width(boxWidth - 8).
+		Padding(0, 1)
+
+	var lines []string
+	lines = append(lines, headerStyle.Render("Proxy Settings"))
+	lines = append(lines, "")
+	lines = append(lines, labelStyle.Render("Proxy URL (http://, https://, socks5://):"))
+	lines = append(lines, inputStyle.Render(v.proxyInput+"█"))
+	lines = append(lines, "")
+
+	// Current status
+	if v.proxyURL != "" {
+		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
+		lines = append(lines, statusStyle.Render("Current: "+v.proxyURL))
+	} else {
+		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+		lines = append(lines, statusStyle.Render("No proxy configured"))
+	}
+	lines = append(lines, "")
+
+	footerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Width(boxWidth - 4).
+		Align(lipgloss.Center)
+	lines = append(lines, footerStyle.Render("Enter: save  Esc: cancel"))
+
+	content := strings.Join(lines, "\n")
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(0, 1)
+
+	box := boxStyle.Render(content)
+
+	containerStyle := lipgloss.NewStyle().
+		Width(v.width).
+		Height(v.height).
+		Align(lipgloss.Center, lipgloss.Center)
+
+	return containerStyle.Render(box)
+}
+
+// renderTLSDialog renders the TLS/certificate settings dialog.
+func (v *MainView) renderTLSDialog() string {
+	boxWidth := 60
+	if boxWidth > v.width-4 {
+		boxWidth = v.width - 4
+	}
+
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("62")).
+		Width(boxWidth - 4).
+		Align(lipgloss.Center).
+		Padding(0, 1)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	selectedLabelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("229")).
+		Bold(true)
+
+	inputStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")).
+		Background(lipgloss.Color("236")).
+		Width(boxWidth - 8).
+		Padding(0, 1)
+
+	selectedInputStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("62")).
+		Width(boxWidth - 8).
+		Padding(0, 1)
+
+	var lines []string
+	lines = append(lines, headerStyle.Render("TLS / Certificate Settings"))
+	lines = append(lines, "")
+
+	// Client Certificate
+	if v.tlsDialogField == 0 {
+		lines = append(lines, selectedLabelStyle.Render("→ Client Certificate (.pem):"))
+		lines = append(lines, selectedInputStyle.Render(v.tlsCertInput+"█"))
+	} else {
+		lines = append(lines, labelStyle.Render("  Client Certificate (.pem):"))
+		lines = append(lines, inputStyle.Render(v.tlsCertInput))
+	}
+
+	// Client Key
+	if v.tlsDialogField == 1 {
+		lines = append(lines, selectedLabelStyle.Render("→ Client Key (.pem):"))
+		lines = append(lines, selectedInputStyle.Render(v.tlsKeyInput+"█"))
+	} else {
+		lines = append(lines, labelStyle.Render("  Client Key (.pem):"))
+		lines = append(lines, inputStyle.Render(v.tlsKeyInput))
+	}
+
+	// CA Certificate
+	if v.tlsDialogField == 2 {
+		lines = append(lines, selectedLabelStyle.Render("→ CA Certificate (.pem):"))
+		lines = append(lines, selectedInputStyle.Render(v.tlsCAInput+"█"))
+	} else {
+		lines = append(lines, labelStyle.Render("  CA Certificate (.pem):"))
+		lines = append(lines, inputStyle.Render(v.tlsCAInput))
+	}
+
+	// Insecure Skip Verify
+	checkBox := "[ ]"
+	if v.tlsInsecureSkip {
+		checkBox = "[x]"
+	}
+	if v.tlsDialogField == 3 {
+		lines = append(lines, selectedLabelStyle.Render("→ "+checkBox+" Skip certificate verification"))
+	} else {
+		lines = append(lines, labelStyle.Render("  "+checkBox+" Skip certificate verification"))
+	}
+
+	lines = append(lines, "")
+
+	footerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Width(boxWidth - 4).
+		Align(lipgloss.Center)
+	lines = append(lines, footerStyle.Render("Tab: next  Space: toggle  Enter: save  Esc: cancel"))
+
+	content := strings.Join(lines, "\n")
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(0, 1)
+
+	box := boxStyle.Render(content)
+
 	containerStyle := lipgloss.NewStyle().
 		Width(v.width).
 		Height(v.height).
@@ -1555,6 +1787,108 @@ func (v *MainView) selectEnvironment() (tui.Component, tea.Cmd) {
 	}
 }
 
+// handleProxyDialogKey handles keyboard input for the proxy settings dialog.
+func (v *MainView) handleProxyDialogKey(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		v.showProxyDialog = false
+		return v, nil
+
+	case tea.KeyEnter:
+		// Save proxy settings
+		v.proxyURL = v.proxyInput
+		v.showProxyDialog = false
+		if v.proxyURL != "" {
+			v.notification = "Proxy set: " + v.proxyURL
+		} else {
+			v.notification = "Proxy disabled"
+		}
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case tea.KeyBackspace:
+		if len(v.proxyInput) > 0 {
+			v.proxyInput = v.proxyInput[:len(v.proxyInput)-1]
+		}
+
+	case tea.KeyRunes:
+		v.proxyInput += string(msg.Runes)
+	}
+
+	return v, nil
+}
+
+// handleTLSDialogKey handles keyboard input for the TLS settings dialog.
+func (v *MainView) handleTLSDialogKey(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		v.showTLSDialog = false
+		return v, nil
+
+	case tea.KeyEnter:
+		// Save TLS settings
+		v.tlsCertFile = v.tlsCertInput
+		v.tlsKeyFile = v.tlsKeyInput
+		v.tlsCAFile = v.tlsCAInput
+		v.showTLSDialog = false
+		if v.tlsCertFile != "" || v.tlsCAFile != "" || v.tlsInsecureSkip {
+			v.notification = "TLS settings saved"
+		} else {
+			v.notification = "TLS settings cleared"
+		}
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case tea.KeyTab, tea.KeyDown:
+		// Move to next field
+		v.tlsDialogField = (v.tlsDialogField + 1) % 4
+
+	case tea.KeyShiftTab, tea.KeyUp:
+		// Move to previous field
+		v.tlsDialogField = (v.tlsDialogField + 3) % 4
+
+	case tea.KeySpace:
+		// Toggle insecure skip (only for field 3)
+		if v.tlsDialogField == 3 {
+			v.tlsInsecureSkip = !v.tlsInsecureSkip
+		}
+
+	case tea.KeyBackspace:
+		switch v.tlsDialogField {
+		case 0:
+			if len(v.tlsCertInput) > 0 {
+				v.tlsCertInput = v.tlsCertInput[:len(v.tlsCertInput)-1]
+			}
+		case 1:
+			if len(v.tlsKeyInput) > 0 {
+				v.tlsKeyInput = v.tlsKeyInput[:len(v.tlsKeyInput)-1]
+			}
+		case 2:
+			if len(v.tlsCAInput) > 0 {
+				v.tlsCAInput = v.tlsCAInput[:len(v.tlsCAInput)-1]
+			}
+		}
+
+	case tea.KeyRunes:
+		if v.tlsDialogField != 3 { // Don't add text to toggle field
+			switch v.tlsDialogField {
+			case 0:
+				v.tlsCertInput += string(msg.Runes)
+			case 1:
+				v.tlsKeyInput += string(msg.Runes)
+			case 2:
+				v.tlsCAInput += string(msg.Runes)
+			}
+		}
+	}
+
+	return v, nil
+}
+
 // saveToHistory saves a request/response pair to history.
 func (v *MainView) saveToHistory(req *core.RequestDefinition, resp *core.Response, err error) {
 	if v.historyStore == nil || req == nil {
@@ -1627,8 +1961,18 @@ func (v *MainView) Notification() string {
 	return v.notification
 }
 
+// HTTPClientConfig holds configuration for the HTTP client.
+type HTTPClientConfig struct {
+	CookieJar       *cookies.PersistentJar
+	ProxyURL        string
+	CertFile        string
+	KeyFile         string
+	CAFile          string
+	InsecureSkip    bool
+}
+
 // sendRequest creates a tea.Cmd that sends an HTTP request asynchronously.
-func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine, cookieJar *cookies.PersistentJar) tea.Cmd {
+func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine, config HTTPClientConfig) tea.Cmd {
 	return func() tea.Msg {
 		// Early validation of URL
 		url := reqDef.FullURL()
@@ -1684,12 +2028,24 @@ func sendRequest(reqDef *core.RequestDefinition, engine *interpolate.Engine, coo
 			return components.RequestErrorMsg{Error: err}
 		}
 
-		// Create HTTP client with timeout and cookie jar
+		// Create HTTP client with timeout and configured options
 		clientOpts := []httpclient.Option{
 			httpclient.WithTimeout(30 * time.Second),
 		}
-		if cookieJar != nil {
-			clientOpts = append(clientOpts, httpclient.WithCookieJar(cookieJar))
+		if config.CookieJar != nil {
+			clientOpts = append(clientOpts, httpclient.WithCookieJar(config.CookieJar))
+		}
+		if config.ProxyURL != "" {
+			clientOpts = append(clientOpts, httpclient.WithProxy(config.ProxyURL))
+		}
+		if config.CertFile != "" && config.KeyFile != "" {
+			clientOpts = append(clientOpts, httpclient.WithClientCert(config.CertFile, config.KeyFile))
+		}
+		if config.CAFile != "" {
+			clientOpts = append(clientOpts, httpclient.WithCACert(config.CAFile))
+		}
+		if config.InsecureSkip {
+			clientOpts = append(clientOpts, httpclient.WithInsecureSkipVerify())
 		}
 		client := httpclient.NewClient(clientOpts...)
 

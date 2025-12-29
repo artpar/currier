@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime/multipart"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
@@ -292,6 +295,84 @@ func (b *rawBody) JSON() (any, error) {
 	var result any
 	err := json.Unmarshal(b.content, &result)
 	return result, err
+}
+
+// FormField represents a single field in a form body.
+type FormField struct {
+	Key      string `json:"key"`
+	Value    string `json:"value"`
+	IsFile   bool   `json:"is_file"`
+	FilePath string `json:"file_path,omitempty"`
+	FileName string `json:"file_name,omitempty"`
+}
+
+// formBody represents a multipart form-data body.
+type formBody struct {
+	fields      []FormField
+	encoded     []byte
+	contentType string
+}
+
+// NewFormBody creates a form body from the given fields.
+func NewFormBody(fields []FormField) Body {
+	fb := &formBody{
+		fields: fields,
+	}
+	fb.encode()
+	return fb
+}
+
+// encode builds the multipart form-data content.
+func (b *formBody) encode() error {
+	buf := new(bytes.Buffer)
+	writer := multipart.NewWriter(buf)
+
+	for _, field := range b.fields {
+		if field.IsFile && field.FilePath != "" {
+			// Handle file field
+			fileData, err := os.ReadFile(field.FilePath)
+			if err != nil {
+				// Skip files that can't be read
+				continue
+			}
+
+			fileName := field.FileName
+			if fileName == "" {
+				fileName = filepath.Base(field.FilePath)
+			}
+
+			part, err := writer.CreateFormFile(field.Key, fileName)
+			if err != nil {
+				continue
+			}
+			part.Write(fileData)
+		} else {
+			// Handle text field
+			writer.WriteField(field.Key, field.Value)
+		}
+	}
+
+	writer.Close()
+	b.encoded = buf.Bytes()
+	b.contentType = writer.FormDataContentType()
+	return nil
+}
+
+func (b *formBody) Type() string        { return "form" }
+func (b *formBody) ContentType() string { return b.contentType }
+func (b *formBody) IsEmpty() bool       { return len(b.fields) == 0 }
+func (b *formBody) Size() int64         { return int64(len(b.encoded)) }
+func (b *formBody) Bytes() []byte       { return b.encoded }
+func (b *formBody) String() string      { return string(b.encoded) }
+func (b *formBody) Reader() io.Reader   { return bytes.NewReader(b.encoded) }
+func (b *formBody) JSON() (any, error) {
+	// Return fields as JSON for inspection
+	return b.fields, nil
+}
+
+// Fields returns the form fields.
+func (b *formBody) Fields() []FormField {
+	return b.fields
 }
 
 // Status represents an HTTP status code and text.

@@ -575,6 +575,7 @@ type RequestDefinition struct {
 	queryParams map[string]string
 	bodyType    string
 	bodyContent string
+	formFields  []FormField // For form-data body type
 	auth        *AuthConfig
 	preScript   string
 	postScript  string
@@ -658,6 +659,40 @@ func (r *RequestDefinition) SetBodyRaw(content, contentType string) {
 	r.bodyContent = content
 }
 
+// SetBodyFormData sets the body type to form-data with the given fields.
+func (r *RequestDefinition) SetBodyFormData(fields []FormField) {
+	r.bodyType = "form"
+	r.formFields = fields
+	r.bodyContent = "" // Clear raw content
+}
+
+// FormFields returns the form fields for form-data body type.
+func (r *RequestDefinition) FormFields() []FormField {
+	return r.formFields
+}
+
+// AddFormField adds a text field to the form.
+func (r *RequestDefinition) AddFormField(key, value string) {
+	r.formFields = append(r.formFields, FormField{
+		Key:   key,
+		Value: value,
+	})
+}
+
+// AddFormFile adds a file field to the form.
+func (r *RequestDefinition) AddFormFile(key, filePath string) {
+	r.formFields = append(r.formFields, FormField{
+		Key:      key,
+		IsFile:   true,
+		FilePath: filePath,
+	})
+}
+
+// SetBodyType sets the body type (raw, json, form).
+func (r *RequestDefinition) SetBodyType(bodyType string) {
+	r.bodyType = bodyType
+}
+
 func (r *RequestDefinition) SetPreScript(script string) {
 	r.preScript = script
 }
@@ -707,17 +742,26 @@ func (r *RequestDefinition) ToRequest() (*Request, error) {
 		req.SetHeader(key, value)
 	}
 
-	if r.bodyContent != "" {
-		var contentType string
-		switch r.bodyType {
-		case "json":
-			contentType = "application/json"
-		case "raw":
-			contentType = "text/plain"
-		default:
-			contentType = "text/plain"
+	// Set body based on type
+	switch r.bodyType {
+	case "form":
+		if len(r.formFields) > 0 {
+			body := NewFormBody(r.formFields)
+			req.SetBody(body)
+			req.SetHeader("Content-Type", body.ContentType())
 		}
-		req.SetBody(NewRawBody([]byte(r.bodyContent), contentType))
+	case "json":
+		if r.bodyContent != "" {
+			req.SetBody(NewRawBody([]byte(r.bodyContent), "application/json"))
+		}
+	case "raw":
+		if r.bodyContent != "" {
+			req.SetBody(NewRawBody([]byte(r.bodyContent), "text/plain"))
+		}
+	default:
+		if r.bodyContent != "" {
+			req.SetBody(NewRawBody([]byte(r.bodyContent), "text/plain"))
+		}
 	}
 
 	return req, nil
@@ -782,23 +826,58 @@ func (r *RequestDefinition) ToRequestWithEnv(engine *interpolate.Engine) (*Reque
 		req.SetHeader(key, value)
 	}
 
-	// Interpolate body
-	if r.bodyContent != "" {
-		interpolatedBody, err := engine.Interpolate(r.bodyContent)
-		if err != nil {
-			return nil, err
+	// Set body based on type
+	switch r.bodyType {
+	case "form":
+		if len(r.formFields) > 0 {
+			// Interpolate form field values
+			interpolatedFields := make([]FormField, len(r.formFields))
+			for i, field := range r.formFields {
+				interpolatedFields[i] = field
+				if !field.IsFile {
+					interpolatedValue, err := engine.Interpolate(field.Value)
+					if err != nil {
+						return nil, err
+					}
+					interpolatedFields[i].Value = interpolatedValue
+				}
+				// Interpolate file path too
+				if field.FilePath != "" {
+					interpolatedPath, err := engine.Interpolate(field.FilePath)
+					if err != nil {
+						return nil, err
+					}
+					interpolatedFields[i].FilePath = interpolatedPath
+				}
+			}
+			body := NewFormBody(interpolatedFields)
+			req.SetBody(body)
+			req.SetHeader("Content-Type", body.ContentType())
 		}
-
-		var contentType string
-		switch r.bodyType {
-		case "json":
-			contentType = "application/json"
-		case "raw":
-			contentType = "text/plain"
-		default:
-			contentType = "text/plain"
+	case "json":
+		if r.bodyContent != "" {
+			interpolatedBody, err := engine.Interpolate(r.bodyContent)
+			if err != nil {
+				return nil, err
+			}
+			req.SetBody(NewRawBody([]byte(interpolatedBody), "application/json"))
 		}
-		req.SetBody(NewRawBody([]byte(interpolatedBody), contentType))
+	case "raw":
+		if r.bodyContent != "" {
+			interpolatedBody, err := engine.Interpolate(r.bodyContent)
+			if err != nil {
+				return nil, err
+			}
+			req.SetBody(NewRawBody([]byte(interpolatedBody), "text/plain"))
+		}
+	default:
+		if r.bodyContent != "" {
+			interpolatedBody, err := engine.Interpolate(r.bodyContent)
+			if err != nil {
+				return nil, err
+			}
+			req.SetBody(NewRawBody([]byte(interpolatedBody), "text/plain"))
+		}
 	}
 
 	return req, nil
@@ -814,6 +893,12 @@ func (r *RequestDefinition) Clone() *RequestDefinition {
 
 	for k, v := range r.headers {
 		clone.headers[k] = v
+	}
+
+	// Clone form fields
+	if len(r.formFields) > 0 {
+		clone.formFields = make([]FormField, len(r.formFields))
+		copy(clone.formFields, r.formFields)
 	}
 
 	if r.auth != nil {
