@@ -393,6 +393,78 @@ func TestStatus(t *testing.T) {
 	})
 }
 
+func TestFormBody(t *testing.T) {
+	t.Run("creates form body with text fields", func(t *testing.T) {
+		fields := []FormField{
+			{Key: "name", Value: "John"},
+			{Key: "email", Value: "john@example.com"},
+		}
+		body := NewFormBody(fields)
+
+		assert.Equal(t, "form", body.Type())
+		assert.False(t, body.IsEmpty())
+		assert.Greater(t, body.Size(), int64(0))
+	})
+
+	t.Run("empty form body", func(t *testing.T) {
+		body := NewFormBody(nil)
+		assert.True(t, body.IsEmpty())
+		// Empty form still has multipart boundary overhead
+	})
+
+	t.Run("form body returns content type with boundary", func(t *testing.T) {
+		fields := []FormField{{Key: "test", Value: "value"}}
+		body := NewFormBody(fields)
+		contentType := body.ContentType()
+		assert.Contains(t, contentType, "multipart/form-data")
+		assert.Contains(t, contentType, "boundary=")
+	})
+
+	t.Run("form body bytes matches string", func(t *testing.T) {
+		fields := []FormField{{Key: "field", Value: "data"}}
+		body := NewFormBody(fields)
+		assert.Equal(t, string(body.Bytes()), body.String())
+	})
+
+	t.Run("form body reader returns content", func(t *testing.T) {
+		fields := []FormField{{Key: "key", Value: "val"}}
+		body := NewFormBody(fields)
+
+		reader := body.Reader()
+		data, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		assert.Equal(t, body.Bytes(), data)
+	})
+
+	t.Run("form body JSON returns fields", func(t *testing.T) {
+		fields := []FormField{
+			{Key: "a", Value: "1"},
+			{Key: "b", Value: "2"},
+		}
+		body := NewFormBody(fields)
+
+		jsonData, err := body.JSON()
+		require.NoError(t, err)
+		returnedFields, ok := jsonData.([]FormField)
+		require.True(t, ok)
+		assert.Len(t, returnedFields, 2)
+	})
+
+	t.Run("form body fields returns original fields", func(t *testing.T) {
+		fields := []FormField{
+			{Key: "name", Value: "test"},
+		}
+		body := NewFormBody(fields)
+
+		// Access Fields() method via type assertion
+		formBody, ok := body.(*formBody)
+		require.True(t, ok)
+		returnedFields := formBody.Fields()
+		assert.Len(t, returnedFields, 1)
+		assert.Equal(t, "name", returnedFields[0].Key)
+	})
+}
+
 // Benchmark tests
 func BenchmarkNewRequest(b *testing.B) {
 	for i := 0; i < b.N; i++ {

@@ -2,11 +2,15 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 func TestStore_StarUnstar(t *testing.T) {
@@ -218,4 +222,78 @@ func TestStore_ClosedStore(t *testing.T) {
 
 	err = store.Clear(ctx)
 	assert.Error(t, err)
+}
+
+func TestStore_NewWithFilePath(t *testing.T) {
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "starred-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "starred.db")
+
+	// Create store with file path
+	store, err := New(dbPath)
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Star a request
+	err = store.Star(ctx, "req-1")
+	require.NoError(t, err)
+
+	// Verify starred
+	starred, err := store.IsStarred(ctx, "req-1")
+	require.NoError(t, err)
+	assert.True(t, starred)
+
+	// Close and reopen to verify persistence
+	store.Close()
+
+	store2, err := New(dbPath)
+	require.NoError(t, err)
+	defer store2.Close()
+
+	// Should still be starred
+	starred, err = store2.IsStarred(ctx, "req-1")
+	require.NoError(t, err)
+	assert.True(t, starred)
+}
+
+func TestStore_NewWithDB(t *testing.T) {
+	// Create in-memory database
+	db, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Create store with existing db
+	store, err := NewWithDB(db)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Use the store
+	err = store.Star(ctx, "req-1")
+	require.NoError(t, err)
+
+	starred, err := store.IsStarred(ctx, "req-1")
+	require.NoError(t, err)
+	assert.True(t, starred)
+
+	count, err := store.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestStore_CloseIdempotent(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+
+	// Close multiple times should not error
+	err = store.Close()
+	require.NoError(t, err)
+
+	err = store.Close()
+	require.NoError(t, err)
 }
