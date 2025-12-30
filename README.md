@@ -56,6 +56,14 @@ A vim-modal TUI API client for developers and AI agents.
 ![History Filter Demo](demos/demo-history-filter.gif?v=0.1.20)
 *m to filter by method • s to filter by status • x to clear filters*
 
+### Bulk Selection
+![Bulk Select Demo](demos/demo-bulk-select.gif?v=0.1.34)
+*Space to toggle • v for visual mode • Ctrl+a select all • d/m/c for bulk ops*
+
+### Favorite Requests
+![Starred Demo](demos/demo-starred.gif?v=0.1.34)
+*Press * to star/unstar • Starred requests show gold star indicator*
+
 ### Environment Switcher
 ![Environment Demo](demos/demo-environment.gif?v=0.1.16)
 *V to open switcher • j/k to navigate • Enter to select • Esc to cancel*
