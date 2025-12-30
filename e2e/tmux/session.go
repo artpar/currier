@@ -156,8 +156,13 @@ func (s *Session) WaitForCondition(fn func(string) bool, timeout time.Duration) 
 	return fmt.Errorf("timeout waiting for condition after %v", timeout)
 }
 
-// Kill terminates the tmux session.
+// Kill terminates the tmux session gracefully to allow coverage data flush.
 func (s *Session) Kill() {
+	// Send Ctrl+C first to allow graceful shutdown (needed for coverage data)
+	if s.isAliveUnlocked() {
+		_ = exec.Command("tmux", "send-keys", "-t", s.id, "C-c").Run()
+		time.Sleep(200 * time.Millisecond) // Give app time to flush coverage
+	}
 	cmd := exec.Command("tmux", "kill-session", "-t", s.id)
 	_ = cmd.Run() // Ignore errors - session may already be dead
 }
