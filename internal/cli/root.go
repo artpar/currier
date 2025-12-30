@@ -14,6 +14,7 @@ import (
 	"github.com/artpar/currier/internal/history/sqlite"
 	"github.com/artpar/currier/internal/importer"
 	"github.com/artpar/currier/internal/interpolate"
+	starredstore "github.com/artpar/currier/internal/starred/sqlite"
 	"github.com/artpar/currier/internal/storage/filesystem"
 	"github.com/artpar/currier/internal/tui/views"
 )
@@ -163,6 +164,14 @@ func runTUI(collections []*core.Collection, env *core.Environment) error {
 		defer cookieStoreCloser.Close()
 	}
 
+	// Initialize starred store for favorite requests
+	starredStore, err := initStarredStore()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Could not initialize starred store: %v\n", err)
+	} else {
+		view.SetStarredStore(starredStore)
+	}
+
 	// Load collections if provided
 	if len(collections) > 0 {
 		view.SetCollections(collections)
@@ -292,4 +301,32 @@ func initCookieJar() (*cookies.PersistentJar, *cookiestore.Store, error) {
 	}
 
 	return jar, store, nil
+}
+
+// initStarredStore creates and initializes the SQLite starred store.
+func initStarredStore() (*starredstore.Store, error) {
+	// Get user config directory
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("could not determine config directory: %w", err)
+		}
+		configDir = filepath.Join(homeDir, ".config")
+	}
+
+	// Create currier directory
+	currierDir := filepath.Join(configDir, "currier")
+	if err := os.MkdirAll(currierDir, 0755); err != nil {
+		return nil, fmt.Errorf("could not create config directory: %w", err)
+	}
+
+	// Create starred store (uses same pattern as history.db)
+	dbPath := filepath.Join(currierDir, "starred.db")
+	store, err := starredstore.New(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not open starred database: %w", err)
+	}
+
+	return store, nil
 }

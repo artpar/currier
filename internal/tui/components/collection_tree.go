@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/history"
+	"github.com/artpar/currier/internal/starred"
 	"github.com/artpar/currier/internal/tui"
 )
 
@@ -34,6 +35,7 @@ type TreeItem struct {
 	Request     *core.RequestDefinition
 	WebSocket   *core.WebSocketDefinition
 	Method      string
+	Starred     bool // Whether this request is starred (from starred store)
 }
 
 // TreeItemType identifies the type of tree item.
@@ -195,6 +197,12 @@ type BulkCopyAsCurlMsg struct {
 	Requests []*core.RequestDefinition
 }
 
+// ToggleStarMsg is sent when a request's starred status is toggled.
+type ToggleStarMsg struct {
+	RequestID string
+	Starred   bool // New state after toggle
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -246,15 +254,46 @@ type CollectionTree struct {
 	selected     map[string]bool // IDs of selected items (requests/folders)
 	selectMode   bool            // True when in visual/bulk select mode
 	selectAnchor int             // Anchor position for range selection (like vim's v)
+
+	// Starred store for favorite requests
+	starredStore starred.Store
+	starredCache map[string]bool // Cache of starred request IDs for fast lookup
 }
 
 // NewCollectionTree creates a new collection tree component.
 func NewCollectionTree() *CollectionTree {
 	return &CollectionTree{
-		title:    "Collections",
-		expanded: make(map[string]bool),
-		selected: make(map[string]bool),
-		viewMode: ViewHistory,
+		title:        "Collections",
+		expanded:     make(map[string]bool),
+		selected:     make(map[string]bool),
+		starredCache: make(map[string]bool),
+		viewMode:     ViewHistory,
+	}
+}
+
+// SetStarredStore sets the starred store for favorite requests.
+func (c *CollectionTree) SetStarredStore(store starred.Store) {
+	c.starredStore = store
+	c.refreshStarredCache()
+}
+
+// refreshStarredCache loads starred request IDs from the store.
+func (c *CollectionTree) refreshStarredCache() {
+	c.starredCache = make(map[string]bool)
+	if c.starredStore == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	ids, err := c.starredStore.ListStarred(ctx)
+	if err != nil {
+		return
+	}
+
+	for _, id := range ids {
+		c.starredCache[id] = true
 	}
 }
 
@@ -448,6 +487,10 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 				return c.handleBulkCopyAsCurl()
 			}
 			return c.handleCopyAsCurl()
+		case "*":
+			// Toggle star on current request
+			c.gPressed = false
+			return c.handleToggleStar()
 		case "G":
 			displayItems := c.getDisplayItems()
 			if len(displayItems) > 0 {
@@ -923,6 +966,42 @@ func (c *CollectionTree) handleCopyAsCurl() (tui.Component, tea.Cmd) {
 	return c, func() tea.Msg {
 		return CopyAsCurlMsg{
 			Request: item.Request,
+		}
+	}
+}
+
+// handleToggleStar toggles starred status on the current request.
+func (c *CollectionTree) handleToggleStar() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only star requests
+	if item.Type != ItemRequest || item.Request == nil {
+		return c, nil
+	}
+
+	requestID := item.Request.ID()
+
+	// Toggle in local cache immediately for responsive UI
+	newStarred := !c.starredCache[requestID]
+	if newStarred {
+		c.starredCache[requestID] = true
+	} else {
+		delete(c.starredCache, requestID)
+	}
+
+	// Update the item in display
+	c.rebuildItems()
+
+	// Return message for main_view to persist
+	return c, func() tea.Msg {
+		return ToggleStarMsg{
+			RequestID: requestID,
+			Starred:   newStarred,
 		}
 	}
 }
@@ -2893,6 +2972,15 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 		iconWidth = 6 // method badge (5 chars) + space
 	}
 
+	// Star indicator for favorited requests
+	starIndicator := ""
+	starWidth := 0
+	if item.Type == ItemRequest && item.Starred {
+		starStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("226")) // Gold/yellow
+		starIndicator = starStyle.Render("★") + " "
+		starWidth = 2 // star + space
+	}
+
 	// Name - show rename buffer if renaming this collection, folder, or request
 	name := item.Name
 	if c.renaming && item.Type == ItemCollection && item.ID == c.renamingCollID && c.renamingReqID == "" && c.renamingFolderID == "" {
@@ -2904,7 +2992,7 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 	if c.renaming && item.Type == ItemRequest && item.Request != nil && item.Request.ID() == c.renamingReqID {
 		name = c.renameBuffer + "▏" // Show cursor
 	}
-	availableWidth := width - len(selPrefix) - checkboxWidth - len(indent) - len(indicator) - iconWidth - 2
+	availableWidth := width - len(selPrefix) - checkboxWidth - len(indent) - len(indicator) - iconWidth - starWidth - 2
 	if availableWidth <= 0 {
 		// Not enough space for name at all
 		name = ""
@@ -2917,7 +3005,7 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 		name = name[:availableWidth-3] + "..."
 	}
 
-	line := selPrefix + checkbox + indent + indicator + icon + name
+	line := selPrefix + checkbox + indent + indicator + icon + starIndicator + name
 
 	// Pad to full width
 	if len(line) < width {
@@ -3334,6 +3422,7 @@ func (c *CollectionTree) addCollectionItems(coll *core.Collection, level int) {
 				Level:   level + 1,
 				Method:  req.Method(),
 				Request: req,
+				Starred: c.starredCache[req.ID()],
 			})
 		}
 
@@ -3381,6 +3470,7 @@ func (c *CollectionTree) addFolderItems(folder *core.Folder, level int) {
 				Level:   level + 1,
 				Method:  req.Method(),
 				Request: req,
+				Starred: c.starredCache[req.ID()],
 			})
 		}
 	}

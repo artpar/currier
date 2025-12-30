@@ -20,6 +20,7 @@ A vim-modal TUI API client for developers and AI agents.
 - **Proxy Support** - HTTP, HTTPS, and SOCKS5 proxy configuration
 - **Client Certificates** - mTLS support with custom CA certificates
 - **MCP Server** - AI assistant integration via Model Context Protocol (32 tools)
+- **Favorite Requests** - Star frequently used requests with `*` for quick identification
 
 ## Demos
 
@@ -382,6 +383,13 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `Escape` | Clear all selections |
 
 **Visual Mode:** Use `j/k` to extend selection, `G/gg` to extend to end/start. Press `v` or `Escape` to exit.
+
+#### Favorites
+| Key | Action |
+|-----|--------|
+| `*` | Toggle star/favorite on current request |
+
+Starred requests display a ★ indicator for quick identification.
 
 ### History Panel
 | Key | Action |

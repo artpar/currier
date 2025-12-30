@@ -23,6 +23,7 @@ import (
 	"github.com/artpar/currier/internal/runner"
 	"github.com/artpar/currier/internal/protocol/websocket"
 	"github.com/artpar/currier/internal/script"
+	"github.com/artpar/currier/internal/starred"
 	"github.com/artpar/currier/internal/storage/filesystem"
 	"github.com/artpar/currier/internal/tui"
 	"github.com/artpar/currier/internal/tui/components"
@@ -84,6 +85,9 @@ type MainView struct {
 
 	// Cookie jar for automatic cookie handling
 	cookieJar *cookies.PersistentJar
+
+	// Starred store for favorite requests
+	starredStore starred.Store
 
 	// Proxy and TLS configuration
 	proxyURL           string
@@ -511,6 +515,30 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		v.notification = fmt.Sprintf("✓ Moved %d items", totalMoved)
 		v.notifyUntil = time.Now().Add(2 * time.Second)
 		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case components.ToggleStarMsg:
+		// Persist starred status change
+		if v.starredStore != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				if msg.Starred {
+					_ = v.starredStore.Star(ctx, msg.RequestID)
+				} else {
+					_ = v.starredStore.Unstar(ctx, msg.RequestID)
+				}
+			}()
+		}
+		// Brief notification
+		if msg.Starred {
+			v.notification = "★ Starred"
+		} else {
+			v.notification = "☆ Unstarred"
+		}
+		v.notifyUntil = time.Now().Add(1 * time.Second)
+		return v, tea.Tick(1*time.Second, func(time.Time) tea.Msg {
 			return clearNotificationMsg{}
 		})
 
@@ -1857,6 +1885,12 @@ func (v *MainView) SetEnvironmentStore(store *filesystem.EnvironmentStore) {
 // SetCookieJar sets the cookie jar for automatic cookie handling.
 func (v *MainView) SetCookieJar(jar *cookies.PersistentJar) {
 	v.cookieJar = jar
+}
+
+// SetStarredStore sets the starred store for favorite requests.
+func (v *MainView) SetStarredStore(store starred.Store) {
+	v.starredStore = store
+	v.tree.SetStarredStore(store)
 }
 
 // openEnvSwitcher opens the environment switcher popup.
