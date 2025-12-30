@@ -3,6 +3,7 @@ package tmux
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -39,8 +40,15 @@ func (s *Session) WithSize(width, height int) *Session {
 }
 
 // Start starts the binary in a new tmux session.
+// If CURRIER_BINARY env var is set, it overrides the binary parameter.
+// If GOCOVERDIR env var is set, it's passed to the tmux session for coverage collection.
 func (s *Session) Start(binary string, args ...string) error {
 	s.t.Helper()
+
+	// Allow override via environment variable (for coverage testing)
+	if envBinary := os.Getenv("CURRIER_BINARY"); envBinary != "" {
+		binary = envBinary
+	}
 	s.binary = binary
 
 	// Build the command to run inside tmux
@@ -49,13 +57,18 @@ func (s *Session) Start(binary string, args ...string) error {
 		cmd = binary + " " + shellQuoteArgs(args)
 	}
 
+	// If GOCOVERDIR is set, wrap the command to pass it through
+	if coverDir := os.Getenv("GOCOVERDIR"); coverDir != "" {
+		cmd = fmt.Sprintf("GOCOVERDIR=%s %s", coverDir, cmd)
+	}
+
 	// Create new detached session with specific size
 	tmuxCmd := exec.Command("tmux", "new-session",
-		"-d",                            // detached
-		"-s", s.id,                      // session name
+		"-d",                              // detached
+		"-s", s.id,                        // session name
 		"-x", fmt.Sprintf("%d", s.width),  // width
 		"-y", fmt.Sprintf("%d", s.height), // height
-		cmd,                             // command to run
+		cmd,                               // command to run
 	)
 
 	var stderr bytes.Buffer
