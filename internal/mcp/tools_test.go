@@ -686,3 +686,1170 @@ func TestWsGetMessagesArgsJSONOmitEmpty(t *testing.T) {
 		t.Error("direction should be omitted when empty")
 	}
 }
+
+// ============================================================================
+// Protocol Type Tests
+// ============================================================================
+
+func TestRequest_JSONSerialization(t *testing.T) {
+	tests := []struct {
+		name    string
+		request Request
+	}{
+		{
+			name: "simple request",
+			request: Request{
+				JSONRPC: "2.0",
+				ID:      1,
+				Method:  "tools/list",
+			},
+		},
+		{
+			name: "request with params",
+			request: Request{
+				JSONRPC: "2.0",
+				ID:      "req-123",
+				Method:  "tools/call",
+				Params:  json.RawMessage(`{"name":"send_request"}`),
+			},
+		},
+		{
+			name: "request with null ID",
+			request: Request{
+				JSONRPC: "2.0",
+				ID:      nil,
+				Method:  "ping",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.request)
+			if err != nil {
+				t.Fatalf("Marshal error: %v", err)
+			}
+
+			var decoded Request
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatalf("Unmarshal error: %v", err)
+			}
+
+			if decoded.JSONRPC != tt.request.JSONRPC {
+				t.Errorf("JSONRPC = %q, want %q", decoded.JSONRPC, tt.request.JSONRPC)
+			}
+			if decoded.Method != tt.request.Method {
+				t.Errorf("Method = %q, want %q", decoded.Method, tt.request.Method)
+			}
+		})
+	}
+}
+
+func TestResponse_JSONSerialization(t *testing.T) {
+	t.Run("success response", func(t *testing.T) {
+		resp := Response{
+			JSONRPC: "2.0",
+			ID:      1,
+			Result:  json.RawMessage(`{"tools":[]}`),
+		}
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("Marshal error: %v", err)
+		}
+
+		var decoded Response
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatalf("Unmarshal error: %v", err)
+		}
+
+		if decoded.JSONRPC != "2.0" {
+			t.Errorf("JSONRPC = %q, want %q", decoded.JSONRPC, "2.0")
+		}
+		if decoded.Error != nil {
+			t.Error("Error should be nil for success response")
+		}
+	})
+
+	t.Run("error response", func(t *testing.T) {
+		resp := Response{
+			JSONRPC: "2.0",
+			ID:      1,
+			Error: &ResponseError{
+				Code:    InvalidParams,
+				Message: "Invalid parameters",
+			},
+		}
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("Marshal error: %v", err)
+		}
+
+		var decoded Response
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatalf("Unmarshal error: %v", err)
+		}
+
+		if decoded.Error == nil {
+			t.Fatal("Error should not be nil")
+		}
+		if decoded.Error.Code != InvalidParams {
+			t.Errorf("Error.Code = %d, want %d", decoded.Error.Code, InvalidParams)
+		}
+	})
+}
+
+func TestResponseError_JSONSerialization(t *testing.T) {
+	tests := []struct {
+		name string
+		err  ResponseError
+	}{
+		{
+			name: "parse error",
+			err: ResponseError{
+				Code:    ParseError,
+				Message: "Parse error",
+			},
+		},
+		{
+			name: "invalid request",
+			err: ResponseError{
+				Code:    InvalidRequest,
+				Message: "Invalid request",
+			},
+		},
+		{
+			name: "method not found",
+			err: ResponseError{
+				Code:    MethodNotFound,
+				Message: "Method not found",
+			},
+		},
+		{
+			name: "with data",
+			err: ResponseError{
+				Code:    InternalError,
+				Message: "Internal error",
+				Data:    map[string]string{"detail": "something went wrong"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.err)
+			if err != nil {
+				t.Fatalf("Marshal error: %v", err)
+			}
+
+			var decoded ResponseError
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatalf("Unmarshal error: %v", err)
+			}
+
+			if decoded.Code != tt.err.Code {
+				t.Errorf("Code = %d, want %d", decoded.Code, tt.err.Code)
+			}
+			if decoded.Message != tt.err.Message {
+				t.Errorf("Message = %q, want %q", decoded.Message, tt.err.Message)
+			}
+		})
+	}
+}
+
+func TestJSONRPCErrorCodes(t *testing.T) {
+	if ParseError != -32700 {
+		t.Errorf("ParseError = %d, want -32700", ParseError)
+	}
+	if InvalidRequest != -32600 {
+		t.Errorf("InvalidRequest = %d, want -32600", InvalidRequest)
+	}
+	if MethodNotFound != -32601 {
+		t.Errorf("MethodNotFound = %d, want -32601", MethodNotFound)
+	}
+	if InvalidParams != -32602 {
+		t.Errorf("InvalidParams = %d, want -32602", InvalidParams)
+	}
+	if InternalError != -32603 {
+		t.Errorf("InternalError = %d, want -32603", InternalError)
+	}
+}
+
+func TestNotification_JSONSerialization(t *testing.T) {
+	notification := Notification{
+		JSONRPC: "2.0",
+		Method:  "notifications/initialized",
+		Params:  json.RawMessage(`{}`),
+	}
+
+	data, err := json.Marshal(notification)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded Notification
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.JSONRPC != "2.0" {
+		t.Errorf("JSONRPC = %q, want %q", decoded.JSONRPC, "2.0")
+	}
+	if decoded.Method != "notifications/initialized" {
+		t.Errorf("Method = %q, want %q", decoded.Method, "notifications/initialized")
+	}
+}
+
+func TestServerInfo_JSONSerialization(t *testing.T) {
+	info := ServerInfo{
+		Name:    "currier-mcp",
+		Version: "0.1.0",
+	}
+
+	data, err := json.Marshal(info)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded ServerInfo
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != info.Name {
+		t.Errorf("Name = %q, want %q", decoded.Name, info.Name)
+	}
+	if decoded.Version != info.Version {
+		t.Errorf("Version = %q, want %q", decoded.Version, info.Version)
+	}
+}
+
+func TestServerCapabilities_JSONSerialization(t *testing.T) {
+	caps := ServerCapabilities{
+		Tools: &ToolsCapability{
+			ListChanged: true,
+		},
+		Resources: &ResourcesCapability{
+			Subscribe:   true,
+			ListChanged: false,
+		},
+	}
+
+	data, err := json.Marshal(caps)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded ServerCapabilities
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Tools == nil {
+		t.Fatal("Tools should not be nil")
+	}
+	if !decoded.Tools.ListChanged {
+		t.Error("Tools.ListChanged should be true")
+	}
+	if decoded.Resources == nil {
+		t.Fatal("Resources should not be nil")
+	}
+	if !decoded.Resources.Subscribe {
+		t.Error("Resources.Subscribe should be true")
+	}
+}
+
+func TestInitializeParams_JSONSerialization(t *testing.T) {
+	params := InitializeParams{
+		ProtocolVersion: ProtocolVersion,
+		ClientInfo: ClientInfo{
+			Name:    "test-client",
+			Version: "1.0.0",
+		},
+		Capabilities: ClientCapabilities{
+			Roots: &RootsCapability{
+				ListChanged: true,
+			},
+		},
+	}
+
+	data, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded InitializeParams
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.ProtocolVersion != ProtocolVersion {
+		t.Errorf("ProtocolVersion = %q, want %q", decoded.ProtocolVersion, ProtocolVersion)
+	}
+	if decoded.ClientInfo.Name != "test-client" {
+		t.Errorf("ClientInfo.Name = %q, want %q", decoded.ClientInfo.Name, "test-client")
+	}
+}
+
+func TestInitializeResult_JSONSerialization(t *testing.T) {
+	result := InitializeResult{
+		ProtocolVersion: ProtocolVersion,
+		ServerInfo: ServerInfo{
+			Name:    "currier-mcp",
+			Version: "0.1.0",
+		},
+		Capabilities: ServerCapabilities{
+			Tools: &ToolsCapability{},
+		},
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded InitializeResult
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.ProtocolVersion != ProtocolVersion {
+		t.Errorf("ProtocolVersion = %q, want %q", decoded.ProtocolVersion, ProtocolVersion)
+	}
+	if decoded.ServerInfo.Name != "currier-mcp" {
+		t.Errorf("ServerInfo.Name = %q, want %q", decoded.ServerInfo.Name, "currier-mcp")
+	}
+}
+
+func TestTool_JSONSerialization(t *testing.T) {
+	tool := Tool{
+		Name:        "send_request",
+		Description: "Send an HTTP request",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"method":{"type":"string"}}}`),
+	}
+
+	data, err := json.Marshal(tool)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded Tool
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != tool.Name {
+		t.Errorf("Name = %q, want %q", decoded.Name, tool.Name)
+	}
+	if decoded.Description != tool.Description {
+		t.Errorf("Description = %q, want %q", decoded.Description, tool.Description)
+	}
+}
+
+func TestToolsListResult_JSONSerialization(t *testing.T) {
+	result := ToolsListResult{
+		Tools: []Tool{
+			{Name: "tool1", Description: "First tool"},
+			{Name: "tool2", Description: "Second tool"},
+		},
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded ToolsListResult
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if len(decoded.Tools) != 2 {
+		t.Errorf("len(Tools) = %d, want 2", len(decoded.Tools))
+	}
+}
+
+func TestToolCallParams_JSONSerialization(t *testing.T) {
+	params := ToolCallParams{
+		Name:      "send_request",
+		Arguments: json.RawMessage(`{"method":"GET","url":"https://example.com"}`),
+	}
+
+	data, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded ToolCallParams
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "send_request" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "send_request")
+	}
+}
+
+func TestToolCallResult_JSONSerialization(t *testing.T) {
+	result := ToolCallResult{
+		Content: []ContentBlock{
+			TextContent("Success"),
+		},
+		IsError: false,
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded ToolCallResult
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if len(decoded.Content) != 1 {
+		t.Errorf("len(Content) = %d, want 1", len(decoded.Content))
+	}
+	if decoded.IsError {
+		t.Error("IsError should be false")
+	}
+}
+
+func TestContentBlock_JSONSerialization(t *testing.T) {
+	tests := []struct {
+		name  string
+		block ContentBlock
+	}{
+		{
+			name: "text block",
+			block: ContentBlock{
+				Type: "text",
+				Text: "Hello, World!",
+			},
+		},
+		{
+			name: "binary block",
+			block: ContentBlock{
+				Type:     "blob",
+				MimeType: "image/png",
+				Data:     "iVBORw0KGgo=",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.block)
+			if err != nil {
+				t.Fatalf("Marshal error: %v", err)
+			}
+
+			var decoded ContentBlock
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatalf("Unmarshal error: %v", err)
+			}
+
+			if decoded.Type != tt.block.Type {
+				t.Errorf("Type = %q, want %q", decoded.Type, tt.block.Type)
+			}
+		})
+	}
+}
+
+func TestResource_JSONSerialization(t *testing.T) {
+	resource := Resource{
+		URI:         "collections://list",
+		Name:        "Collections List",
+		Description: "List of API collections",
+		MimeType:    "application/json",
+	}
+
+	data, err := json.Marshal(resource)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded Resource
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.URI != resource.URI {
+		t.Errorf("URI = %q, want %q", decoded.URI, resource.URI)
+	}
+	if decoded.Name != resource.Name {
+		t.Errorf("Name = %q, want %q", decoded.Name, resource.Name)
+	}
+}
+
+func TestResourcesListResult_JSONSerialization(t *testing.T) {
+	result := ResourcesListResult{
+		Resources: []Resource{
+			{URI: "collections://list", Name: "Collections"},
+			{URI: "history://recent", Name: "Recent History"},
+		},
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded ResourcesListResult
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if len(decoded.Resources) != 2 {
+		t.Errorf("len(Resources) = %d, want 2", len(decoded.Resources))
+	}
+}
+
+func TestResourceReadParams_JSONSerialization(t *testing.T) {
+	params := ResourceReadParams{
+		URI: "collections://list",
+	}
+
+	data, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded ResourceReadParams
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.URI != "collections://list" {
+		t.Errorf("URI = %q, want %q", decoded.URI, "collections://list")
+	}
+}
+
+func TestResourceReadResult_JSONSerialization(t *testing.T) {
+	result := ResourceReadResult{
+		Contents: []ResourceContent{
+			{
+				URI:      "collections://list",
+				MimeType: "application/json",
+				Text:     `{"collections":[]}`,
+			},
+		},
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded ResourceReadResult
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if len(decoded.Contents) != 1 {
+		t.Errorf("len(Contents) = %d, want 1", len(decoded.Contents))
+	}
+}
+
+func TestMCPMethodNames(t *testing.T) {
+	if MethodInitialize != "initialize" {
+		t.Errorf("MethodInitialize = %q, want %q", MethodInitialize, "initialize")
+	}
+	if MethodToolsList != "tools/list" {
+		t.Errorf("MethodToolsList = %q, want %q", MethodToolsList, "tools/list")
+	}
+	if MethodToolsCall != "tools/call" {
+		t.Errorf("MethodToolsCall = %q, want %q", MethodToolsCall, "tools/call")
+	}
+	if MethodResourcesList != "resources/list" {
+		t.Errorf("MethodResourcesList = %q, want %q", MethodResourcesList, "resources/list")
+	}
+	if MethodResourcesRead != "resources/read" {
+		t.Errorf("MethodResourcesRead = %q, want %q", MethodResourcesRead, "resources/read")
+	}
+	if MethodPing != "ping" {
+		t.Errorf("MethodPing = %q, want %q", MethodPing, "ping")
+	}
+}
+
+func TestProtocolVersion(t *testing.T) {
+	if ProtocolVersion != "2024-11-05" {
+		t.Errorf("ProtocolVersion = %q, want %q", ProtocolVersion, "2024-11-05")
+	}
+}
+
+// ============================================================================
+// Helper Function Tests
+// ============================================================================
+
+func TestContains(t *testing.T) {
+	tests := []struct {
+		name   string
+		s      string
+		substr string
+		want   bool
+	}{
+		{
+			name:   "exact match",
+			s:      "hello",
+			substr: "hello",
+			want:   true,
+		},
+		{
+			name:   "substring at start",
+			s:      "hello world",
+			substr: "hello",
+			want:   true,
+		},
+		{
+			name:   "substring at end",
+			s:      "hello world",
+			substr: "world",
+			want:   true,
+		},
+		{
+			name:   "substring in middle",
+			s:      "hello world test",
+			substr: "world",
+			want:   true,
+		},
+		{
+			name:   "not found",
+			s:      "hello world",
+			substr: "foo",
+			want:   false,
+		},
+		{
+			name:   "empty substring",
+			s:      "hello",
+			substr: "",
+			want:   true,
+		},
+		{
+			name:   "empty string",
+			s:      "",
+			substr: "hello",
+			want:   false,
+		},
+		{
+			name:   "both empty",
+			s:      "",
+			substr: "",
+			want:   true,
+		},
+		{
+			name:   "substring longer than string",
+			s:      "hi",
+			substr: "hello",
+			want:   false,
+		},
+		{
+			name:   "single char match",
+			s:      "hello",
+			substr: "e",
+			want:   true,
+		},
+		{
+			name:   "single char no match",
+			s:      "hello",
+			substr: "x",
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := contains(tt.s, tt.substr)
+			if got != tt.want {
+				t.Errorf("contains(%q, %q) = %v, want %v", tt.s, tt.substr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSearchSubstring(t *testing.T) {
+	tests := []struct {
+		name   string
+		s      string
+		substr string
+		want   bool
+	}{
+		{
+			name:   "found at start",
+			s:      "hello world",
+			substr: "hello",
+			want:   true,
+		},
+		{
+			name:   "found at end",
+			s:      "hello world",
+			substr: "world",
+			want:   true,
+		},
+		{
+			name:   "found in middle",
+			s:      "hello world test",
+			substr: "world",
+			want:   true,
+		},
+		{
+			name:   "not found",
+			s:      "hello world",
+			substr: "xyz",
+			want:   false,
+		},
+		{
+			name:   "exact match",
+			s:      "test",
+			substr: "test",
+			want:   true,
+		},
+		{
+			name:   "partial match only",
+			s:      "testing",
+			substr: "test",
+			want:   true,
+		},
+		{
+			name:   "case sensitive no match",
+			s:      "Hello",
+			substr: "hello",
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := searchSubstring(tt.s, tt.substr)
+			if got != tt.want {
+				t.Errorf("searchSubstring(%q, %q) = %v, want %v", tt.s, tt.substr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestJSONContentError(t *testing.T) {
+	// Test with a value that cannot be marshaled to JSON
+	// Channels cannot be marshaled
+	ch := make(chan int)
+	_, err := JSONContent(ch)
+	if err == nil {
+		t.Error("JSONContent should return error for unmarshalable value")
+	}
+}
+
+func TestTruncateBodyEdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		maxSize     int
+		wantLen     int
+		wantTrunc   bool
+	}{
+		{
+			name:      "empty body",
+			body:      "",
+			maxSize:   100,
+			wantLen:   0,
+			wantTrunc: false,
+		},
+		{
+			name:      "one char under max",
+			body:      strings.Repeat("x", 99),
+			maxSize:   100,
+			wantLen:   99,
+			wantTrunc: false,
+		},
+		{
+			name:      "one char over max",
+			body:      strings.Repeat("x", 101),
+			maxSize:   100,
+			wantTrunc: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, truncated := truncateBody(tt.body, tt.maxSize)
+			if truncated != tt.wantTrunc {
+				t.Errorf("truncated = %v, want %v", truncated, tt.wantTrunc)
+			}
+			if !tt.wantTrunc && len(result) != tt.wantLen {
+				t.Errorf("len(result) = %d, want %d", len(result), tt.wantLen)
+			}
+			if tt.wantTrunc && !strings.Contains(result, "TRUNCATED") {
+				t.Errorf("result should contain 'TRUNCATED' when truncated")
+			}
+		})
+	}
+}
+
+func TestApplyPaginationEdgeCases(t *testing.T) {
+	tests := []struct {
+		name       string
+		items      []int
+		offset     int
+		limit      int
+		wantLen    int
+		wantTotal  int
+		wantMore   bool
+	}{
+		{
+			name:      "empty slice",
+			items:     []int{},
+			offset:    0,
+			limit:     10,
+			wantLen:   0,
+			wantTotal: 0,
+			wantMore:  false,
+		},
+		{
+			name:      "negative offset treated as zero",
+			items:     []int{1, 2, 3},
+			offset:    -1,
+			limit:     2,
+			wantLen:   2,
+			wantTotal: 3,
+			wantMore:  true,
+		},
+		{
+			name:      "single item",
+			items:     []int{1},
+			offset:    0,
+			limit:     10,
+			wantLen:   1,
+			wantTotal: 1,
+			wantMore:  false,
+		},
+		{
+			name:      "limit larger than slice",
+			items:     []int{1, 2, 3},
+			offset:    0,
+			limit:     100,
+			wantLen:   3,
+			wantTotal: 3,
+			wantMore:  false,
+		},
+		{
+			name:      "offset at boundary",
+			items:     []int{1, 2, 3, 4, 5},
+			offset:    5,
+			limit:     2,
+			wantLen:   0,
+			wantTotal: 5,
+			wantMore:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, pagination := applyPagination(tt.items, tt.offset, tt.limit)
+			if len(result) != tt.wantLen {
+				t.Errorf("len(result) = %d, want %d", len(result), tt.wantLen)
+			}
+			if pagination.Total != tt.wantTotal {
+				t.Errorf("Total = %d, want %d", pagination.Total, tt.wantTotal)
+			}
+			if pagination.HasMore != tt.wantMore {
+				t.Errorf("HasMore = %v, want %v", pagination.HasMore, tt.wantMore)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Additional Args Struct Tests
+// ============================================================================
+
+func TestListCookiesArgs(t *testing.T) {
+	args := listCookiesArgs{
+		Domain: "example.com",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded listCookiesArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Domain != "example.com" {
+		t.Errorf("Domain = %q, want %q", decoded.Domain, "example.com")
+	}
+}
+
+func TestGetHistoryArgs(t *testing.T) {
+	args := getHistoryArgs{
+		Limit:  50,
+		Filter: "GET",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded getHistoryArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Limit != 50 {
+		t.Errorf("Limit = %d, want %d", decoded.Limit, 50)
+	}
+	if decoded.Filter != "GET" {
+		t.Errorf("Filter = %q, want %q", decoded.Filter, "GET")
+	}
+}
+
+func TestCreateCollectionArgs(t *testing.T) {
+	args := createCollectionArgs{
+		Name:        "My API Collection",
+		Description: "A collection of API endpoints",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded createCollectionArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "My API Collection" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "My API Collection")
+	}
+	if decoded.Description != "A collection of API endpoints" {
+		t.Errorf("Description = %q, want %q", decoded.Description, "A collection of API endpoints")
+	}
+}
+
+func TestDeleteCollectionArgs(t *testing.T) {
+	args := deleteCollectionArgs{
+		Name: "Old Collection",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded deleteCollectionArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "Old Collection" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "Old Collection")
+	}
+}
+
+func TestRenameCollectionArgs(t *testing.T) {
+	args := renameCollectionArgs{
+		Name:    "Old Name",
+		NewName: "New Name",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded renameCollectionArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "Old Name" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "Old Name")
+	}
+	if decoded.NewName != "New Name" {
+		t.Errorf("NewName = %q, want %q", decoded.NewName, "New Name")
+	}
+}
+
+func TestCreateFolderArgs(t *testing.T) {
+	args := createFolderArgs{
+		Collection:  "My Collection",
+		Name:        "new-folder",
+		Parent:      "parent/child",
+		Description: "A test folder",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded createFolderArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Collection != "My Collection" {
+		t.Errorf("Collection = %q, want %q", decoded.Collection, "My Collection")
+	}
+	if decoded.Name != "new-folder" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "new-folder")
+	}
+	if decoded.Parent != "parent/child" {
+		t.Errorf("Parent = %q, want %q", decoded.Parent, "parent/child")
+	}
+	if decoded.Description != "A test folder" {
+		t.Errorf("Description = %q, want %q", decoded.Description, "A test folder")
+	}
+}
+
+func TestDeleteFolderArgs(t *testing.T) {
+	args := deleteFolderArgs{
+		Collection: "My Collection",
+		Folder:     "folder/to/delete",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded deleteFolderArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Collection != "My Collection" {
+		t.Errorf("Collection = %q, want %q", decoded.Collection, "My Collection")
+	}
+	if decoded.Folder != "folder/to/delete" {
+		t.Errorf("Folder = %q, want %q", decoded.Folder, "folder/to/delete")
+	}
+}
+
+func TestCreateEnvironmentArgs(t *testing.T) {
+	args := createEnvironmentArgs{
+		Name: "Production",
+		Variables: map[string]string{
+			"base_url": "https://api.example.com",
+			"api_key":  "secret123",
+		},
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded createEnvironmentArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "Production" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "Production")
+	}
+	if decoded.Variables["base_url"] != "https://api.example.com" {
+		t.Errorf("Variables[base_url] = %q, want %q", decoded.Variables["base_url"], "https://api.example.com")
+	}
+}
+
+func TestDeleteEnvironmentArgs(t *testing.T) {
+	args := deleteEnvironmentArgs{
+		Name: "Staging",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded deleteEnvironmentArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "Staging" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "Staging")
+	}
+}
+
+func TestSetEnvVarArgs(t *testing.T) {
+	args := setEnvVarArgs{
+		Environment: "Production",
+		Key:         "api_key",
+		Value:       "new-secret",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded setEnvVarArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Environment != "Production" {
+		t.Errorf("Environment = %q, want %q", decoded.Environment, "Production")
+	}
+	if decoded.Key != "api_key" {
+		t.Errorf("Key = %q, want %q", decoded.Key, "api_key")
+	}
+	if decoded.Value != "new-secret" {
+		t.Errorf("Value = %q, want %q", decoded.Value, "new-secret")
+	}
+}
+
+func TestRunCollectionArgs(t *testing.T) {
+	args := runCollectionArgs{
+		Name:        "My API Tests",
+		Environment: "Production",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded runCollectionArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "My API Tests" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "My API Tests")
+	}
+	if decoded.Environment != "Production" {
+		t.Errorf("Environment = %q, want %q", decoded.Environment, "Production")
+	}
+}
+
+func TestExportAsCurlArgs(t *testing.T) {
+	args := exportAsCurlArgs{
+		Collection: "My API",
+		Request:    "Get Users",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded exportAsCurlArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Collection != "My API" {
+		t.Errorf("Collection = %q, want %q", decoded.Collection, "My API")
+	}
+	if decoded.Request != "Get Users" {
+		t.Errorf("Request = %q, want %q", decoded.Request, "Get Users")
+	}
+}
