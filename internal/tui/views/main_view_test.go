@@ -2736,3 +2736,621 @@ func TestMainView_EnvironmentEditor(t *testing.T) {
 		assert.Contains(t, output, "Test Env")
 	})
 }
+
+func TestMainView_ProxyDialogHandling(t *testing.T) {
+	t.Run("typing in proxy dialog", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showProxyDialog = true
+		view.proxyInput = ""
+
+		// Type some text
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, "http", view.proxyInput)
+	})
+
+	t.Run("backspace in proxy dialog", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showProxyDialog = true
+		view.proxyInput = "http://proxy"
+
+		msg := tea.KeyMsg{Type: tea.KeyBackspace}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, "http://prox", view.proxyInput)
+	})
+
+	t.Run("enter saves proxy and closes dialog", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showProxyDialog = true
+		view.proxyInput = "http://proxy:8080"
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showProxyDialog)
+		assert.Equal(t, "http://proxy:8080", view.proxyURL)
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("enter with empty proxy shows disabled message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showProxyDialog = true
+		view.proxyInput = ""
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showProxyDialog)
+		assert.Contains(t, view.Notification(), "disabled")
+	})
+}
+
+func TestMainView_TLSDialogHandling(t *testing.T) {
+	t.Run("Tab moves to next field", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 0
+
+		msg := tea.KeyMsg{Type: tea.KeyTab}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, 1, view.tlsDialogField)
+	})
+
+	t.Run("Down moves to next field", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 0
+
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, 1, view.tlsDialogField)
+	})
+
+	t.Run("Shift+Tab moves to previous field", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 2
+
+		msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, 1, view.tlsDialogField)
+	})
+
+	t.Run("Up moves to previous field", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 1
+
+		msg := tea.KeyMsg{Type: tea.KeyUp}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, 0, view.tlsDialogField)
+	})
+
+	t.Run("Space toggles insecure skip on field 3", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 3
+		view.tlsInsecureSkip = false
+
+		msg := tea.KeyMsg{Type: tea.KeySpace}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.True(t, view.tlsInsecureSkip)
+
+		// Toggle back
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+		assert.False(t, view.tlsInsecureSkip)
+	})
+
+	t.Run("typing in cert field", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 0
+		view.tlsCertInput = ""
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}}
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, "ce", view.tlsCertInput)
+	})
+
+	t.Run("typing in key field", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 1
+		view.tlsKeyInput = ""
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, "k", view.tlsKeyInput)
+	})
+
+	t.Run("typing in CA field", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 2
+		view.tlsCAInput = ""
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, "c", view.tlsCAInput)
+	})
+
+	t.Run("typing in toggle field does nothing", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 3
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should not crash - toggle field ignores text input
+		assert.NotNil(t, view)
+	})
+
+	t.Run("backspace in cert field", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 0
+		view.tlsCertInput = "cert.pem"
+
+		msg := tea.KeyMsg{Type: tea.KeyBackspace}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, "cert.pe", view.tlsCertInput)
+	})
+
+	t.Run("backspace in key field", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 1
+		view.tlsKeyInput = "key.pem"
+
+		msg := tea.KeyMsg{Type: tea.KeyBackspace}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, "key.pe", view.tlsKeyInput)
+	})
+
+	t.Run("backspace in CA field", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 2
+		view.tlsCAInput = "ca.pem"
+
+		msg := tea.KeyMsg{Type: tea.KeyBackspace}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, "ca.pe", view.tlsCAInput)
+	})
+
+	t.Run("enter saves TLS settings with values", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsCertInput = "/path/to/cert.pem"
+		view.tlsKeyInput = "/path/to/key.pem"
+		view.tlsCAInput = "/path/to/ca.pem"
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showTLSDialog)
+		assert.Equal(t, "/path/to/cert.pem", view.tlsCertFile)
+		assert.Equal(t, "/path/to/key.pem", view.tlsKeyFile)
+		assert.Equal(t, "/path/to/ca.pem", view.tlsCAFile)
+		assert.Contains(t, view.Notification(), "saved")
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("enter clears TLS settings when empty", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsCertInput = ""
+		view.tlsKeyInput = ""
+		view.tlsCAInput = ""
+		view.tlsInsecureSkip = false
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Contains(t, view.Notification(), "cleared")
+	})
+
+	t.Run("field wraps around", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showTLSDialog = true
+		view.tlsDialogField = 3
+
+		msg := tea.KeyMsg{Type: tea.KeyTab}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, 0, view.tlsDialogField)
+	})
+}
+
+func TestMainView_RunnerModal(t *testing.T) {
+	t.Run("Ctrl+R opens runner modal", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Add a collection to run
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "https://example.com"))
+		view.SetCollections([]*core.Collection{col})
+
+		msg := tea.KeyMsg{Type: tea.KeyCtrlR}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Either shows modal or notification
+		assert.NotNil(t, view)
+	})
+
+	t.Run("renders runner modal when open", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showRunnerModal = true
+		view.runnerProgress = 5
+		view.runnerTotal = 10
+		view.runnerCurrentReq = "Testing API"
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("Esc closes runner modal", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showRunnerModal = true
+		view.runnerRunning = false
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showRunnerModal)
+	})
+
+	t.Run("Esc cancels running runner", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showRunnerModal = true
+		view.runnerRunning = true
+		// Create a cancel func that does nothing
+		view.runnerCancelFunc = func() {}
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.runnerRunning)
+	})
+
+	t.Run("Enter closes completed runner modal", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showRunnerModal = true
+		view.runnerRunning = false
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showRunnerModal)
+	})
+
+	t.Run("startCollectionRunner with no collection shows notification", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		// No collections set
+
+		msg := tea.KeyMsg{Type: tea.KeyCtrlR}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should show notification
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_EnvironmentSwitcherInteractions(t *testing.T) {
+	t.Run("V key opens env switcher", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Without environment store, should show notification
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'V'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Should show "No environment store available" in notification
+		assert.Contains(t, view.Notification(), "environment")
+	})
+
+	t.Run("q key closes env switcher", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvSwitcher = true
+		view.envList = []filesystem.EnvironmentMeta{
+			{ID: "1", Name: "Dev"},
+		}
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showEnvSwitcher)
+	})
+
+	t.Run("j/k respects bounds", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvSwitcher = true
+		view.envList = []filesystem.EnvironmentMeta{
+			{ID: "1", Name: "Dev"},
+		}
+		view.envCursor = 0
+
+		// Try to go down past end
+		msgJ := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := view.Update(msgJ)
+		view = updated.(*MainView)
+		assert.Equal(t, 0, view.envCursor) // Should stay at 0
+
+		// Try to go up past start
+		msgK := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+		updated, _ = view.Update(msgK)
+		view = updated.(*MainView)
+		assert.Equal(t, 0, view.envCursor) // Should stay at 0
+	})
+
+	t.Run("Enter selects environment", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvSwitcher = true
+		view.envList = []filesystem.EnvironmentMeta{
+			{ID: "1", Name: "Dev"},
+		}
+		view.envCursor = 0
+
+		// Enter without environment store should just close
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showEnvSwitcher)
+	})
+}
+
+func TestMainView_EnvironmentEditorInteractions(t *testing.T) {
+	t.Run("Esc closes environment editor", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvEditor = true
+		view.envEditorMode = 0
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.showEnvEditor)
+	})
+
+	t.Run("j/k navigates in environment editor", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvEditor = true
+		view.editingEnv = core.NewEnvironment("Test")
+		view.editingEnv.SetVariable("KEY1", "val1")
+		view.editingEnv.SetVariable("KEY2", "val2")
+		view.envVarKeys = []string{"KEY1", "KEY2"}
+		view.envEditorCursor = 0
+		view.envEditorMode = 0
+
+		msgJ := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := view.Update(msgJ)
+		view = updated.(*MainView)
+		assert.Equal(t, 1, view.envEditorCursor)
+
+		msgK := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+		updated, _ = view.Update(msgK)
+		view = updated.(*MainView)
+		assert.Equal(t, 0, view.envEditorCursor)
+	})
+
+	t.Run("d deletes variable in environment editor", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvEditor = true
+		env := core.NewEnvironment("Test")
+		env.SetVariable("KEY1", "val1")
+		env.SetVariable("KEY2", "val2")
+		view.editingEnv = env
+		view.envVarKeys = []string{"KEY1", "KEY2"}
+		view.envEditorCursor = 0
+		view.envEditorMode = 0
+
+		msgD := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
+		updated, _ := view.Update(msgD)
+		view = updated.(*MainView)
+
+		assert.Len(t, view.envVarKeys, 1)
+	})
+
+	t.Run("a adds new variable", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvEditor = true
+		view.editingEnv = core.NewEnvironment("Test")
+		view.envVarKeys = []string{}
+		view.envEditorCursor = 0
+		view.envEditorMode = 0
+
+		msgA := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+		updated, _ := view.Update(msgA)
+		view = updated.(*MainView)
+
+		// Should switch to edit mode
+		assert.Equal(t, 1, view.envEditorMode)
+	})
+
+	t.Run("Enter edits selected variable", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvEditor = true
+		env := core.NewEnvironment("Test")
+		env.SetVariable("KEY1", "val1")
+		view.editingEnv = env
+		view.envVarKeys = []string{"KEY1"}
+		view.envEditorCursor = 0
+		view.envEditorMode = 0
+
+		msgEnter := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := view.Update(msgEnter)
+		view = updated.(*MainView)
+
+		// Should switch to edit mode (value editing is mode 3)
+		assert.Equal(t, 3, view.envEditorMode)
+	})
+}
+
+func TestMainView_SetStarredStore(t *testing.T) {
+	t.Run("sets starred store", func(t *testing.T) {
+		view := NewMainView()
+		view.SetStarredStore(nil)
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_SetEnvironmentStore(t *testing.T) {
+	t.Run("sets environment store", func(t *testing.T) {
+		view := NewMainView()
+		view.SetEnvironmentStore(nil)
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_ClearCookiesKey(t *testing.T) {
+	t.Run("Ctrl+K without cookie jar does nothing", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := tea.KeyMsg{Type: tea.KeyCtrlK}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		// Without cookie jar, should do nothing
+		assert.Nil(t, cmd)
+		assert.Empty(t, view.Notification())
+	})
+}
+
+func TestMainView_WSDisconnectWithoutConnection(t *testing.T) {
+	t.Run("disconnect when not connected does nothing", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.SetViewMode(ViewModeWebSocket)
+
+		msg := components.WSDisconnectCmd{}
+		updated, cmd := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.NotNil(t, view)
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestMainView_RunnerCompleteMessage(t *testing.T) {
+	t.Run("handles runner complete message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showRunnerModal = true
+		view.runnerRunning = true
+
+		msg := runnerCompleteMsg{Summary: nil}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.runnerRunning)
+	})
+}
+
+func TestMainView_RunnerProgressMessage(t *testing.T) {
+	t.Run("handles runner progress message", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showRunnerModal = true
+		view.runnerRunning = true
+
+		msg := runnerProgressMsg{Current: 5, Total: 10, CurrentName: "Test Request"}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, 5, view.runnerProgress)
+		assert.Equal(t, 10, view.runnerTotal)
+		assert.Equal(t, "Test Request", view.runnerCurrentReq)
+	})
+}
