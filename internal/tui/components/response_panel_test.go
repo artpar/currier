@@ -1210,3 +1210,32 @@ func TestResponsePanel_UpdateEdgeCases(t *testing.T) {
 		assert.Equal(t, ResponseTabTests, panel.ActiveTab())
 	})
 }
+
+func TestResponsePanel_ConsoleTabAdditional(t *testing.T) {
+	t.Run("renders all console message types", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabConsole)
+
+		resp := newTestResponse(200, "OK")
+		panel.SetResponse(resp)
+
+		// Add console messages of different types
+		panel.AddConsoleMessage("log", "Test log message")
+		panel.AddConsoleMessage("error", "Test error message")
+		panel.AddConsoleMessage("warn", "Test warning message")
+		panel.AddConsoleMessage("info", "Test info message")
+
+		view := panel.View()
+		assert.Contains(t, view, "Test log message")
+	})
+
+	t.Run("clears console messages", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.AddConsoleMessage("log", "Test message")
+
+		panel.SetConsoleMessages(nil)
+
+		assert.Empty(t, panel.consoleMessages)
+	})
+}

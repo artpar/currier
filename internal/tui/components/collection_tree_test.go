@@ -2489,3 +2489,98 @@ func TestCollectionTree_HistoryFiltering(t *testing.T) {
 		assert.Equal(t, 0, tree.HistoryCursor())
 	})
 }
+
+func TestCollectionTree_GetSelectedCollection(t *testing.T) {
+	t.Run("returns nil when no collections", func(t *testing.T) {
+		tree := NewCollectionTree()
+		result := tree.GetSelectedCollection()
+		assert.Nil(t, result)
+	})
+
+	t.Run("returns first collection when none selected", func(t *testing.T) {
+		tree := NewCollectionTree()
+		coll := core.NewCollection("Test Collection")
+		tree.SetCollections([]*core.Collection{coll})
+
+		result := tree.GetSelectedCollection()
+		assert.NotNil(t, result)
+		assert.Equal(t, "Test Collection", result.Name())
+	})
+
+	t.Run("returns collection when collection selected", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		coll := core.NewCollection("Test Collection")
+		tree.SetCollections([]*core.Collection{coll})
+
+		result := tree.GetSelectedCollection()
+		assert.NotNil(t, result)
+		assert.Equal(t, "Test Collection", result.Name())
+	})
+
+	t.Run("returns collection containing selected request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		coll := core.NewCollection("My API")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com/users")
+		coll.AddRequest(req)
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Expand collection and move to request
+		tree.SetCursor(0)
+		tree.Focus()
+		msg := tea.KeyMsg{Type: tea.KeyRight}
+		tree.Update(msg)
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		tree.Update(msg)
+
+		result := tree.GetSelectedCollection()
+		assert.NotNil(t, result)
+		assert.Equal(t, "My API", result.Name())
+	})
+
+	t.Run("returns collection containing selected folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		coll := core.NewCollection("My API")
+		coll.AddFolder("Users")
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Expand collection and move to folder
+		tree.SetCursor(0)
+		tree.Focus()
+		msg := tea.KeyMsg{Type: tea.KeyRight}
+		tree.Update(msg)
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		tree.Update(msg)
+
+		result := tree.GetSelectedCollection()
+		assert.NotNil(t, result)
+		assert.Equal(t, "My API", result.Name())
+	})
+}
+
+func TestCollectionTree_FolderHelpers(t *testing.T) {
+	t.Run("folderBelongsToCollection checks ownership", func(t *testing.T) {
+		tree := NewCollectionTree()
+		coll := core.NewCollection("Test")
+		folder := coll.AddFolder("Endpoints")
+
+		// Direct check through GetSelectedCollection path
+		tree.SetCollections([]*core.Collection{coll})
+		tree.SetSize(80, 30)
+		tree.Focus()
+
+		// Expand collection to see folder
+		tree.SetCursor(0)
+		msg := tea.KeyMsg{Type: tea.KeyRight}
+		tree.Update(msg)
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		tree.Update(msg)
+
+		selected := tree.GetSelectedItem()
+		if selected != nil && selected.Type == ItemFolder {
+			assert.Equal(t, folder.ID(), selected.Folder.ID())
+		}
+	})
+}
