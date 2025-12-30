@@ -169,6 +169,32 @@ type ReorderFolderMsg struct {
 	Direction  string // "up" or "down"
 }
 
+// BulkDeleteRequestsMsg is sent when multiple requests are deleted.
+type BulkDeleteRequestsMsg struct {
+	Collections []*core.Collection
+	RequestIDs  []string
+}
+
+// BulkDeleteFoldersMsg is sent when multiple folders are deleted.
+type BulkDeleteFoldersMsg struct {
+	Collections []*core.Collection
+	FolderIDs   []string
+}
+
+// BulkMoveMsg is sent when multiple items are moved.
+type BulkMoveMsg struct {
+	SourceCollections []*core.Collection
+	TargetCollection  *core.Collection
+	TargetFolder      *core.Folder
+	Requests          []*core.RequestDefinition
+	Folders           []*core.Folder
+}
+
+// BulkCopyAsCurlMsg is sent when multiple requests should be copied as cURL.
+type BulkCopyAsCurlMsg struct {
+	Requests []*core.RequestDefinition
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -215,6 +241,11 @@ type CollectionTree struct {
 	historySearch       string
 	historyMethodFilter string // Filter by method: "", "GET", "POST", etc.
 	historyStatusFilter string // Filter by status: "", "2xx", "3xx", "4xx", "5xx"
+
+	// Multi-select state
+	selected     map[string]bool // IDs of selected items (requests/folders)
+	selectMode   bool            // True when in visual/bulk select mode
+	selectAnchor int             // Anchor position for range selection (like vim's v)
 }
 
 // NewCollectionTree creates a new collection tree component.
@@ -222,6 +253,7 @@ func NewCollectionTree() *CollectionTree {
 	return &CollectionTree{
 		title:    "Collections",
 		expanded: make(map[string]bool),
+		selected: make(map[string]bool),
 		viewMode: ViewHistory,
 	}
 }
@@ -283,6 +315,11 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return c.handleImportInput(msg)
 	}
 
+	// Handle visual/select mode input
+	if c.selectMode {
+		return c.handleVisualModeInput(msg)
+	}
+
 	// Handle history view mode
 	if c.viewMode == ViewHistory {
 		return c.handleHistoryKeyMsg(msg)
@@ -290,6 +327,12 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 
 	switch msg.Type {
 	case tea.KeyEsc:
+		// Clear selection if any selected
+		if CountSelected(c.selected) > 0 {
+			c.selected = ClearSelection()
+			c.gPressed = false
+			return c, nil
+		}
 		// Clear search filter when not in search mode
 		if c.search != "" {
 			c.search = ""
@@ -299,6 +342,16 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		}
 		c.gPressed = false
 		return c, nil
+
+	case tea.KeySpace:
+		// Toggle selection on current item
+		c.gPressed = false
+		return c.handleToggleSelection()
+
+	case tea.KeyCtrlA:
+		// Select all visible items
+		c.gPressed = false
+		return c.handleSelectAll()
 
 	case tea.KeyRunes:
 		switch string(msg.Runes) {
@@ -321,9 +374,16 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.loadHistory()
 			c.gPressed = false
 			return c, nil
-		case "d":
-			// Delete selected request
+		case "v":
+			// Enter visual/select mode
 			c.gPressed = false
+			return c.enterVisualMode()
+		case "d":
+			// Delete selected items (bulk if any selected)
+			c.gPressed = false
+			if CountSelected(c.selected) > 0 {
+				return c.handleBulkDelete()
+			}
 			return c.handleDeleteRequest()
 		case "N":
 			// Create new collection
@@ -371,16 +431,22 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.gPressed = false
 			return c.startRenameRequest()
 		case "m":
-			// Move request to another collection
+			// Move items (bulk if any selected)
 			c.gPressed = false
+			if CountSelected(c.selected) > 0 {
+				return c.startBulkMove()
+			}
 			return c.startMove()
 		case "y":
 			// Duplicate/copy request or folder
 			c.gPressed = false
 			return c.handleDuplicateRequest()
 		case "c":
-			// Copy request as cURL
+			// Copy as cURL (bulk if any selected)
 			c.gPressed = false
+			if CountSelected(c.selected) > 0 {
+				return c.handleBulkCopyAsCurl()
+			}
 			return c.handleCopyAsCurl()
 		case "G":
 			displayItems := c.getDisplayItems()
@@ -859,6 +925,249 @@ func (c *CollectionTree) handleCopyAsCurl() (tui.Component, tea.Cmd) {
 			Request: item.Request,
 		}
 	}
+}
+
+// ============================================================================
+// Selection Handlers
+// ============================================================================
+
+// handleToggleSelection toggles selection on the current item.
+func (c *CollectionTree) handleToggleSelection() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only requests and folders are selectable
+	if item.Type != ItemRequest && item.Type != ItemFolder {
+		return c, nil
+	}
+
+	c.selected = ToggleSelection(c.selected, item.ID)
+	return c, nil
+}
+
+// handleSelectAll selects all visible requests and folders.
+func (c *CollectionTree) handleSelectAll() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	c.selected = SelectAll(displayItems)
+	return c, nil
+}
+
+// enterVisualMode starts visual/range selection mode.
+func (c *CollectionTree) enterVisualMode() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only enter visual mode on selectable items
+	if item.Type != ItemRequest && item.Type != ItemFolder {
+		return c, nil
+	}
+
+	c.selectMode = true
+	c.selectAnchor = c.cursor
+	c.selected = SetSelection(c.selected, item.ID, true)
+	return c, nil
+}
+
+// handleVisualModeInput handles key input while in visual/select mode.
+func (c *CollectionTree) handleVisualModeInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc, tea.KeyEnter:
+		c.selectMode = false
+		return c, nil
+
+	case tea.KeySpace:
+		// Confirm selection and exit visual mode
+		c.selectMode = false
+		return c, nil
+
+	case tea.KeyRunes:
+		switch string(msg.Runes) {
+		case "v":
+			// Toggle visual mode off
+			c.selectMode = false
+			return c, nil
+
+		case "j":
+			c.moveCursorPos(1)
+			c.updateRangeSelection()
+			return c, nil
+
+		case "k":
+			c.moveCursorPos(-1)
+			c.updateRangeSelection()
+			return c, nil
+
+		case "G":
+			displayItems := c.getDisplayItems()
+			if len(displayItems) > 0 {
+				c.cursor = len(displayItems) - 1
+				visibleHeight := c.contentHeight()
+				if c.cursor >= c.offset+visibleHeight {
+					c.offset = c.cursor - visibleHeight + 1
+				}
+			}
+			c.updateRangeSelection()
+			return c, nil
+
+		case "g":
+			if c.gPressed {
+				c.cursor = 0
+				c.offset = 0
+				c.gPressed = false
+				c.updateRangeSelection()
+			} else {
+				c.gPressed = true
+			}
+			return c, nil
+
+		case "d":
+			// Delete selected items and exit visual mode
+			c.selectMode = false
+			return c.handleBulkDelete()
+
+		case "m":
+			// Move selected items and exit visual mode
+			c.selectMode = false
+			return c.startBulkMove()
+
+		case "c":
+			// Copy selected as cURL and exit visual mode
+			c.selectMode = false
+			return c.handleBulkCopyAsCurl()
+		}
+	}
+
+	return c, nil
+}
+
+// updateRangeSelection updates selection based on anchor and cursor positions.
+func (c *CollectionTree) updateRangeSelection() {
+	displayItems := c.getDisplayItems()
+	c.selected = SelectRange(c.selected, displayItems, c.selectAnchor, c.cursor, false)
+}
+
+// ============================================================================
+// Bulk Operation Handlers
+// ============================================================================
+
+// handleBulkDelete deletes all selected items.
+func (c *CollectionTree) handleBulkDelete() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	selectedItems := GetSelectedItems(displayItems, c.selected)
+
+	if len(selectedItems) == 0 {
+		return c, nil
+	}
+
+	modifiedCollections := make(map[string]*core.Collection)
+	var deletedRequestIDs []string
+	var deletedFolderIDs []string
+
+	for _, item := range selectedItems {
+		switch item.Type {
+		case ItemRequest:
+			if item.Request != nil {
+				if coll := c.DeleteRequest(item.Request.ID()); coll != nil {
+					deletedRequestIDs = append(deletedRequestIDs, item.Request.ID())
+					modifiedCollections[coll.ID()] = coll
+				}
+			}
+		case ItemFolder:
+			for _, coll := range c.collections {
+				if coll.RemoveFolderRecursive(item.ID) {
+					deletedFolderIDs = append(deletedFolderIDs, item.ID)
+					modifiedCollections[coll.ID()] = coll
+					break
+				}
+			}
+		}
+	}
+
+	// Clear selection after delete
+	c.selected = ClearSelection()
+	c.rebuildItems()
+
+	// Convert map to slice
+	var collections []*core.Collection
+	for _, coll := range modifiedCollections {
+		collections = append(collections, coll)
+	}
+
+	// Emit appropriate message
+	if len(deletedRequestIDs) > 0 || len(deletedFolderIDs) > 0 {
+		return c, func() tea.Msg {
+			if len(deletedFolderIDs) > 0 {
+				return BulkDeleteFoldersMsg{
+					Collections: collections,
+					FolderIDs:   deletedFolderIDs,
+				}
+			}
+			return BulkDeleteRequestsMsg{
+				Collections: collections,
+				RequestIDs:  deletedRequestIDs,
+			}
+		}
+	}
+
+	return c, nil
+}
+
+// handleBulkCopyAsCurl copies all selected requests as cURL commands.
+func (c *CollectionTree) handleBulkCopyAsCurl() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	selectedItems := GetSelectedItems(displayItems, c.selected)
+
+	var requests []*core.RequestDefinition
+	for _, item := range selectedItems {
+		if item.Type == ItemRequest && item.Request != nil {
+			requests = append(requests, item.Request)
+		}
+	}
+
+	if len(requests) == 0 {
+		return c, nil
+	}
+
+	// Clear selection after operation
+	c.selected = ClearSelection()
+
+	return c, func() tea.Msg {
+		return BulkCopyAsCurlMsg{Requests: requests}
+	}
+}
+
+// startBulkMove starts moving all selected items.
+func (c *CollectionTree) startBulkMove() (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	selectedItems := GetSelectedItems(displayItems, c.selected)
+
+	if len(selectedItems) == 0 {
+		return c, nil
+	}
+
+	// Get move targets (all collections and folders)
+	targets := c.getMoveTargets("")
+	if len(targets) == 0 {
+		return c, nil
+	}
+
+	c.moving = true
+	c.moveCursor = 0
+	c.moveTargets = targets
+	// For bulk move, both are nil - we'll use selected items
+	c.movingRequest = nil
+	c.movingFolder = nil
+	c.sourceCollID = "" // Multiple sources possible
+
+	return c, nil
 }
 
 func (c *CollectionTree) handleExportCollection() (tui.Component, tea.Cmd) {
@@ -1723,13 +2032,102 @@ func (c *CollectionTree) handleMoveInput(msg tea.KeyMsg) (tui.Component, tea.Cmd
 		targetColl := targetItem.Collection
 		targetFolder := targetItem.Folder // nil if moving to collection root
 
-		// Find source collection
+		// Find source collection (for single item moves)
 		var sourceColl *core.Collection
 		for _, coll := range c.collections {
 			if coll.ID() == c.sourceCollID {
 				sourceColl = coll
 				break
 			}
+		}
+
+		// Handle bulk move (when both movingRequest and movingFolder are nil)
+		if c.movingRequest == nil && c.movingFolder == nil {
+			displayItems := c.getDisplayItems()
+			selectedItems := GetSelectedItems(displayItems, c.selected)
+
+			if len(selectedItems) == 0 {
+				c.moving = false
+				c.moveTargets = nil
+				c.moveCursor = 0
+				return c, nil
+			}
+
+			var movedRequests []*core.RequestDefinition
+			var movedFolders []*core.Folder
+			sourceCollections := make(map[string]*core.Collection)
+
+			// Process each selected item
+			for _, item := range selectedItems {
+				// Find the source collection for this item
+				var itemSourceColl *core.Collection
+				for _, coll := range c.collections {
+					if item.Type == ItemRequest {
+						if _, found := coll.FindRequest(item.ID); found {
+							itemSourceColl = coll
+							break
+						}
+					} else if item.Type == ItemFolder {
+						if coll.FindFolder(item.ID) != nil {
+							itemSourceColl = coll
+							break
+						}
+					}
+				}
+
+				if itemSourceColl == nil {
+					continue
+				}
+
+				sourceCollections[itemSourceColl.ID()] = itemSourceColl
+
+				if item.Type == ItemRequest && item.Request != nil {
+					// Remove from source and add to target
+					itemSourceColl.RemoveRequestRecursive(item.Request.ID())
+					if targetFolder != nil {
+						targetFolder.AddRequest(item.Request)
+					} else {
+						targetColl.AddRequest(item.Request)
+					}
+					movedRequests = append(movedRequests, item.Request)
+				} else if item.Type == ItemFolder && item.Folder != nil {
+					// Remove from source and add to target
+					itemSourceColl.RemoveFolderRecursive(item.Folder.ID())
+					if targetFolder != nil {
+						targetFolder.AddExistingFolder(item.Folder)
+					} else {
+						targetColl.AddExistingFolder(item.Folder)
+					}
+					movedFolders = append(movedFolders, item.Folder)
+				}
+			}
+
+			// Exit move mode and clear selection
+			c.moving = false
+			c.moveTargets = nil
+			c.moveCursor = 0
+			c.selected = ClearSelection()
+			c.selectMode = false
+			c.rebuildItems()
+
+			// Collect source collections slice
+			var sourceColls []*core.Collection
+			for _, coll := range sourceCollections {
+				sourceColls = append(sourceColls, coll)
+			}
+
+			if len(movedRequests) > 0 || len(movedFolders) > 0 {
+				return c, func() tea.Msg {
+					return BulkMoveMsg{
+						SourceCollections: sourceColls,
+						TargetCollection:  targetColl,
+						TargetFolder:      targetFolder,
+						Requests:          movedRequests,
+						Folders:           movedFolders,
+					}
+				}
+			}
+			return c, nil
 		}
 
 		// Handle folder move
@@ -2011,10 +2409,11 @@ func (c *CollectionTree) View() string {
 	parts = append(parts, historyContent)
 
 	// Collections section
+	collectionHeader := c.renderCollectionHeader()
 	if c.viewMode == ViewCollections {
-		parts = append(parts, activeHeaderStyle.Render("Collections"))
+		parts = append(parts, activeHeaderStyle.Render(collectionHeader))
 	} else {
-		parts = append(parts, inactiveHeaderStyle.Render("Collections (C)"))
+		parts = append(parts, inactiveHeaderStyle.Render(collectionHeader))
 	}
 	collectionsContent := c.renderCollectionContent(innerWidth, collectionHeight)
 	parts = append(parts, collectionsContent)
@@ -2068,6 +2467,28 @@ func (c *CollectionTree) renderHistoryHeader() string {
 	if len(filters) > 0 {
 		return header + " [" + strings.Join(filters, ",") + "]"
 	}
+	return header
+}
+
+// renderCollectionHeader builds the collection header with selection info.
+func (c *CollectionTree) renderCollectionHeader() string {
+	header := "Collections"
+	if c.viewMode != ViewCollections {
+		header = "Collections (C)"
+	}
+
+	selectedCount := CountSelected(c.selected)
+
+	// Show visual mode indicator
+	if c.selectMode {
+		return header + " -- VISUAL --"
+	}
+
+	// Show selection count
+	if selectedCount > 0 {
+		return fmt.Sprintf("%s (%d selected)", header, selectedCount)
+	}
+
 	return header
 }
 
@@ -2430,6 +2851,18 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 		selPrefix = "→"
 	}
 
+	// Checkbox for multi-select (only for selectable items)
+	checkbox := ""
+	checkboxWidth := 0
+	if item.Type == ItemRequest || item.Type == ItemFolder {
+		if c.selected[item.ID] {
+			checkbox = "[x]"
+		} else {
+			checkbox = "[ ]"
+		}
+		checkboxWidth = 3
+	}
+
 	// Indentation
 	indent := strings.Repeat("  ", item.Level)
 
@@ -2471,7 +2904,7 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 	if c.renaming && item.Type == ItemRequest && item.Request != nil && item.Request.ID() == c.renamingReqID {
 		name = c.renameBuffer + "▏" // Show cursor
 	}
-	availableWidth := width - len(selPrefix) - len(indent) - len(indicator) - iconWidth - 2
+	availableWidth := width - len(selPrefix) - checkboxWidth - len(indent) - len(indicator) - iconWidth - 2
 	if availableWidth <= 0 {
 		// Not enough space for name at all
 		name = ""
@@ -2484,7 +2917,7 @@ func (c *CollectionTree) renderItem(item TreeItem, selected bool) string {
 		name = name[:availableWidth-3] + "..."
 	}
 
-	line := selPrefix + indent + indicator + icon + name
+	line := selPrefix + checkbox + indent + indicator + icon + name
 
 	// Pad to full width
 	if len(line) < width {

@@ -425,6 +425,95 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			})
 		}
 
+	case components.BulkCopyAsCurlMsg:
+		// Generate cURL commands for multiple requests and copy to clipboard
+		if len(msg.Requests) > 0 {
+			curlExporter := exporter.NewCurlExporter()
+			curlExporter.Pretty = true // Multi-line for readability
+			ctx := context.Background()
+
+			var curlCommands []string
+			for _, req := range msg.Requests {
+				curlBytes, err := curlExporter.ExportRequest(ctx, req)
+				if err == nil {
+					curlCommands = append(curlCommands, string(curlBytes))
+				}
+			}
+
+			if len(curlCommands) > 0 {
+				combined := strings.Join(curlCommands, "\n\n")
+				err := clipboard.WriteAll(combined)
+				if err != nil {
+					v.notification = "✗ Copy failed"
+				} else {
+					v.notification = fmt.Sprintf("✓ Copied %d requests as cURL", len(curlCommands))
+				}
+			} else {
+				v.notification = "✗ Failed to generate cURL"
+			}
+			v.notifyUntil = time.Now().Add(2 * time.Second)
+			return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+				return clearNotificationMsg{}
+			})
+		}
+
+	case components.BulkDeleteRequestsMsg:
+		// Persist all modified collections
+		if v.collectionStore != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				for _, coll := range msg.Collections {
+					_ = v.collectionStore.Save(ctx, coll)
+				}
+			}()
+		}
+		v.notification = fmt.Sprintf("✓ Deleted %d items", len(msg.RequestIDs))
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case components.BulkDeleteFoldersMsg:
+		// Persist all modified collections
+		if v.collectionStore != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				for _, coll := range msg.Collections {
+					_ = v.collectionStore.Save(ctx, coll)
+				}
+			}()
+		}
+		v.notification = fmt.Sprintf("✓ Deleted %d folders", len(msg.FolderIDs))
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case components.BulkMoveMsg:
+		// Persist all affected collections (source and target)
+		if v.collectionStore != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				// Save source collections
+				for _, coll := range msg.SourceCollections {
+					_ = v.collectionStore.Save(ctx, coll)
+				}
+				// Save target collection
+				if msg.TargetCollection != nil {
+					_ = v.collectionStore.Save(ctx, msg.TargetCollection)
+				}
+			}()
+		}
+		totalMoved := len(msg.Requests) + len(msg.Folders)
+		v.notification = fmt.Sprintf("✓ Moved %d items", totalMoved)
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
 	case components.ExportCollectionMsg:
 		// Export collection to Postman JSON
 		if msg.Collection != nil {

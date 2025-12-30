@@ -362,16 +362,26 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `F` | Create new folder |
 | `r` | Rename collection |
 | `D` | Delete collection/folder |
-| `d` | Delete request |
-| `m` | Move request/folder |
+| `d` | Delete request (or bulk delete when items selected) |
+| `m` | Move request/folder (or bulk move when items selected) |
 | `y` | Duplicate request/folder |
-| `c` | Copy request as cURL |
+| `c` | Copy request as cURL (or bulk copy when items selected) |
 | `E` | Export collection to Postman |
 | `I` | Import collection (Postman/OpenAPI) |
 | `K/J` | Move request up/down |
 | `R` | Rename request/folder |
 | `/` | Search (name, URL, body, headers) |
 | `H` | Switch to History |
+
+#### Bulk Selection
+| Key | Action |
+|-----|--------|
+| `Space` | Toggle selection on current item |
+| `v` | Enter visual mode (vim-style range select) |
+| `Ctrl+a` | Select all requests/folders |
+| `Escape` | Clear all selections |
+
+**Visual Mode:** Use `j/k` to extend selection, `G/gg` to extend to end/start. Press `v` or `Escape` to exit.
 
 ### History Panel
 | Key | Action |

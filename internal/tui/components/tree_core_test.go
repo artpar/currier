@@ -289,3 +289,207 @@ func TestMatchesSearch_NilWebSocket(t *testing.T) {
 	result = matchesSearch(item, "endpoint")
 	assert.False(t, result) // Doesn't crash on nil
 }
+
+// ============================================================================
+// Selection Function Tests
+// ============================================================================
+
+func TestToggleSelection(t *testing.T) {
+	t.Run("select new item", func(t *testing.T) {
+		original := map[string]bool{"a": true, "b": true}
+
+		result := ToggleSelection(original, "c")
+
+		// Original unchanged (immutability)
+		assert.Len(t, original, 2)
+		_, exists := original["c"]
+		assert.False(t, exists, "original should not have new key")
+
+		// Result has new item selected
+		assert.True(t, result["c"])
+		assert.True(t, result["a"])
+		assert.True(t, result["b"])
+	})
+
+	t.Run("deselect existing item", func(t *testing.T) {
+		original := map[string]bool{"a": true, "b": true}
+
+		result := ToggleSelection(original, "a")
+
+		// Original unchanged
+		assert.True(t, original["a"], "original should be unchanged")
+
+		// Result has item deselected
+		_, exists := result["a"]
+		assert.False(t, exists)
+		assert.True(t, result["b"])
+	})
+
+	t.Run("empty map", func(t *testing.T) {
+		original := map[string]bool{}
+
+		result := ToggleSelection(original, "x")
+
+		assert.Len(t, original, 0)
+		assert.True(t, result["x"])
+	})
+
+	t.Run("nil safety", func(t *testing.T) {
+		result := ToggleSelection(nil, "x")
+
+		assert.True(t, result["x"])
+	})
+}
+
+func TestSetSelection(t *testing.T) {
+	t.Run("set item selected", func(t *testing.T) {
+		original := map[string]bool{"a": true}
+
+		result := SetSelection(original, "b", true)
+
+		assert.Len(t, original, 1)
+		assert.True(t, result["a"])
+		assert.True(t, result["b"])
+	})
+
+	t.Run("set item deselected", func(t *testing.T) {
+		original := map[string]bool{"a": true, "b": true}
+
+		result := SetSelection(original, "a", false)
+
+		assert.True(t, original["a"])
+		_, exists := result["a"]
+		assert.False(t, exists)
+		assert.True(t, result["b"])
+	})
+
+	t.Run("nil safety", func(t *testing.T) {
+		result := SetSelection(nil, "x", true)
+		assert.True(t, result["x"])
+	})
+}
+
+func TestClearSelection(t *testing.T) {
+	result := ClearSelection()
+	assert.NotNil(t, result)
+	assert.Len(t, result, 0)
+}
+
+func TestSelectRange(t *testing.T) {
+	items := []TreeItem{
+		{ID: "coll1", Name: "Collection", Type: ItemCollection},
+		{ID: "req1", Name: "Request 1", Type: ItemRequest},
+		{ID: "folder1", Name: "Folder 1", Type: ItemFolder},
+		{ID: "req2", Name: "Request 2", Type: ItemRequest},
+		{ID: "req3", Name: "Request 3", Type: ItemRequest},
+	}
+
+	t.Run("select range forward", func(t *testing.T) {
+		result := SelectRange(nil, items, 1, 3, false)
+
+		// Should select req1, folder1, req2 (not coll1 - collections not selectable)
+		assert.True(t, result["req1"])
+		assert.True(t, result["folder1"])
+		assert.True(t, result["req2"])
+		assert.False(t, result["coll1"])
+		assert.False(t, result["req3"])
+	})
+
+	t.Run("select range backward", func(t *testing.T) {
+		result := SelectRange(nil, items, 3, 1, false)
+
+		// Same result even with reversed indices
+		assert.True(t, result["req1"])
+		assert.True(t, result["folder1"])
+		assert.True(t, result["req2"])
+	})
+
+	t.Run("additive selection", func(t *testing.T) {
+		existing := map[string]bool{"req3": true}
+
+		result := SelectRange(existing, items, 1, 2, true)
+
+		// Should keep existing and add new
+		assert.True(t, result["req1"])
+		assert.True(t, result["folder1"])
+		assert.True(t, result["req3"])
+	})
+
+	t.Run("non-additive replaces", func(t *testing.T) {
+		existing := map[string]bool{"req3": true}
+
+		result := SelectRange(existing, items, 1, 2, false)
+
+		// Should not have req3
+		assert.True(t, result["req1"])
+		assert.True(t, result["folder1"])
+		assert.False(t, result["req3"])
+	})
+
+	t.Run("single item range", func(t *testing.T) {
+		result := SelectRange(nil, items, 1, 1, false)
+
+		assert.True(t, result["req1"])
+		assert.Len(t, result, 1)
+	})
+
+	t.Run("skip collections", func(t *testing.T) {
+		result := SelectRange(nil, items, 0, 2, false)
+
+		// Collections should not be selected
+		assert.False(t, result["coll1"])
+		assert.True(t, result["req1"])
+		assert.True(t, result["folder1"])
+	})
+}
+
+func TestSelectAll(t *testing.T) {
+	items := []TreeItem{
+		{ID: "coll1", Name: "Collection", Type: ItemCollection},
+		{ID: "req1", Name: "Request 1", Type: ItemRequest},
+		{ID: "folder1", Name: "Folder 1", Type: ItemFolder},
+		{ID: "req2", Name: "Request 2", Type: ItemRequest},
+		{ID: "ws1", Name: "WebSocket", Type: ItemWebSocket},
+	}
+
+	result := SelectAll(items)
+
+	// Only requests and folders are selectable
+	assert.True(t, result["req1"])
+	assert.True(t, result["folder1"])
+	assert.True(t, result["req2"])
+	assert.False(t, result["coll1"])
+	assert.False(t, result["ws1"])
+	assert.Len(t, result, 3)
+}
+
+func TestGetSelectedItems(t *testing.T) {
+	items := []TreeItem{
+		{ID: "req1", Name: "Request 1", Type: ItemRequest},
+		{ID: "req2", Name: "Request 2", Type: ItemRequest},
+		{ID: "req3", Name: "Request 3", Type: ItemRequest},
+	}
+
+	selected := map[string]bool{"req1": true, "req3": true}
+
+	result := GetSelectedItems(items, selected)
+
+	assert.Len(t, result, 2)
+	assert.Equal(t, "req1", result[0].ID)
+	assert.Equal(t, "req3", result[1].ID)
+}
+
+func TestCountSelected(t *testing.T) {
+	t.Run("count selected items", func(t *testing.T) {
+		selected := map[string]bool{"a": true, "b": true, "c": false}
+		assert.Equal(t, 2, CountSelected(selected))
+	})
+
+	t.Run("empty map", func(t *testing.T) {
+		assert.Equal(t, 0, CountSelected(map[string]bool{}))
+	})
+
+	t.Run("nil map", func(t *testing.T) {
+		assert.Equal(t, 0, CountSelected(nil))
+	})
+}
