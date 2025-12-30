@@ -854,7 +854,22 @@ func (m *mockHistoryStore) Get(ctx context.Context, id string) (history.Entry, e
 }
 
 func (m *mockHistoryStore) List(ctx context.Context, opts history.QueryOptions) ([]history.Entry, error) {
-	return m.entries, m.err
+	var results []history.Entry
+	for _, e := range m.entries {
+		// Apply method filter
+		if opts.Method != "" && e.RequestMethod != opts.Method {
+			continue
+		}
+		// Apply status filter
+		if opts.StatusMin > 0 && e.ResponseStatus < opts.StatusMin {
+			continue
+		}
+		if opts.StatusMax > 0 && e.ResponseStatus > opts.StatusMax {
+			continue
+		}
+		results = append(results, e)
+	}
+	return results, m.err
 }
 
 func (m *mockHistoryStore) Count(ctx context.Context, opts history.QueryOptions) (int64, error) {
@@ -2267,5 +2282,210 @@ func TestCollectionTree_UpdateBranches(t *testing.T) {
 
 		tree.Focus()
 		assert.True(t, tree.Focused())
+	})
+}
+
+func TestCollectionTree_HistoryFiltering(t *testing.T) {
+	createTestStore := func() *mockHistoryStore {
+		return &mockHistoryStore{
+			entries: []history.Entry{
+				{ID: "1", RequestMethod: "GET", RequestURL: "https://api.example.com/users", ResponseStatus: 200},
+				{ID: "2", RequestMethod: "POST", RequestURL: "https://api.example.com/users", ResponseStatus: 201},
+				{ID: "3", RequestMethod: "GET", RequestURL: "https://api.example.com/products", ResponseStatus: 404},
+				{ID: "4", RequestMethod: "DELETE", RequestURL: "https://api.example.com/users/1", ResponseStatus: 204},
+				{ID: "5", RequestMethod: "PUT", RequestURL: "https://api.example.com/users/1", ResponseStatus: 500},
+			},
+		}
+	}
+
+	t.Run("cycles method filter with m key", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetHistoryStore(createTestStore())
+
+		// Initial state - no filter
+		assert.Equal(t, "", tree.HistoryMethodFilter())
+
+		// Press 'm' to cycle to GET
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "GET", tree.HistoryMethodFilter())
+
+		// Press 'm' again to cycle to POST
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "POST", tree.HistoryMethodFilter())
+	})
+
+	t.Run("cycles status filter with s key", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetHistoryStore(createTestStore())
+
+		// Initial state - no filter
+		assert.Equal(t, "", tree.HistoryStatusFilter())
+
+		// Press 's' to cycle to 2xx
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "2xx", tree.HistoryStatusFilter())
+
+		// Press 's' again to cycle to 3xx
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "3xx", tree.HistoryStatusFilter())
+	})
+
+	t.Run("clears all filters with x key", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetHistoryStore(createTestStore())
+
+		// Set some filters
+		tree.SetHistoryMethodFilter("GET")
+		tree.SetHistoryStatusFilter("2xx")
+
+		// Press 'x' to clear all filters
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "", tree.HistoryMethodFilter())
+		assert.Equal(t, "", tree.HistoryStatusFilter())
+	})
+
+	t.Run("filters history by method", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetHistoryStore(createTestStore())
+
+		// All 5 entries initially
+		assert.Equal(t, 5, len(tree.HistoryEntries()))
+
+		// Set GET filter
+		tree.SetHistoryMethodFilter("GET")
+		tree.loadHistory()
+
+		// Should have 2 GET entries
+		entries := tree.HistoryEntries()
+		assert.Equal(t, 2, len(entries))
+		for _, e := range entries {
+			assert.Equal(t, "GET", e.RequestMethod)
+		}
+	})
+
+	t.Run("filters history by status 2xx", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetHistoryStore(createTestStore())
+
+		// Set 2xx filter
+		tree.SetHistoryStatusFilter("2xx")
+		tree.loadHistory()
+
+		// Should have 3 entries with 2xx status (200, 201, 204)
+		entries := tree.HistoryEntries()
+		assert.Equal(t, 3, len(entries))
+		for _, e := range entries {
+			assert.True(t, e.ResponseStatus >= 200 && e.ResponseStatus < 300)
+		}
+	})
+
+	t.Run("filters history by status 4xx", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetHistoryStore(createTestStore())
+
+		// Set 4xx filter
+		tree.SetHistoryStatusFilter("4xx")
+		tree.loadHistory()
+
+		// Should have 1 entry with 404
+		entries := tree.HistoryEntries()
+		assert.Equal(t, 1, len(entries))
+		assert.Equal(t, 404, entries[0].ResponseStatus)
+	})
+
+	t.Run("filters history by status 5xx", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetHistoryStore(createTestStore())
+
+		// Set 5xx filter
+		tree.SetHistoryStatusFilter("5xx")
+		tree.loadHistory()
+
+		// Should have 1 entry with 500
+		entries := tree.HistoryEntries()
+		assert.Equal(t, 1, len(entries))
+		assert.Equal(t, 500, entries[0].ResponseStatus)
+	})
+
+	t.Run("combines method and status filters", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetHistoryStore(createTestStore())
+
+		// Set GET method and 2xx status
+		tree.SetHistoryMethodFilter("GET")
+		tree.SetHistoryStatusFilter("2xx")
+		tree.loadHistory()
+
+		// Should have 1 entry (GET 200)
+		entries := tree.HistoryEntries()
+		assert.Equal(t, 1, len(entries))
+		assert.Equal(t, "GET", entries[0].RequestMethod)
+		assert.Equal(t, 200, entries[0].ResponseStatus)
+	})
+
+	t.Run("shows filter in header", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetHistoryStore(createTestStore())
+
+		// Set filters
+		tree.SetHistoryMethodFilter("POST")
+		tree.SetHistoryStatusFilter("2xx")
+
+		// Render and check header contains filters
+		view := tree.View()
+		assert.Contains(t, view, "POST")
+		assert.Contains(t, view, "2xx")
+	})
+
+	t.Run("resets cursor on filter change", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.Focus()
+		tree.SetSize(80, 30)
+		tree.SetHistoryStore(createTestStore())
+
+		// Move cursor down
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := tree.Update(msg)
+		tree = updated.(*CollectionTree)
+		assert.Equal(t, 1, tree.HistoryCursor())
+
+		// Apply filter
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
+		updated, _ = tree.Update(msg)
+		tree = updated.(*CollectionTree)
+
+		// Cursor should reset to 0
+		assert.Equal(t, 0, tree.HistoryCursor())
 	})
 }

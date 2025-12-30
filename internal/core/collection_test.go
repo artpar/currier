@@ -1101,3 +1101,803 @@ func TestRequestDefinition_SetURL(t *testing.T) {
 		assert.Equal(t, "https://api.example.com/users", req.URL())
 	})
 }
+
+// Additional comprehensive collection management tests
+
+func TestCollection_SetName(t *testing.T) {
+	t.Run("sets collection name", func(t *testing.T) {
+		c := NewCollection("Original Name")
+		c.SetName("New Name")
+		assert.Equal(t, "New Name", c.Name())
+	})
+
+	t.Run("updates timestamp on name change", func(t *testing.T) {
+		c := NewCollection("Original")
+		original := c.UpdatedAt()
+		time.Sleep(1 * time.Millisecond)
+		c.SetName("Updated")
+		assert.True(t, c.UpdatedAt().After(original))
+	})
+}
+
+func TestCollection_RemoveFolderRecursive(t *testing.T) {
+	t.Run("removes folder at root level", func(t *testing.T) {
+		c := NewCollection("Test")
+		folder := c.AddFolder("ToRemove")
+
+		assert.True(t, c.RemoveFolderRecursive(folder.ID()))
+		assert.Empty(t, c.Folders())
+	})
+
+	t.Run("removes nested folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		parent := c.AddFolder("Parent")
+		child := parent.AddFolder("Child")
+
+		assert.True(t, c.RemoveFolderRecursive(child.ID()))
+		assert.Len(t, c.Folders(), 1)
+		assert.Empty(t, parent.Folders())
+	})
+
+	t.Run("removes deeply nested folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		level1 := c.AddFolder("Level1")
+		level2 := level1.AddFolder("Level2")
+		level3 := level2.AddFolder("Level3")
+
+		assert.True(t, c.RemoveFolderRecursive(level3.ID()))
+		assert.Empty(t, level2.Folders())
+	})
+
+	t.Run("returns false for non-existent folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddFolder("Existing")
+
+		assert.False(t, c.RemoveFolderRecursive("non-existent-id"))
+	})
+}
+
+func TestCollection_FindFolder(t *testing.T) {
+	t.Run("finds folder at root level", func(t *testing.T) {
+		c := NewCollection("Test")
+		folder := c.AddFolder("Target")
+
+		found := c.FindFolder(folder.ID())
+		assert.NotNil(t, found)
+		assert.Equal(t, "Target", found.Name())
+	})
+
+	t.Run("finds nested folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		parent := c.AddFolder("Parent")
+		child := parent.AddFolder("Child")
+
+		found := c.FindFolder(child.ID())
+		assert.NotNil(t, found)
+		assert.Equal(t, "Child", found.Name())
+	})
+
+	t.Run("finds deeply nested folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		level1 := c.AddFolder("Level1")
+		level2 := level1.AddFolder("Level2")
+		level3 := level2.AddFolder("Level3")
+
+		found := c.FindFolder(level3.ID())
+		assert.NotNil(t, found)
+		assert.Equal(t, "Level3", found.Name())
+	})
+
+	t.Run("returns nil for non-existent folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddFolder("Existing")
+
+		found := c.FindFolder("non-existent-id")
+		assert.Nil(t, found)
+	})
+}
+
+func TestCollection_RemoveRequestRecursive(t *testing.T) {
+	t.Run("removes request at root level", func(t *testing.T) {
+		c := NewCollection("Test")
+		req := NewRequestDefinition("ToRemove", "GET", "/test")
+		c.AddRequest(req)
+
+		assert.True(t, c.RemoveRequestRecursive(req.ID()))
+		assert.Empty(t, c.Requests())
+	})
+
+	t.Run("removes request from folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		folder := c.AddFolder("Folder")
+		req := NewRequestDefinition("InFolder", "GET", "/test")
+		folder.AddRequest(req)
+
+		assert.True(t, c.RemoveRequestRecursive(req.ID()))
+		assert.Empty(t, folder.Requests())
+	})
+
+	t.Run("removes request from nested folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		parent := c.AddFolder("Parent")
+		child := parent.AddFolder("Child")
+		req := NewRequestDefinition("Nested", "GET", "/test")
+		child.AddRequest(req)
+
+		assert.True(t, c.RemoveRequestRecursive(req.ID()))
+		assert.Empty(t, child.Requests())
+	})
+
+	t.Run("returns false for non-existent request", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddRequest(NewRequestDefinition("Existing", "GET", "/existing"))
+
+		assert.False(t, c.RemoveRequestRecursive("non-existent-id"))
+	})
+}
+
+func TestCollection_MoveRequestUp(t *testing.T) {
+	t.Run("moves request up in list", func(t *testing.T) {
+		c := NewCollection("Test")
+		req1 := NewRequestDefinition("First", "GET", "/first")
+		req2 := NewRequestDefinition("Second", "GET", "/second")
+		req3 := NewRequestDefinition("Third", "GET", "/third")
+		c.AddRequest(req1)
+		c.AddRequest(req2)
+		c.AddRequest(req3)
+
+		assert.True(t, c.MoveRequestUp(req2.ID()))
+		assert.Equal(t, "Second", c.Requests()[0].Name())
+		assert.Equal(t, "First", c.Requests()[1].Name())
+		assert.Equal(t, "Third", c.Requests()[2].Name())
+	})
+
+	t.Run("returns false when already at top", func(t *testing.T) {
+		c := NewCollection("Test")
+		req := NewRequestDefinition("First", "GET", "/first")
+		c.AddRequest(req)
+		c.AddRequest(NewRequestDefinition("Second", "GET", "/second"))
+
+		assert.False(t, c.MoveRequestUp(req.ID()))
+	})
+
+	t.Run("returns false for non-existent request", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddRequest(NewRequestDefinition("Existing", "GET", "/existing"))
+
+		assert.False(t, c.MoveRequestUp("non-existent-id"))
+	})
+}
+
+func TestCollection_MoveRequestDown(t *testing.T) {
+	t.Run("moves request down in list", func(t *testing.T) {
+		c := NewCollection("Test")
+		req1 := NewRequestDefinition("First", "GET", "/first")
+		req2 := NewRequestDefinition("Second", "GET", "/second")
+		req3 := NewRequestDefinition("Third", "GET", "/third")
+		c.AddRequest(req1)
+		c.AddRequest(req2)
+		c.AddRequest(req3)
+
+		assert.True(t, c.MoveRequestDown(req2.ID()))
+		assert.Equal(t, "First", c.Requests()[0].Name())
+		assert.Equal(t, "Third", c.Requests()[1].Name())
+		assert.Equal(t, "Second", c.Requests()[2].Name())
+	})
+
+	t.Run("returns false when already at bottom", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddRequest(NewRequestDefinition("First", "GET", "/first"))
+		req := NewRequestDefinition("Last", "GET", "/last")
+		c.AddRequest(req)
+
+		assert.False(t, c.MoveRequestDown(req.ID()))
+	})
+
+	t.Run("returns false for non-existent request", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddRequest(NewRequestDefinition("Existing", "GET", "/existing"))
+
+		assert.False(t, c.MoveRequestDown("non-existent-id"))
+	})
+}
+
+func TestFolder_MoveRequestUp(t *testing.T) {
+	t.Run("moves request up in folder", func(t *testing.T) {
+		f := NewFolder("Test")
+		req1 := NewRequestDefinition("First", "GET", "/first")
+		req2 := NewRequestDefinition("Second", "GET", "/second")
+		f.AddRequest(req1)
+		f.AddRequest(req2)
+
+		assert.True(t, f.MoveRequestUp(req2.ID()))
+		assert.Equal(t, "Second", f.Requests()[0].Name())
+		assert.Equal(t, "First", f.Requests()[1].Name())
+	})
+
+	t.Run("returns false when already at top", func(t *testing.T) {
+		f := NewFolder("Test")
+		req := NewRequestDefinition("First", "GET", "/first")
+		f.AddRequest(req)
+		f.AddRequest(NewRequestDefinition("Second", "GET", "/second"))
+
+		assert.False(t, f.MoveRequestUp(req.ID()))
+	})
+
+	t.Run("returns false for non-existent request", func(t *testing.T) {
+		f := NewFolder("Test")
+		f.AddRequest(NewRequestDefinition("Existing", "GET", "/existing"))
+
+		assert.False(t, f.MoveRequestUp("non-existent-id"))
+	})
+}
+
+func TestFolder_MoveRequestDown(t *testing.T) {
+	t.Run("moves request down in folder", func(t *testing.T) {
+		f := NewFolder("Test")
+		req1 := NewRequestDefinition("First", "GET", "/first")
+		req2 := NewRequestDefinition("Second", "GET", "/second")
+		f.AddRequest(req1)
+		f.AddRequest(req2)
+
+		assert.True(t, f.MoveRequestDown(req1.ID()))
+		assert.Equal(t, "Second", f.Requests()[0].Name())
+		assert.Equal(t, "First", f.Requests()[1].Name())
+	})
+
+	t.Run("returns false when already at bottom", func(t *testing.T) {
+		f := NewFolder("Test")
+		f.AddRequest(NewRequestDefinition("First", "GET", "/first"))
+		req := NewRequestDefinition("Last", "GET", "/last")
+		f.AddRequest(req)
+
+		assert.False(t, f.MoveRequestDown(req.ID()))
+	})
+
+	t.Run("returns false for non-existent request", func(t *testing.T) {
+		f := NewFolder("Test")
+		f.AddRequest(NewRequestDefinition("Existing", "GET", "/existing"))
+
+		assert.False(t, f.MoveRequestDown("non-existent-id"))
+	})
+}
+
+func TestFolder_RemoveFolderRecursive(t *testing.T) {
+	t.Run("removes direct child folder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		child := parent.AddFolder("Child")
+
+		assert.True(t, parent.RemoveFolderRecursive(child.ID()))
+		assert.Empty(t, parent.Folders())
+	})
+
+	t.Run("removes nested folder", func(t *testing.T) {
+		level1 := NewFolder("Level1")
+		level2 := level1.AddFolder("Level2")
+		level3 := level2.AddFolder("Level3")
+
+		assert.True(t, level1.RemoveFolderRecursive(level3.ID()))
+		assert.Empty(t, level2.Folders())
+	})
+
+	t.Run("returns false for non-existent folder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		parent.AddFolder("Child")
+
+		assert.False(t, parent.RemoveFolderRecursive("non-existent-id"))
+	})
+}
+
+func TestFolder_RemoveRequestRecursive(t *testing.T) {
+	t.Run("removes request from direct folder", func(t *testing.T) {
+		f := NewFolder("Test")
+		req := NewRequestDefinition("ToRemove", "GET", "/test")
+		f.AddRequest(req)
+
+		assert.True(t, f.RemoveRequestRecursive(req.ID()))
+		assert.Empty(t, f.Requests())
+	})
+
+	t.Run("removes request from subfolder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		child := parent.AddFolder("Child")
+		req := NewRequestDefinition("Nested", "GET", "/test")
+		child.AddRequest(req)
+
+		assert.True(t, parent.RemoveRequestRecursive(req.ID()))
+		assert.Empty(t, child.Requests())
+	})
+
+	t.Run("returns false for non-existent request", func(t *testing.T) {
+		f := NewFolder("Test")
+		f.AddRequest(NewRequestDefinition("Existing", "GET", "/existing"))
+
+		assert.False(t, f.RemoveRequestRecursive("non-existent-id"))
+	})
+}
+
+func TestFolder_FindFolder(t *testing.T) {
+	t.Run("finds direct child folder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		child := parent.AddFolder("Child")
+
+		found := parent.FindFolder(child.ID())
+		assert.NotNil(t, found)
+		assert.Equal(t, "Child", found.Name())
+	})
+
+	t.Run("finds nested folder", func(t *testing.T) {
+		level1 := NewFolder("Level1")
+		level2 := level1.AddFolder("Level2")
+		level3 := level2.AddFolder("Level3")
+
+		found := level1.FindFolder(level3.ID())
+		assert.NotNil(t, found)
+		assert.Equal(t, "Level3", found.Name())
+	})
+
+	t.Run("returns nil for non-existent folder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		parent.AddFolder("Child")
+
+		found := parent.FindFolder("non-existent-id")
+		assert.Nil(t, found)
+	})
+}
+
+func TestCollection_WebSocketsManagement(t *testing.T) {
+	t.Run("starts with no websockets", func(t *testing.T) {
+		c := NewCollection("Test")
+		assert.Empty(t, c.WebSockets())
+	})
+
+	t.Run("adds websocket", func(t *testing.T) {
+		c := NewCollection("Test")
+		ws := &WebSocketDefinition{
+			ID:       "ws-1",
+			Name:     "Test WebSocket",
+			Endpoint: "wss://example.com/ws",
+		}
+		c.AddWebSocket(ws)
+
+		assert.Len(t, c.WebSockets(), 1)
+	})
+
+	t.Run("gets websocket by ID", func(t *testing.T) {
+		c := NewCollection("Test")
+		ws := &WebSocketDefinition{
+			ID:       "ws-1",
+			Name:     "Test WebSocket",
+			Endpoint: "wss://example.com/ws",
+		}
+		c.AddWebSocket(ws)
+
+		found, ok := c.GetWebSocket("ws-1")
+		assert.True(t, ok)
+		assert.Equal(t, "Test WebSocket", found.Name)
+	})
+
+	t.Run("returns false for non-existent websocket ID", func(t *testing.T) {
+		c := NewCollection("Test")
+		_, ok := c.GetWebSocket("non-existent")
+		assert.False(t, ok)
+	})
+
+	t.Run("gets websocket by name", func(t *testing.T) {
+		c := NewCollection("Test")
+		ws := &WebSocketDefinition{
+			ID:       "ws-1",
+			Name:     "Test WebSocket",
+			Endpoint: "wss://example.com/ws",
+		}
+		c.AddWebSocket(ws)
+
+		found, ok := c.GetWebSocketByName("Test WebSocket")
+		assert.True(t, ok)
+		assert.Equal(t, "ws-1", found.ID)
+	})
+
+	t.Run("returns false for non-existent websocket name", func(t *testing.T) {
+		c := NewCollection("Test")
+		_, ok := c.GetWebSocketByName("Non-existent")
+		assert.False(t, ok)
+	})
+
+	t.Run("removes websocket", func(t *testing.T) {
+		c := NewCollection("Test")
+		ws := &WebSocketDefinition{
+			ID:       "ws-1",
+			Name:     "Test WebSocket",
+			Endpoint: "wss://example.com/ws",
+		}
+		c.AddWebSocket(ws)
+		c.RemoveWebSocket("ws-1")
+
+		assert.Empty(t, c.WebSockets())
+	})
+
+	t.Run("remove non-existent websocket does nothing", func(t *testing.T) {
+		c := NewCollection("Test")
+		ws := &WebSocketDefinition{
+			ID:       "ws-1",
+			Name:     "Test WebSocket",
+			Endpoint: "wss://example.com/ws",
+		}
+		c.AddWebSocket(ws)
+		c.RemoveWebSocket("non-existent")
+
+		assert.Len(t, c.WebSockets(), 1)
+	})
+
+	t.Run("clones websockets", func(t *testing.T) {
+		c := NewCollection("Test")
+		ws := &WebSocketDefinition{
+			ID:       "ws-1",
+			Name:     "Test WebSocket",
+			Endpoint: "wss://example.com/ws",
+		}
+		c.AddWebSocket(ws)
+
+		clone := c.Clone()
+		assert.Len(t, clone.WebSockets(), 1)
+		// Verify it's a separate copy
+		clone.WebSockets()[0].Name = "Modified"
+		assert.Equal(t, "Test WebSocket", c.WebSockets()[0].Name)
+	})
+}
+
+func TestCollection_AddExistingWebSocketMethod(t *testing.T) {
+	t.Run("adds existing websocket", func(t *testing.T) {
+		c := NewCollection("Test")
+		ws := &WebSocketDefinition{
+			ID:       "ws-123",
+			Name:     "Existing WS",
+			Endpoint: "wss://example.com/ws",
+		}
+		c.AddExistingWebSocket(ws)
+
+		assert.Len(t, c.WebSockets(), 1)
+		assert.Equal(t, "ws-123", c.WebSockets()[0].ID)
+	})
+}
+
+func TestRequestDefinition_FormFields(t *testing.T) {
+	t.Run("sets form data body", func(t *testing.T) {
+		req := NewRequestDefinition("Upload", "POST", "/upload")
+		fields := []FormField{
+			{Key: "name", Value: "test"},
+			{Key: "description", Value: "A test file"},
+		}
+		req.SetBodyFormData(fields)
+
+		assert.Equal(t, "form", req.BodyType())
+		assert.Len(t, req.FormFields(), 2)
+	})
+
+	t.Run("adds form field", func(t *testing.T) {
+		req := NewRequestDefinition("Upload", "POST", "/upload")
+		req.AddFormField("key1", "value1")
+		req.AddFormField("key2", "value2")
+
+		fields := req.FormFields()
+		assert.Len(t, fields, 2)
+		assert.Equal(t, "key1", fields[0].Key)
+		assert.Equal(t, "value1", fields[0].Value)
+		assert.False(t, fields[0].IsFile)
+	})
+
+	t.Run("adds form file", func(t *testing.T) {
+		req := NewRequestDefinition("Upload", "POST", "/upload")
+		req.AddFormFile("document", "/path/to/file.pdf")
+
+		fields := req.FormFields()
+		assert.Len(t, fields, 1)
+		assert.Equal(t, "document", fields[0].Key)
+		assert.Equal(t, "/path/to/file.pdf", fields[0].FilePath)
+		assert.True(t, fields[0].IsFile)
+	})
+
+	t.Run("clears body content when setting form data", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "POST", "/test")
+		req.SetBody("some raw content")
+		req.SetBodyFormData([]FormField{{Key: "key", Value: "value"}})
+
+		assert.Empty(t, req.BodyContent())
+		assert.Equal(t, "form", req.BodyType())
+	})
+}
+
+func TestRequestDefinition_SetBodyType(t *testing.T) {
+	t.Run("sets body type to raw", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "POST", "/test")
+		req.SetBodyType("raw")
+		assert.Equal(t, "raw", req.BodyType())
+	})
+
+	t.Run("sets body type to json", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "POST", "/test")
+		req.SetBodyType("json")
+		assert.Equal(t, "json", req.BodyType())
+	})
+
+	t.Run("sets body type to form", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "POST", "/test")
+		req.SetBodyType("form")
+		assert.Equal(t, "form", req.BodyType())
+	})
+}
+
+func TestRequestDefinition_ToRequestWithFormBody(t *testing.T) {
+	t.Run("converts request with form fields", func(t *testing.T) {
+		def := NewRequestDefinition("Upload", "POST", "https://example.com/upload")
+		def.SetBodyFormData([]FormField{
+			{Key: "name", Value: "test"},
+			{Key: "type", Value: "document"},
+		})
+
+		req, err := def.ToRequest()
+		require.NoError(t, err)
+		assert.NotNil(t, req.Body())
+		assert.Contains(t, req.Headers().Get("Content-Type"), "multipart/form-data")
+	})
+}
+
+func TestRequestDefinition_CloneWithFormFields(t *testing.T) {
+	t.Run("clones request with form fields", func(t *testing.T) {
+		original := NewRequestDefinition("Upload", "POST", "/upload")
+		original.AddFormField("key", "value")
+		original.AddFormFile("file", "/path/to/file.txt")
+
+		clone := original.Clone()
+
+		assert.Len(t, clone.FormFields(), 2)
+		assert.Equal(t, "key", clone.FormFields()[0].Key)
+		assert.Equal(t, "file", clone.FormFields()[1].Key)
+
+		// Verify it's a copy
+		clone.AddFormField("new", "field")
+		assert.Len(t, original.FormFields(), 2)
+		assert.Len(t, clone.FormFields(), 3)
+	})
+}
+
+func TestRequestDefinition_ToRequestWithEnvFormFields(t *testing.T) {
+	t.Run("interpolates form field values", func(t *testing.T) {
+		engine := interpolate.NewEngine()
+		engine.SetVariable("username", "john_doe")
+		engine.SetVariable("file_path", "/uploads/test.txt")
+
+		def := NewRequestDefinition("Upload", "POST", "https://example.com/upload")
+		def.SetBodyFormData([]FormField{
+			{Key: "name", Value: "{{username}}"},
+			{Key: "file", Value: "", IsFile: true, FilePath: "{{file_path}}"},
+		})
+
+		req, err := def.ToRequestWithEnv(engine)
+		require.NoError(t, err)
+		assert.NotNil(t, req.Body())
+	})
+}
+
+func TestCollection_MoveRequestUpDown_Integration(t *testing.T) {
+	t.Run("multiple moves maintain order", func(t *testing.T) {
+		c := NewCollection("Test")
+		req1 := NewRequestDefinition("A", "GET", "/a")
+		req2 := NewRequestDefinition("B", "GET", "/b")
+		req3 := NewRequestDefinition("C", "GET", "/c")
+		req4 := NewRequestDefinition("D", "GET", "/d")
+		c.AddRequest(req1)
+		c.AddRequest(req2)
+		c.AddRequest(req3)
+		c.AddRequest(req4)
+
+		// Move D up twice (D -> 2nd position)
+		c.MoveRequestUp(req4.ID())
+		c.MoveRequestUp(req4.ID())
+
+		assert.Equal(t, "A", c.Requests()[0].Name())
+		assert.Equal(t, "D", c.Requests()[1].Name())
+		assert.Equal(t, "B", c.Requests()[2].Name())
+		assert.Equal(t, "C", c.Requests()[3].Name())
+
+		// Move A down once
+		c.MoveRequestDown(req1.ID())
+
+		assert.Equal(t, "D", c.Requests()[0].Name())
+		assert.Equal(t, "A", c.Requests()[1].Name())
+		assert.Equal(t, "B", c.Requests()[2].Name())
+		assert.Equal(t, "C", c.Requests()[3].Name())
+	})
+}
+
+func TestFolder_GetFolderByID(t *testing.T) {
+	t.Run("gets direct subfolder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		child1 := parent.AddFolder("Child1")
+		parent.AddFolder("Child2")
+
+		// FindFolder is the method to find by ID recursively
+		found := parent.FindFolder(child1.ID())
+		assert.NotNil(t, found)
+		assert.Equal(t, "Child1", found.Name())
+	})
+}
+
+func TestCollection_RemoveFolder_EdgeCases(t *testing.T) {
+	t.Run("remove folder returns true for root folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		folder := c.AddFolder("ToRemove")
+
+		assert.True(t, c.RemoveFolder(folder.ID()))
+		assert.Empty(t, c.Folders())
+	})
+
+	t.Run("remove folder does not affect nested folders", func(t *testing.T) {
+		c := NewCollection("Test")
+		parent := c.AddFolder("Parent")
+		parent.AddFolder("Child")
+
+		// RemoveFolder only removes from root level
+		assert.False(t, c.RemoveFolder("child-id"))
+		assert.Len(t, c.Folders(), 1)
+	})
+}
+
+func TestFolder_RemoveFolder(t *testing.T) {
+	t.Run("removes direct child folder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		child := parent.AddFolder("Child")
+
+		assert.True(t, parent.RemoveFolder(child.ID()))
+		assert.Empty(t, parent.Folders())
+	})
+
+	t.Run("returns false for non-existent folder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		parent.AddFolder("Child")
+
+		assert.False(t, parent.RemoveFolder("non-existent"))
+		assert.Len(t, parent.Folders(), 1)
+	})
+}
+
+func TestCollection_MoveFolderUp(t *testing.T) {
+	t.Run("moves folder up in list", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddFolder("First")
+		folder2 := c.AddFolder("Second")
+		c.AddFolder("Third")
+
+		assert.True(t, c.MoveFolderUp(folder2.ID()))
+		assert.Equal(t, "Second", c.Folders()[0].Name())
+		assert.Equal(t, "First", c.Folders()[1].Name())
+		assert.Equal(t, "Third", c.Folders()[2].Name())
+	})
+
+	t.Run("returns false when already at top", func(t *testing.T) {
+		c := NewCollection("Test")
+		folder := c.AddFolder("First")
+		c.AddFolder("Second")
+
+		assert.False(t, c.MoveFolderUp(folder.ID()))
+	})
+
+	t.Run("returns false for non-existent folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddFolder("Existing")
+
+		assert.False(t, c.MoveFolderUp("non-existent-id"))
+	})
+}
+
+func TestCollection_MoveFolderDown(t *testing.T) {
+	t.Run("moves folder down in list", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddFolder("First")
+		folder2 := c.AddFolder("Second")
+		c.AddFolder("Third")
+
+		assert.True(t, c.MoveFolderDown(folder2.ID()))
+		assert.Equal(t, "First", c.Folders()[0].Name())
+		assert.Equal(t, "Third", c.Folders()[1].Name())
+		assert.Equal(t, "Second", c.Folders()[2].Name())
+	})
+
+	t.Run("returns false when already at bottom", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddFolder("First")
+		folder := c.AddFolder("Last")
+
+		assert.False(t, c.MoveFolderDown(folder.ID()))
+	})
+
+	t.Run("returns false for non-existent folder", func(t *testing.T) {
+		c := NewCollection("Test")
+		c.AddFolder("Existing")
+
+		assert.False(t, c.MoveFolderDown("non-existent-id"))
+	})
+}
+
+func TestFolder_MoveFolderUp(t *testing.T) {
+	t.Run("moves subfolder up in list", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		parent.AddFolder("First")
+		child2 := parent.AddFolder("Second")
+		parent.AddFolder("Third")
+
+		assert.True(t, parent.MoveFolderUp(child2.ID()))
+		assert.Equal(t, "Second", parent.Folders()[0].Name())
+		assert.Equal(t, "First", parent.Folders()[1].Name())
+	})
+
+	t.Run("returns false when already at top", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		child := parent.AddFolder("First")
+		parent.AddFolder("Second")
+
+		assert.False(t, parent.MoveFolderUp(child.ID()))
+	})
+
+	t.Run("returns false for non-existent folder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		parent.AddFolder("Child")
+
+		assert.False(t, parent.MoveFolderUp("non-existent-id"))
+	})
+}
+
+func TestFolder_MoveFolderDown(t *testing.T) {
+	t.Run("moves subfolder down in list", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		child1 := parent.AddFolder("First")
+		parent.AddFolder("Second")
+		parent.AddFolder("Third")
+
+		assert.True(t, parent.MoveFolderDown(child1.ID()))
+		assert.Equal(t, "Second", parent.Folders()[0].Name())
+		assert.Equal(t, "First", parent.Folders()[1].Name())
+	})
+
+	t.Run("returns false when already at bottom", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		parent.AddFolder("First")
+		child := parent.AddFolder("Last")
+
+		assert.False(t, parent.MoveFolderDown(child.ID()))
+	})
+
+	t.Run("returns false for non-existent folder", func(t *testing.T) {
+		parent := NewFolder("Parent")
+		parent.AddFolder("Child")
+
+		assert.False(t, parent.MoveFolderDown("non-existent-id"))
+	})
+}
+
+func TestCollection_MoveFolderUpDown_Integration(t *testing.T) {
+	t.Run("multiple moves maintain order", func(t *testing.T) {
+		c := NewCollection("Test")
+		folderA := c.AddFolder("A")
+		c.AddFolder("B")
+		c.AddFolder("C")
+		folderD := c.AddFolder("D")
+
+		// Move D up twice (D -> 2nd position)
+		c.MoveFolderUp(folderD.ID())
+		c.MoveFolderUp(folderD.ID())
+
+		assert.Equal(t, "A", c.Folders()[0].Name())
+		assert.Equal(t, "D", c.Folders()[1].Name())
+		assert.Equal(t, "B", c.Folders()[2].Name())
+		assert.Equal(t, "C", c.Folders()[3].Name())
+
+		// Move A down once
+		c.MoveFolderDown(folderA.ID())
+
+		assert.Equal(t, "D", c.Folders()[0].Name())
+		assert.Equal(t, "A", c.Folders()[1].Name())
+		assert.Equal(t, "B", c.Folders()[2].Name())
+		assert.Equal(t, "C", c.Folders()[3].Name())
+	})
+}

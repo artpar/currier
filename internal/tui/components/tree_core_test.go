@@ -3,6 +3,7 @@ package components
 import (
 	"testing"
 
+	"github.com/artpar/currier/internal/core"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -152,4 +153,139 @@ func TestFilterItemsBySearch(t *testing.T) {
 		result := FilterItemsBySearch([]TreeItem{}, "test")
 		assert.Len(t, result, 0)
 	})
+}
+
+func TestFilterItemsBySearch_Extended(t *testing.T) {
+	// Create request with body
+	reqWithBody := core.NewRequestDefinition("Simple Request", "GET", "https://api.example.com/users")
+	reqWithBody.SetBody(`{"username": "john_doe", "email": "john@example.com"}`)
+
+	// Create request with headers
+	reqWithHeaders := core.NewRequestDefinition("Auth Request", "POST", "https://api.example.com/login")
+	reqWithHeaders.SetHeader("Authorization", "Bearer secret-token-abc123")
+	reqWithHeaders.SetHeader("X-Custom-Header", "custom-value-xyz")
+
+	// Create request with specific URL
+	reqWithURL := core.NewRequestDefinition("Specific Endpoint", "GET", "https://api.myservice.io/v2/products")
+
+	// Create WebSocket with endpoint
+	wsItem := &core.WebSocketDefinition{
+		Name:     "WS Connection",
+		Endpoint: "wss://websocket.example.org/stream",
+	}
+
+	items := []TreeItem{
+		{Name: "Simple Request", Type: ItemRequest, Method: "GET", Request: reqWithBody},
+		{Name: "Auth Request", Type: ItemRequest, Method: "POST", Request: reqWithHeaders},
+		{Name: "Specific Endpoint", Type: ItemRequest, Method: "GET", Request: reqWithURL},
+		{Name: "WS Connection", Type: ItemWebSocket, WebSocket: wsItem},
+		{Name: "Folder", Type: ItemFolder},
+	}
+
+	t.Run("search by body content", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "john_doe")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "Simple Request", result[0].Name)
+	})
+
+	t.Run("search by body email", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "john@example.com")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "Simple Request", result[0].Name)
+	})
+
+	t.Run("search by header key", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "authorization")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "Auth Request", result[0].Name)
+	})
+
+	t.Run("search by header value", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "secret-token")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "Auth Request", result[0].Name)
+	})
+
+	t.Run("search by custom header", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "x-custom")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "Auth Request", result[0].Name)
+	})
+
+	t.Run("search by URL domain", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "myservice.io")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "Specific Endpoint", result[0].Name)
+	})
+
+	t.Run("search by URL path", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "/v2/products")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "Specific Endpoint", result[0].Name)
+	})
+
+	t.Run("search by URL partial", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "api.example.com")
+		assert.Len(t, result, 2) // Both reqWithBody and reqWithHeaders
+	})
+
+	t.Run("search by WebSocket endpoint", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "websocket.example.org")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "WS Connection", result[0].Name)
+	})
+
+	t.Run("search by WebSocket wss protocol", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "wss://")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "WS Connection", result[0].Name)
+	})
+
+	t.Run("folders do not match body search", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "john_doe")
+		for _, item := range result {
+			assert.NotEqual(t, ItemFolder, item.Type)
+		}
+	})
+
+	t.Run("case insensitive URL search", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "MYSERVICE.IO")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "Specific Endpoint", result[0].Name)
+	})
+
+	t.Run("case insensitive header search", func(t *testing.T) {
+		result := FilterItemsBySearch(items, "BEARER")
+		assert.Len(t, result, 1)
+		assert.Equal(t, "Auth Request", result[0].Name)
+	})
+}
+
+func TestMatchesSearch_NilRequest(t *testing.T) {
+	item := TreeItem{
+		Name:    "Nil Request",
+		Type:    ItemRequest,
+		Method:  "GET",
+		Request: nil,
+	}
+
+	result := matchesSearch(item, "test")
+	assert.False(t, result)
+
+	result = matchesSearch(item, "nil")
+	assert.True(t, result) // Matches name
+}
+
+func TestMatchesSearch_NilWebSocket(t *testing.T) {
+	item := TreeItem{
+		Name:      "Nil WebSocket",
+		Type:      ItemWebSocket,
+		WebSocket: nil,
+	}
+
+	result := matchesSearch(item, "websocket")
+	assert.True(t, result) // Matches name
+
+	result = matchesSearch(item, "endpoint")
+	assert.False(t, result) // Doesn't crash on nil
 }

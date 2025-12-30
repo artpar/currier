@@ -50,6 +50,7 @@ func ToggleExpand(expanded map[string]bool, id string, expand bool) map[string]b
 
 // FilterItemsBySearch returns items matching search query.
 // Pure function: returns filtered slice, never mutates input.
+// Searches in: name, method, URL, body, and headers.
 func FilterItemsBySearch(items []TreeItem, search string) []TreeItem {
 	if search == "" {
 		return items
@@ -57,10 +58,55 @@ func FilterItemsBySearch(items []TreeItem, search string) []TreeItem {
 	search = strings.ToLower(search)
 	var result []TreeItem
 	for _, item := range items {
-		if strings.Contains(strings.ToLower(item.Name), search) ||
-			(item.Type == ItemRequest && strings.Contains(strings.ToLower(item.Method), search)) {
+		if matchesSearch(item, search) {
 			result = append(result, item)
 		}
 	}
 	return result
+}
+
+// matchesSearch checks if an item matches the search query.
+// Searches name, and for requests: method, URL, body, and headers.
+func matchesSearch(item TreeItem, search string) bool {
+	// Always search by name
+	if strings.Contains(strings.ToLower(item.Name), search) {
+		return true
+	}
+
+	// For requests, search additional fields
+	if item.Type == ItemRequest {
+		// Search method
+		if strings.Contains(strings.ToLower(item.Method), search) {
+			return true
+		}
+
+		if item.Request != nil {
+			// Search URL
+			if strings.Contains(strings.ToLower(item.Request.URL()), search) {
+				return true
+			}
+
+			// Search body
+			if strings.Contains(strings.ToLower(item.Request.Body()), search) {
+				return true
+			}
+
+			// Search headers (keys and values)
+			for key, value := range item.Request.Headers() {
+				if strings.Contains(strings.ToLower(key), search) ||
+					strings.Contains(strings.ToLower(value), search) {
+					return true
+				}
+			}
+		}
+	}
+
+	// For WebSocket, search endpoint
+	if item.Type == ItemWebSocket && item.WebSocket != nil {
+		if strings.Contains(strings.ToLower(item.WebSocket.Endpoint), search) {
+			return true
+		}
+	}
+
+	return false
 }

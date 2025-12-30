@@ -611,3 +611,113 @@ func TestPostmanImporter_Import_RequestAuth(t *testing.T) {
 	assert.Equal(t, "bearer", requests[0].Auth().Type)
 	assert.Equal(t, "request-token", requests[0].Auth().Token)
 }
+
+func TestPostmanImporter_Import_OAuth2Auth(t *testing.T) {
+	imp := NewPostmanImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"info": {
+			"name": "Test",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		},
+		"auth": {
+			"type": "oauth2",
+			"oauth2": [
+				{"key": "grant_type", "value": "client_credentials"},
+				{"key": "accessToken", "value": "access-token-123"},
+				{"key": "accessTokenUrl", "value": "https://auth.example.com/token"},
+				{"key": "clientId", "value": "my-client-id"},
+				{"key": "clientSecret", "value": "my-client-secret"},
+				{"key": "scope", "value": "read write"},
+				{"key": "addTokenTo", "value": "header"}
+			]
+		},
+		"item": []
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	assert.Equal(t, "oauth2", coll.Auth().Type)
+	require.NotNil(t, coll.Auth().OAuth2)
+	assert.Equal(t, "client_credentials", string(coll.Auth().OAuth2.GrantType))
+	assert.Equal(t, "access-token-123", coll.Auth().OAuth2.AccessToken)
+	assert.Equal(t, "https://auth.example.com/token", coll.Auth().OAuth2.TokenURL)
+	assert.Equal(t, "my-client-id", coll.Auth().OAuth2.ClientID)
+	assert.Equal(t, "my-client-secret", coll.Auth().OAuth2.ClientSecret)
+	assert.Equal(t, "read write", coll.Auth().OAuth2.Scope)
+	assert.Equal(t, "header", coll.Auth().OAuth2.AddTokenTo)
+}
+
+func TestPostmanImporter_Import_AWSAuth(t *testing.T) {
+	imp := NewPostmanImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"info": {
+			"name": "Test",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		},
+		"auth": {
+			"type": "awsv4",
+			"awsv4": [
+				{"key": "accessKey", "value": "AKIAIOSFODNN7EXAMPLE"},
+				{"key": "secretKey", "value": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"},
+				{"key": "region", "value": "us-east-1"},
+				{"key": "service", "value": "s3"},
+				{"key": "sessionToken", "value": "session-token-123"}
+			]
+		},
+		"item": []
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	assert.Equal(t, "awsv4", coll.Auth().Type)
+	require.NotNil(t, coll.Auth().AWS)
+	assert.Equal(t, "AKIAIOSFODNN7EXAMPLE", coll.Auth().AWS.AccessKeyID)
+	assert.Equal(t, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", coll.Auth().AWS.SecretAccessKey)
+	assert.Equal(t, "us-east-1", coll.Auth().AWS.Region)
+	assert.Equal(t, "s3", coll.Auth().AWS.Service)
+	assert.Equal(t, "session-token-123", coll.Auth().AWS.SessionToken)
+}
+
+func TestPostmanImporter_Import_RequestOAuth2Auth(t *testing.T) {
+	imp := NewPostmanImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"info": {
+			"name": "Test",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		},
+		"item": [
+			{
+				"name": "OAuth Request",
+				"request": {
+					"method": "GET",
+					"url": "https://api.example.com/data",
+					"auth": {
+						"type": "oauth2",
+						"oauth2": [
+							{"key": "accessToken", "value": "request-oauth-token"},
+							{"key": "tokenType", "value": "Bearer"}
+						]
+					}
+				}
+			}
+		]
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	requests := coll.Requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "oauth2", requests[0].Auth().Type)
+	require.NotNil(t, requests[0].Auth().OAuth2)
+	assert.Equal(t, "request-oauth-token", requests[0].Auth().OAuth2.AccessToken)
+	assert.Equal(t, "Bearer", requests[0].Auth().OAuth2.TokenType)
+}

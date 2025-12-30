@@ -1327,7 +1327,7 @@ func (v *MainView) renderHelp() string {
 		"│    c                  Copy request as cURL              │",
 		"│    E                  Export collection to Postman      │",
 		"│    I                  Import (Postman/OpenAPI)          │",
-		"│    K/J                Move request up/down              │",
+		"│    K/J                Move request/folder up/down       │",
 		"│    R                  Rename selected request/folder    │",
 		"│    /                  Start search                      │",
 		"│    H                  Switch to History view            │",

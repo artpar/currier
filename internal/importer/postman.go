@@ -268,6 +268,52 @@ func convertPostmanAuth(auth *postmanAuth) core.AuthConfig {
 				config.In = item.Value
 			}
 		}
+	case "oauth2":
+		config.OAuth2 = &core.OAuth2Config{}
+		for _, item := range auth.OAuth2 {
+			switch item.Key {
+			case "grant_type":
+				config.OAuth2.GrantType = core.OAuth2GrantType(item.Value)
+			case "accessToken":
+				config.OAuth2.AccessToken = item.Value
+			case "refreshToken":
+				config.OAuth2.RefreshToken = item.Value
+			case "tokenType":
+				config.OAuth2.TokenType = item.Value
+			case "addTokenTo":
+				config.OAuth2.AddTokenTo = item.Value
+			case "authUrl":
+				config.OAuth2.AuthURL = item.Value
+			case "accessTokenUrl":
+				config.OAuth2.TokenURL = item.Value
+			case "clientId":
+				config.OAuth2.ClientID = item.Value
+			case "clientSecret":
+				config.OAuth2.ClientSecret = item.Value
+			case "scope":
+				config.OAuth2.Scope = item.Value
+			case "redirect_uri":
+				config.OAuth2.RedirectURI = item.Value
+			case "state":
+				config.OAuth2.State = item.Value
+			}
+		}
+	case "awsv4":
+		config.AWS = &core.AWSAuthConfig{}
+		for _, item := range auth.AWSv4 {
+			switch item.Key {
+			case "accessKey":
+				config.AWS.AccessKeyID = item.Value
+			case "secretKey":
+				config.AWS.SecretAccessKey = item.Value
+			case "sessionToken":
+				config.AWS.SessionToken = item.Value
+			case "region":
+				config.AWS.Region = item.Value
+			case "service":
+				config.AWS.Service = item.Value
+			}
+		}
 	}
 
 	return config
@@ -349,11 +395,12 @@ type postmanBodyOptions struct {
 }
 
 type postmanAuth struct {
-	Type   string              `json:"type"`
-	Bearer []postmanAuthItem   `json:"bearer,omitempty"`
-	Basic  []postmanAuthItem   `json:"basic,omitempty"`
-	APIKey []postmanAuthItem   `json:"apikey,omitempty"`
-	OAuth2 []postmanAuthItem   `json:"oauth2,omitempty"`
+	Type   string            `json:"type"`
+	Bearer []postmanAuthItem `json:"bearer,omitempty"`
+	Basic  []postmanAuthItem `json:"basic,omitempty"`
+	APIKey []postmanAuthItem `json:"apikey,omitempty"`
+	OAuth2 []postmanAuthItem `json:"oauth2,omitempty"`
+	AWSv4  []postmanAuthItem `json:"awsv4,omitempty"`
 }
 
 type postmanAuthItem struct {

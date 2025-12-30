@@ -120,10 +120,12 @@ func (p *PostmanExporter) convertRequest(req *core.RequestDefinition) postmanIte
 		Request: &postmanRequest{
 			Method:      req.Method(),
 			Description: req.Description(),
-			URL:         req.URL(),
 			Header:      make([]postmanHeader, 0),
 		},
 	}
+
+	// Convert URL with query parameters
+	item.Request.URL = p.convertURL(req)
 
 	// Convert headers
 	for key, value := range req.Headers() {
@@ -133,22 +135,73 @@ func (p *PostmanExporter) convertRequest(req *core.RequestDefinition) postmanIte
 		})
 	}
 
-	// Convert body
-	body := req.Body()
-	if body != "" {
-		item.Request.Body = &postmanBody{
-			Mode: "raw",
-			Raw:  body,
-		}
+	// Convert body based on body type
+	bodyType := req.BodyType()
+	bodyContent := req.Body()
 
-		// Detect JSON and set options
-		if strings.HasPrefix(strings.TrimSpace(body), "{") || strings.HasPrefix(strings.TrimSpace(body), "[") {
-			item.Request.Body.Options = &postmanBodyOptions{
-				Raw: struct {
-					Language string `json:"language,omitempty"`
-				}{
-					Language: "json",
-				},
+	switch bodyType {
+	case "form":
+		// Form-data body
+		formFields := req.FormFields()
+		if len(formFields) > 0 {
+			item.Request.Body = &postmanBody{
+				Mode:     "formdata",
+				FormData: make([]postmanFormData, 0, len(formFields)),
+			}
+			for _, field := range formFields {
+				fd := postmanFormData{
+					Key:   field.Key,
+					Value: field.Value,
+				}
+				if field.IsFile {
+					fd.Type = "file"
+					fd.Src = field.FilePath
+				} else {
+					fd.Type = "text"
+				}
+				item.Request.Body.FormData = append(item.Request.Body.FormData, fd)
+			}
+		}
+	case "urlencoded":
+		// URL-encoded body - parse from body content
+		if bodyContent != "" {
+			item.Request.Body = &postmanBody{
+				Mode:       "urlencoded",
+				URLEncoded: make([]postmanURLEncoded, 0),
+			}
+			pairs := strings.Split(bodyContent, "&")
+			for _, pair := range pairs {
+				kv := strings.SplitN(pair, "=", 2)
+				if len(kv) == 2 {
+					item.Request.Body.URLEncoded = append(item.Request.Body.URLEncoded, postmanURLEncoded{
+						Key:   kv[0],
+						Value: kv[1],
+					})
+				} else if len(kv) == 1 && kv[0] != "" {
+					item.Request.Body.URLEncoded = append(item.Request.Body.URLEncoded, postmanURLEncoded{
+						Key:   kv[0],
+						Value: "",
+					})
+				}
+			}
+		}
+	default:
+		// Raw body (default)
+		if bodyContent != "" {
+			item.Request.Body = &postmanBody{
+				Mode: "raw",
+				Raw:  bodyContent,
+			}
+
+			// Detect JSON and set options
+			if strings.HasPrefix(strings.TrimSpace(bodyContent), "{") || strings.HasPrefix(strings.TrimSpace(bodyContent), "[") {
+				item.Request.Body.Options = &postmanBodyOptions{
+					Raw: struct {
+						Language string `json:"language,omitempty"`
+					}{
+						Language: "json",
+					},
+				}
 			}
 		}
 	}
@@ -184,6 +237,30 @@ func (p *PostmanExporter) convertRequest(req *core.RequestDefinition) postmanIte
 	return item
 }
 
+func (p *PostmanExporter) convertURL(req *core.RequestDefinition) interface{} {
+	queryParams := req.QueryParams()
+
+	// If no query params, return simple string URL
+	if len(queryParams) == 0 {
+		return req.URL()
+	}
+
+	// Build URL object with query parameters
+	urlObj := postmanURLObject{
+		Raw:   req.FullURL(),
+		Query: make([]postmanQueryParam, 0, len(queryParams)),
+	}
+
+	for key, value := range queryParams {
+		urlObj.Query = append(urlObj.Query, postmanQueryParam{
+			Key:   key,
+			Value: value,
+		})
+	}
+
+	return urlObj
+}
+
 func (p *PostmanExporter) convertAuth(auth core.AuthConfig) *postmanAuth {
 	pm := &postmanAuth{
 		Type: auth.Type,
@@ -204,6 +281,48 @@ func (p *PostmanExporter) convertAuth(auth core.AuthConfig) *postmanAuth {
 			{Key: "key", Value: auth.Key, Type: "string"},
 			{Key: "value", Value: auth.Value, Type: "string"},
 			{Key: "in", Value: auth.In, Type: "string"},
+		}
+	case "oauth2":
+		if auth.OAuth2 != nil {
+			pm.OAuth2 = []postmanAuthItem{
+				{Key: "grant_type", Value: string(auth.OAuth2.GrantType), Type: "string"},
+				{Key: "accessToken", Value: auth.OAuth2.AccessToken, Type: "string"},
+				{Key: "tokenType", Value: auth.OAuth2.TokenType, Type: "string"},
+				{Key: "addTokenTo", Value: auth.OAuth2.AddTokenTo, Type: "string"},
+			}
+			if auth.OAuth2.AuthURL != "" {
+				pm.OAuth2 = append(pm.OAuth2, postmanAuthItem{Key: "authUrl", Value: auth.OAuth2.AuthURL, Type: "string"})
+			}
+			if auth.OAuth2.TokenURL != "" {
+				pm.OAuth2 = append(pm.OAuth2, postmanAuthItem{Key: "accessTokenUrl", Value: auth.OAuth2.TokenURL, Type: "string"})
+			}
+			if auth.OAuth2.ClientID != "" {
+				pm.OAuth2 = append(pm.OAuth2, postmanAuthItem{Key: "clientId", Value: auth.OAuth2.ClientID, Type: "string"})
+			}
+			if auth.OAuth2.ClientSecret != "" {
+				pm.OAuth2 = append(pm.OAuth2, postmanAuthItem{Key: "clientSecret", Value: auth.OAuth2.ClientSecret, Type: "string"})
+			}
+			if auth.OAuth2.Scope != "" {
+				pm.OAuth2 = append(pm.OAuth2, postmanAuthItem{Key: "scope", Value: auth.OAuth2.Scope, Type: "string"})
+			}
+			if auth.OAuth2.RedirectURI != "" {
+				pm.OAuth2 = append(pm.OAuth2, postmanAuthItem{Key: "redirect_uri", Value: auth.OAuth2.RedirectURI, Type: "string"})
+			}
+			if auth.OAuth2.RefreshToken != "" {
+				pm.OAuth2 = append(pm.OAuth2, postmanAuthItem{Key: "refreshToken", Value: auth.OAuth2.RefreshToken, Type: "string"})
+			}
+		}
+	case "awsv4":
+		if auth.AWS != nil {
+			pm.AWSv4 = []postmanAuthItem{
+				{Key: "accessKey", Value: auth.AWS.AccessKeyID, Type: "string"},
+				{Key: "secretKey", Value: auth.AWS.SecretAccessKey, Type: "string"},
+				{Key: "region", Value: auth.AWS.Region, Type: "string"},
+				{Key: "service", Value: auth.AWS.Service, Type: "string"},
+			}
+			if auth.AWS.SessionToken != "" {
+				pm.AWSv4 = append(pm.AWSv4, postmanAuthItem{Key: "sessionToken", Value: auth.AWS.SessionToken, Type: "string"})
+			}
 		}
 	}
 
@@ -239,9 +358,20 @@ type postmanRequest struct {
 	Method      string          `json:"method"`
 	Header      []postmanHeader `json:"header"`
 	Body        *postmanBody    `json:"body,omitempty"`
-	URL         string          `json:"url"`
+	URL         interface{}     `json:"url"` // Can be string or postmanURLObject
 	Auth        *postmanAuth    `json:"auth,omitempty"`
 	Description string          `json:"description,omitempty"`
+}
+
+type postmanURLObject struct {
+	Raw   string              `json:"raw"`
+	Query []postmanQueryParam `json:"query,omitempty"`
+}
+
+type postmanQueryParam struct {
+	Key      string `json:"key"`
+	Value    string `json:"value"`
+	Disabled bool   `json:"disabled,omitempty"`
 }
 
 type postmanHeader struct {
@@ -251,9 +381,25 @@ type postmanHeader struct {
 }
 
 type postmanBody struct {
-	Mode    string              `json:"mode"`
-	Raw     string              `json:"raw,omitempty"`
-	Options *postmanBodyOptions `json:"options,omitempty"`
+	Mode       string              `json:"mode"`
+	Raw        string              `json:"raw,omitempty"`
+	Options    *postmanBodyOptions `json:"options,omitempty"`
+	FormData   []postmanFormData   `json:"formdata,omitempty"`
+	URLEncoded []postmanURLEncoded `json:"urlencoded,omitempty"`
+}
+
+type postmanFormData struct {
+	Key      string `json:"key"`
+	Value    string `json:"value,omitempty"`
+	Type     string `json:"type,omitempty"` // text, file
+	Src      string `json:"src,omitempty"`  // for files
+	Disabled bool   `json:"disabled,omitempty"`
+}
+
+type postmanURLEncoded struct {
+	Key      string `json:"key"`
+	Value    string `json:"value"`
+	Disabled bool   `json:"disabled,omitempty"`
 }
 
 type postmanBodyOptions struct {
@@ -267,6 +413,8 @@ type postmanAuth struct {
 	Bearer []postmanAuthItem `json:"bearer,omitempty"`
 	Basic  []postmanAuthItem `json:"basic,omitempty"`
 	APIKey []postmanAuthItem `json:"apikey,omitempty"`
+	OAuth2 []postmanAuthItem `json:"oauth2,omitempty"`
+	AWSv4  []postmanAuthItem `json:"awsv4,omitempty"`
 }
 
 type postmanAuthItem struct {

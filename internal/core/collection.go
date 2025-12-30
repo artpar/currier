@@ -312,6 +312,36 @@ func (c *Collection) MoveRequestDown(id string) bool {
 	return false
 }
 
+// MoveFolderUp moves a folder up in the root level list (decreases index).
+func (c *Collection) MoveFolderUp(id string) bool {
+	for i, f := range c.folders {
+		if f.ID() == id {
+			if i == 0 {
+				return false // Already at top
+			}
+			c.folders[i], c.folders[i-1] = c.folders[i-1], c.folders[i]
+			c.touch()
+			return true
+		}
+	}
+	return false
+}
+
+// MoveFolderDown moves a folder down in the root level list (increases index).
+func (c *Collection) MoveFolderDown(id string) bool {
+	for i, f := range c.folders {
+		if f.ID() == id {
+			if i == len(c.folders)-1 {
+				return false // Already at bottom
+			}
+			c.folders[i], c.folders[i+1] = c.folders[i+1], c.folders[i]
+			c.touch()
+			return true
+		}
+	}
+	return false
+}
+
 // WebSockets returns all WebSocket definitions.
 func (c *Collection) WebSockets() []*WebSocketDefinition {
 	return c.websockets
@@ -504,6 +534,34 @@ func (f *Folder) MoveRequestDown(id string) bool {
 				return false // Already at bottom
 			}
 			f.requests[i], f.requests[i+1] = f.requests[i+1], f.requests[i]
+			return true
+		}
+	}
+	return false
+}
+
+// MoveFolderUp moves a subfolder up in this folder's list (decreases index).
+func (f *Folder) MoveFolderUp(id string) bool {
+	for i, sf := range f.folders {
+		if sf.ID() == id {
+			if i == 0 {
+				return false // Already at top
+			}
+			f.folders[i], f.folders[i-1] = f.folders[i-1], f.folders[i]
+			return true
+		}
+	}
+	return false
+}
+
+// MoveFolderDown moves a subfolder down in this folder's list (increases index).
+func (f *Folder) MoveFolderDown(id string) bool {
+	for i, sf := range f.folders {
+		if sf.ID() == id {
+			if i == len(f.folders)-1 {
+				return false // Already at bottom
+			}
+			f.folders[i], f.folders[i+1] = f.folders[i+1], f.folders[i]
 			return true
 		}
 	}

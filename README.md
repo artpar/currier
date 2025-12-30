@@ -10,7 +10,8 @@ A vim-modal TUI API client for developers and AI agents.
 - **Variable interpolation** - Use `{{variable}}` syntax in URLs, headers, and bodies
 - **Automatic Cookie Management** - Captures Set-Cookie headers and persists cookies to SQLite
 - **Pre/Post-request scripts** - JavaScript-based scripting with assertions
-- **Request history** - SQLite-backed history with search and replay
+- **Request history** - SQLite-backed history with search, filtering by method/status, and replay
+- **Deep search** - Search within request names, URLs, body content, and headers
 - **Import/Export** - Support for Postman, cURL, HAR, and OpenAPI formats
 - **CLI mode** - Execute requests directly from the command line
 - **curl import** - Run `currier curl <args>` to import any curl command into the TUI
@@ -44,7 +45,15 @@ A vim-modal TUI API client for developers and AI agents.
 
 ### Search
 ![Search Demo](demos/demo-search.gif?v=0.1.15)
-*/ to search • Filter history/collections • Enter to select*
+*/ to search • Searches name, URL, body, headers • Enter to select*
+
+### Deep Search
+![Deep Search Demo](demos/demo-deep-search.gif?v=0.1.20)
+*Search within body content • Match header keys/values • Filter by URL patterns*
+
+### History Filtering
+![History Filter Demo](demos/demo-history-filter.gif?v=0.1.20)
+*m to filter by method • s to filter by status • x to clear filters*
 
 ### Environment Switcher
 ![Environment Demo](demos/demo-environment.gif?v=0.1.16)
@@ -361,8 +370,20 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `I` | Import collection (Postman/OpenAPI) |
 | `K/J` | Move request up/down |
 | `R` | Rename request/folder |
-| `/` | Search |
+| `/` | Search (name, URL, body, headers) |
 | `H` | Switch to History |
+
+### History Panel
+| Key | Action |
+|-----|--------|
+| `j/k` | Navigate up/down |
+| `Enter` | Load request |
+| `m` | Cycle method filter (GET/POST/PUT...) |
+| `s` | Cycle status filter (2xx/3xx/4xx/5xx) |
+| `x` | Clear all filters |
+| `/` | Search history |
+| `r` | Refresh history |
+| `C` | Switch to Collections |
 
 ### Request Panel
 | Key | Action |

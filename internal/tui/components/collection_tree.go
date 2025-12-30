@@ -162,6 +162,13 @@ type ReorderRequestMsg struct {
 	Direction  string // "up" or "down"
 }
 
+// ReorderFolderMsg is sent when a folder is reordered within its container.
+type ReorderFolderMsg struct {
+	Collection *core.Collection
+	Folder     *core.Folder
+	Direction  string // "up" or "down"
+}
+
 // CollectionTree displays a tree of collections, folders, and requests.
 type CollectionTree struct {
 	title         string
@@ -201,11 +208,13 @@ type CollectionTree struct {
 	viewMode ViewMode
 
 	// History support
-	historyStore   history.Store
-	historyEntries []history.Entry
-	historyCursor  int
-	historyOffset  int
-	historySearch  string
+	historyStore        history.Store
+	historyEntries      []history.Entry
+	historyCursor       int
+	historyOffset       int
+	historySearch       string
+	historyMethodFilter string // Filter by method: "", "GET", "POST", etc.
+	historyStatusFilter string // Filter by status: "", "2xx", "3xx", "4xx", "5xx"
 }
 
 // NewCollectionTree creates a new collection tree component.
@@ -331,13 +340,13 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			c.importBuffer = ""
 			return c, nil
 		case "K":
-			// Move request up
+			// Move request or folder up
 			c.gPressed = false
-			return c.handleReorderRequest("up")
+			return c.handleReorderItem("up")
 		case "J":
-			// Move request down
+			// Move request or folder down
 			c.gPressed = false
-			return c.handleReorderRequest("down")
+			return c.handleReorderItem("down")
 		case "F":
 			// Create new folder in current collection
 			c.gPressed = false
@@ -469,6 +478,26 @@ func (c *CollectionTree) handleHistoryKeyMsg(msg tea.KeyMsg) (tui.Component, tea
 			c.loadHistory()
 			c.gPressed = false
 			return c, nil
+		case "m":
+			// Cycle method filter
+			c.cycleHistoryMethodFilter()
+			c.loadHistory()
+			c.gPressed = false
+			return c, nil
+		case "s":
+			// Cycle status filter
+			c.cycleHistoryStatusFilter()
+			c.loadHistory()
+			c.gPressed = false
+			return c, nil
+		case "x":
+			// Clear all filters
+			c.historyMethodFilter = ""
+			c.historyStatusFilter = ""
+			c.historySearch = ""
+			c.loadHistory()
+			c.gPressed = false
+			return c, nil
 		default:
 			c.gPressed = false
 		}
@@ -486,6 +515,30 @@ func (c *CollectionTree) moveHistoryCursor(delta int) {
 	// Use pure functions - explicit state changes
 	c.historyCursor = MoveCursor(c.historyCursor, delta, len(c.historyEntries))
 	c.historyOffset = AdjustOffset(c.historyCursor, c.historyOffset, c.historyContentHeight())
+}
+
+// cycleHistoryMethodFilter cycles through HTTP method filters.
+func (c *CollectionTree) cycleHistoryMethodFilter() {
+	methods := []string{"", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+	for i, m := range methods {
+		if m == c.historyMethodFilter {
+			c.historyMethodFilter = methods[(i+1)%len(methods)]
+			return
+		}
+	}
+	c.historyMethodFilter = methods[0]
+}
+
+// cycleHistoryStatusFilter cycles through status code filters.
+func (c *CollectionTree) cycleHistoryStatusFilter() {
+	statuses := []string{"", "2xx", "3xx", "4xx", "5xx"}
+	for i, s := range statuses {
+		if s == c.historyStatusFilter {
+			c.historyStatusFilter = statuses[(i+1)%len(statuses)]
+			return
+		}
+	}
+	c.historyStatusFilter = statuses[0]
 }
 
 func (c *CollectionTree) handleHistoryEnter() (tui.Component, tea.Cmd) {
@@ -512,6 +565,29 @@ func (c *CollectionTree) loadHistory() {
 		Limit:     100, // Load last 100 entries
 		SortBy:    "timestamp",
 		SortOrder: "DESC",
+	}
+
+	// Apply method filter
+	if c.historyMethodFilter != "" {
+		opts.Method = c.historyMethodFilter
+	}
+
+	// Apply status filter
+	if c.historyStatusFilter != "" {
+		switch c.historyStatusFilter {
+		case "2xx":
+			opts.StatusMin = 200
+			opts.StatusMax = 299
+		case "3xx":
+			opts.StatusMin = 300
+			opts.StatusMax = 399
+		case "4xx":
+			opts.StatusMin = 400
+			opts.StatusMax = 499
+		case "5xx":
+			opts.StatusMin = 500
+			opts.StatusMax = 599
+		}
 	}
 
 	if c.historySearch != "" {
@@ -826,6 +902,122 @@ func (c *CollectionTree) handleExportCollection() (tui.Component, tea.Cmd) {
 			Collection: coll,
 		}
 	}
+}
+
+func (c *CollectionTree) handleReorderItem(direction string) (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	switch item.Type {
+	case ItemRequest:
+		return c.handleReorderRequest(direction)
+	case ItemFolder:
+		return c.handleReorderFolder(direction)
+	default:
+		return c, nil
+	}
+}
+
+func (c *CollectionTree) handleReorderFolder(direction string) (tui.Component, tea.Cmd) {
+	displayItems := c.getDisplayItems()
+	if c.cursor < 0 || c.cursor >= len(displayItems) {
+		return c, nil
+	}
+
+	item := displayItems[c.cursor]
+
+	// Only folders can be reordered
+	if item.Type != ItemFolder || item.Folder == nil {
+		return c, nil
+	}
+
+	// Find the collection and potentially the parent folder containing this folder
+	var coll *core.Collection
+	var parentFolder *core.Folder
+
+	for _, collection := range c.collections {
+		// Check root level folders
+		for _, f := range collection.Folders() {
+			if f.ID() == item.Folder.ID() {
+				coll = collection
+				break
+			}
+		}
+		if coll != nil {
+			break
+		}
+
+		// Check nested folders
+		for _, f := range collection.Folders() {
+			if foundParent := c.findParentFolderContainingFolder(f, item.Folder.ID()); foundParent != nil {
+				coll = collection
+				parentFolder = foundParent
+				break
+			}
+		}
+		if coll != nil {
+			break
+		}
+	}
+
+	if coll == nil {
+		return c, nil
+	}
+
+	// Perform the reorder
+	var moved bool
+	if parentFolder != nil {
+		if direction == "up" {
+			moved = parentFolder.MoveFolderUp(item.Folder.ID())
+		} else {
+			moved = parentFolder.MoveFolderDown(item.Folder.ID())
+		}
+	} else {
+		if direction == "up" {
+			moved = coll.MoveFolderUp(item.Folder.ID())
+		} else {
+			moved = coll.MoveFolderDown(item.Folder.ID())
+		}
+	}
+
+	if !moved {
+		return c, nil
+	}
+
+	// Rebuild the tree and adjust cursor
+	c.rebuildItems()
+
+	// Move cursor to follow the folder
+	for i, di := range c.getDisplayItems() {
+		if di.Type == ItemFolder && di.Folder != nil && di.Folder.ID() == item.Folder.ID() {
+			c.cursor = i
+			break
+		}
+	}
+
+	return c, func() tea.Msg {
+		return ReorderFolderMsg{
+			Collection: coll,
+			Folder:     item.Folder,
+			Direction:  direction,
+		}
+	}
+}
+
+func (c *CollectionTree) findParentFolderContainingFolder(folder *core.Folder, targetFolderID string) *core.Folder {
+	for _, sub := range folder.Folders() {
+		if sub.ID() == targetFolderID {
+			return folder
+		}
+		if found := c.findParentFolderContainingFolder(sub, targetFolderID); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 func (c *CollectionTree) handleReorderRequest(direction string) (tui.Component, tea.Cmd) {
@@ -1809,10 +2001,11 @@ func (c *CollectionTree) View() string {
 	parts = append(parts, searchBar)
 
 	// History section
+	historyHeader := c.renderHistoryHeader()
 	if c.viewMode == ViewHistory {
-		parts = append(parts, activeHeaderStyle.Render("History"))
+		parts = append(parts, activeHeaderStyle.Render(historyHeader))
 	} else {
-		parts = append(parts, inactiveHeaderStyle.Render("History (H)"))
+		parts = append(parts, inactiveHeaderStyle.Render(historyHeader))
 	}
 	historyContent := c.renderHistoryContent(innerWidth, historyHeight)
 	parts = append(parts, historyContent)
@@ -1857,6 +2050,27 @@ func (c *CollectionTree) renderCollectionContent(innerWidth, contentHeight int) 
 	return strings.Join(lines, "\n")
 }
 
+// renderHistoryHeader builds the history header with active filters.
+func (c *CollectionTree) renderHistoryHeader() string {
+	header := "History"
+	if c.viewMode != ViewHistory {
+		header = "History (H)"
+	}
+
+	var filters []string
+	if c.historyMethodFilter != "" {
+		filters = append(filters, c.historyMethodFilter)
+	}
+	if c.historyStatusFilter != "" {
+		filters = append(filters, c.historyStatusFilter)
+	}
+
+	if len(filters) > 0 {
+		return header + " [" + strings.Join(filters, ",") + "]"
+	}
+	return header
+}
+
 func (c *CollectionTree) renderHistoryContent(innerWidth, contentHeight int) string {
 	var lines []string
 
@@ -1864,6 +2078,9 @@ func (c *CollectionTree) renderHistoryContent(innerWidth, contentHeight int) str
 		emptyMsg := "No history entries"
 		if c.historyStore == nil {
 			emptyMsg = "History not available"
+		}
+		if c.historyMethodFilter != "" || c.historyStatusFilter != "" {
+			emptyMsg = "No matching entries (m:method s:status x:clear)"
 		}
 		emptyStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("243")).
@@ -2764,4 +2981,24 @@ func (c *CollectionTree) GPressed() bool {
 // HistoryCursor returns the current history cursor position.
 func (c *CollectionTree) HistoryCursor() int {
 	return c.historyCursor
+}
+
+// HistoryMethodFilter returns the current method filter.
+func (c *CollectionTree) HistoryMethodFilter() string {
+	return c.historyMethodFilter
+}
+
+// HistoryStatusFilter returns the current status filter.
+func (c *CollectionTree) HistoryStatusFilter() string {
+	return c.historyStatusFilter
+}
+
+// SetHistoryMethodFilter sets the method filter for history.
+func (c *CollectionTree) SetHistoryMethodFilter(method string) {
+	c.historyMethodFilter = method
+}
+
+// SetHistoryStatusFilter sets the status filter for history.
+func (c *CollectionTree) SetHistoryStatusFilter(status string) {
+	c.historyStatusFilter = status
 }
