@@ -2,7 +2,7 @@
 
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo "dev")
 LDFLAGS := -X main.version=$(VERSION)
-COVERAGE_THRESHOLD := 70
+COVERAGE_THRESHOLD := 80
 COVERDIR := $(shell pwd)/.coverdata
 
 # Build
