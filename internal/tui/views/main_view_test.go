@@ -3354,3 +3354,82 @@ func TestMainView_RunnerProgressMessage(t *testing.T) {
 		assert.Equal(t, "Test Request", view.runnerCurrentReq)
 	})
 }
+
+func TestMainView_SendRequestErrors(t *testing.T) {
+	t.Run("sendRequest returns error for empty URL", func(t *testing.T) {
+		reqDef := core.NewRequestDefinition("Test", "GET", "")
+
+		cmd := sendRequest(reqDef, nil, HTTPClientConfig{})
+		msg := cmd()
+
+		// Should return error message
+		errorMsg, ok := msg.(components.RequestErrorMsg)
+		assert.True(t, ok)
+		assert.Contains(t, errorMsg.Error.Error(), "URL is empty")
+	})
+
+	t.Run("sendRequest returns error for invalid URL", func(t *testing.T) {
+		reqDef := core.NewRequestDefinition("Test", "GET", "invalid-url")
+
+		cmd := sendRequest(reqDef, nil, HTTPClientConfig{})
+		msg := cmd()
+
+		// Should return error message
+		errorMsg, ok := msg.(components.RequestErrorMsg)
+		assert.True(t, ok)
+		assert.Contains(t, errorMsg.Error.Error(), "http://")
+	})
+}
+
+func TestMainView_WebSocketErrors(t *testing.T) {
+	t.Run("connectWebSocket returns error for nil definition", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		cmd := view.connectWebSocket(nil)
+		msg := cmd()
+
+		errorMsg, ok := msg.(components.WSErrorMsg)
+		assert.True(t, ok)
+		assert.Contains(t, errorMsg.Error.Error(), "no WebSocket endpoint")
+	})
+
+	t.Run("connectWebSocket returns error for empty endpoint", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		wsDef := &core.WebSocketDefinition{Endpoint: ""}
+		cmd := view.connectWebSocket(wsDef)
+		msg := cmd()
+
+		errorMsg, ok := msg.(components.WSErrorMsg)
+		assert.True(t, ok)
+		assert.Contains(t, errorMsg.Error.Error(), "no WebSocket endpoint")
+	})
+
+	t.Run("connectWebSocket returns error for invalid URL", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		wsDef := &core.WebSocketDefinition{Endpoint: "invalid-url"}
+		cmd := view.connectWebSocket(wsDef)
+		msg := cmd()
+
+		errorMsg, ok := msg.(components.WSErrorMsg)
+		assert.True(t, ok)
+		assert.Contains(t, errorMsg.Error.Error(), "ws://")
+	})
+
+	t.Run("sendWebSocketMessage works", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		cmd := view.sendWebSocketMessage("test message")
+		msg := cmd()
+
+		// When not connected, should return error
+		errorMsg, ok := msg.(components.WSErrorMsg)
+		assert.True(t, ok)
+		assert.Contains(t, errorMsg.Error.Error(), "no active WebSocket connection")
+	})
+}
