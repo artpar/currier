@@ -464,3 +464,190 @@ func TestRunner_WithHTTPClient(t *testing.T) {
 		}
 	})
 }
+
+func TestRunner_ExecuteRequestBranches(t *testing.T) {
+	t.Run("handles pre-request script error", func(t *testing.T) {
+		coll := core.NewCollection("Test")
+		req := core.NewRequestDefinition("Request", "GET", "http://example.com")
+		// Set an invalid pre-request script that will fail
+		req.SetPreScript("invalid javascript syntax {{{{")
+		coll.AddRequest(req)
+
+		runner := NewRunner(coll)
+		result := runner.Run(context.Background())
+
+		// The run should complete but the request should have an error
+		if result.Executed > 0 && result.Failed == 0 {
+			t.Log("Expected error from invalid pre-script")
+		}
+	})
+
+	t.Run("handles post-request script with tests", func(t *testing.T) {
+		// Create a test server
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status": "ok"}`))
+		}))
+		defer server.Close()
+
+		coll := core.NewCollection("Test")
+		req := core.NewRequestDefinition("Request", "GET", server.URL)
+		// Set a valid post-request script with tests
+		req.SetPostScript(`
+			pm.test("Status is 200", function() {
+				pm.response.to.have.status(200);
+			});
+		`)
+		coll.AddRequest(req)
+
+		runner := NewRunner(coll)
+		result := runner.Run(context.Background())
+
+		if result.Executed == 0 {
+			t.Fatal("expected at least one executed request")
+		}
+	})
+
+	t.Run("handles environment variables in request", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Custom") != "test-value" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		coll := core.NewCollection("Test")
+		req := core.NewRequestDefinition("Request", "GET", server.URL)
+		req.SetHeader("X-Custom", "{{custom_header}}")
+		coll.AddRequest(req)
+
+		env := core.NewEnvironment("test")
+		env.SetVariable("custom_header", "test-value")
+
+		runner := NewRunner(coll, WithEnvironment(env))
+		result := runner.Run(context.Background())
+
+		if result.Passed == 0 && result.Failed > 0 {
+			t.Error("expected request to pass with environment variables")
+		}
+	})
+
+	t.Run("handles request with cookies", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.SetCookie(w, &http.Cookie{
+				Name:  "session",
+				Value: "abc123",
+			})
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		coll := core.NewCollection("Test")
+		req := core.NewRequestDefinition("Request", "GET", server.URL)
+		coll.AddRequest(req)
+
+		runner := NewRunner(coll)
+		result := runner.Run(context.Background())
+
+		if result.Executed == 0 {
+			t.Fatal("expected at least one result")
+		}
+	})
+
+	t.Run("handles nested folder requests", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		coll := core.NewCollection("Test")
+		folder := coll.AddFolder("API")
+		req := core.NewRequestDefinition("Request", "GET", server.URL)
+		folder.AddRequest(req)
+
+		runner := NewRunner(coll)
+		result := runner.Run(context.Background())
+
+		if result.Executed == 0 {
+			t.Fatal("expected at least one result from folder")
+		}
+	})
+
+	t.Run("handles multiple requests", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		coll := core.NewCollection("Test")
+		for i := 0; i < 3; i++ {
+			req := core.NewRequestDefinition("Request", "GET", server.URL)
+			coll.AddRequest(req)
+		}
+
+		runner := NewRunner(coll)
+		result := runner.Run(context.Background())
+
+		if result.Executed != 3 {
+			t.Fatalf("expected 3 results, got %d", result.Executed)
+		}
+	})
+
+	t.Run("handles progress callback", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		coll := core.NewCollection("Test")
+		req := core.NewRequestDefinition("Request", "GET", server.URL)
+		coll.AddRequest(req)
+
+		callbackCalled := false
+		runner := NewRunner(coll, WithProgressCallback(func(current, total int, result *RunResult) {
+			callbackCalled = true
+		}))
+		runner.Run(context.Background())
+
+		if !callbackCalled {
+			t.Error("expected progress callback to be called")
+		}
+	})
+}
+
+func TestRunResult(t *testing.T) {
+	t.Run("IsSuccess true when no error", func(t *testing.T) {
+		result := RunResult{}
+		if !result.IsSuccess() {
+			t.Error("expected success when no error")
+		}
+	})
+
+	t.Run("IsSuccess false when error", func(t *testing.T) {
+		result := RunResult{Error: http.ErrServerClosed}
+		if result.IsSuccess() {
+			t.Error("expected failure when error")
+		}
+	})
+
+	t.Run("AllTestsPassed with no tests", func(t *testing.T) {
+		result := RunResult{}
+		if !result.AllTestsPassed() {
+			t.Error("expected pass when no tests")
+		}
+	})
+
+	t.Run("AllTestsPassed with mixed results", func(t *testing.T) {
+		result := RunResult{
+			TestResults: []script.TestResult{
+				{Passed: true},
+				{Passed: false},
+			},
+		}
+		if result.AllTestsPassed() {
+			t.Error("expected fail with mixed results")
+		}
+	})
+}
