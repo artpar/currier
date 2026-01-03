@@ -359,11 +359,18 @@ func TestNewRequest_MultipleRequestsInSession(t *testing.T) {
 	sess.SendKey("Escape")
 	sess.WaitFor("NORMAL", 2*time.Second)
 
-	// Both should be in the collection tree
+	// Both requests should be created and visible in request panel
 	screen := sess.Capture()
-	// The tree should show multiple requests
-	if !strings.Contains(screen, "Default") {
-		t.Error("Default collection not shown")
+
+	// The second request URL should be visible in the request panel
+	if !strings.Contains(screen, "second.example.com") {
+		t.Error("Second request URL not shown in request panel")
+		t.Logf("Screen:\n%s", screen)
+	}
+
+	// The request panel should show the current request
+	if !strings.Contains(screen, "Request") {
+		t.Error("Request panel not visible")
 		t.Logf("Screen:\n%s", screen)
 	}
 }
