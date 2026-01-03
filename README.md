@@ -10,8 +10,7 @@ A vim-modal TUI API client for developers and AI agents.
 - **Variable interpolation** - Use `{{variable}}` syntax in URLs, headers, and bodies
 - **Automatic Cookie Management** - Captures Set-Cookie headers and persists cookies to SQLite
 - **Pre/Post-request scripts** - JavaScript-based scripting with assertions
-- **Request history** - SQLite-backed history with search, filtering by method/status, and replay
-- **Deep search** - Search within request names, URLs, body content, and headers
+- **Request history** - SQLite-backed history with search and replay
 - **Import/Export** - Support for Postman, cURL, HAR, and OpenAPI formats
 - **CLI mode** - Execute requests directly from the command line
 - **curl import** - Run `currier curl <args>` to import any curl command into the TUI
@@ -20,69 +19,52 @@ A vim-modal TUI API client for developers and AI agents.
 - **Proxy Support** - HTTP, HTTPS, and SOCKS5 proxy configuration
 - **Client Certificates** - mTLS support with custom CA certificates
 - **MCP Server** - AI assistant integration via Model Context Protocol (32 tools)
-- **Favorite Requests** - Star frequently used requests with `*` for quick identification
 
 ## Demos
 
-### Overview - Navigation & Layout
-![Overview Demo](demos/demo-overview.gif?v=0.1.15)
-*Stacked History/Collections • H/C to switch • Tab/1/2/3 for panes • ? for help*
+### Overview - Three-Pane Layout
+![Overview Demo](demos/demo-overview.gif?v=0.1.18)
+*Navigate the three-pane interface: Collections/History on left, Request editor in center, Response viewer on right. Use H/C to switch views, Tab or 1/2/3 to jump between panes, ? for help overlay.*
 
 ### Creating & Sending Requests
-![Request Demo](demos/demo-request.gif?v=0.1.15)
-*n for new request • Type URL • Alt+Enter to send while editing*
+![Request Demo](demos/demo-request.gif?v=0.1.18)
+*Complete workflow: Create a GET request, send it, view the JSON response. Then create a POST request with JSON body, send it, and save to a collection.*
 
 ### Request History
-![History Demo](demos/demo-history.gif?v=0.1.15)
-*H to focus history • j/k to navigate • Enter to load • Replay requests*
+![History Demo](demos/demo-history.gif?v=0.1.18)
+*Browse your request history with vim-style navigation (j/k/G/gg). Select any past request to reload it, replay it to get a fresh response, and see the new entry added to history.*
 
 ### Editing Requests
-![Editing Demo](demos/demo-editing.gif?v=0.1.15)
-*e to edit URL • [ ] to switch tabs • a to add headers • Tab between fields*
+![Editing Demo](demos/demo-editing.gif?v=0.1.18)
+*Build a complete request: Add custom headers (X-Custom-Header), query parameters (?search=currier&limit=10), and a JSON body. Send to httpbin.org/anything which echoes everything back.*
 
 ### Viewing Responses
-![Response Demo](demos/demo-response.gif?v=0.1.15)
-*j/k to scroll • G/gg for top/bottom • [ ] for tabs • y to copy*
+![Response Demo](demos/demo-response.gif?v=0.1.18)
+*Explore response data across tabs: Body (scrollable JSON), Headers (server response headers), and Cookies. Copy response with 'y'. See cookies that were set by the server.*
 
 ### Search
-![Search Demo](demos/demo-search.gif?v=0.1.15)
-*/ to search • Searches name, URL, body, headers • Enter to select*
+![Search Demo](demos/demo-search.gif?v=0.1.18)
+*Filter history or collections with '/'. Type a query to see matching results, navigate with j/k, press Enter to load the request. Escape clears the filter.*
 
-### Deep Search
-![Deep Search Demo](demos/demo-deep-search.gif?v=0.1.20)
-*Search within body content • Match header keys/values • Filter by URL patterns*
-
-### History Filtering
-![History Filter Demo](demos/demo-history-filter.gif?v=0.1.20)
-*m to filter by method • s to filter by status • x to clear filters*
-
-### Bulk Selection
-![Bulk Select Demo](demos/demo-bulk-select.gif?v=0.1.34)
-*Space to toggle • v for visual mode • Ctrl+a select all • d/m/c for bulk ops*
-
-### Favorite Requests
-![Starred Demo](demos/demo-starred.gif?v=0.1.34)
-*Press * to star/unstar • Starred requests show gold star indicator*
-
-### Environment Switcher
-![Environment Demo](demos/demo-environment.gif?v=0.1.16)
-*V to open switcher • j/k to navigate • Enter to select • Esc to cancel*
+### Environment Variables
+![Environment Demo](demos/demo-environment.gif?v=0.1.18)
+*Use {{variables}} in URLs. Press V to switch environments (dev/staging/prod). Send the same request to different hosts by changing environment. See the actual URL resolved in the response.*
 
 ### Cookie Management
-![Cookie Demo](demos/demo-cookies.gif?v=0.1.16)
-*Automatic cookie capture • Persists across sessions • Ctrl+K to clear*
+![Cookie Demo](demos/demo-cookies.gif?v=0.1.18)
+*Set a cookie via httpbin, then VIEW it in the Cookies tab. Make another request to verify cookies are automatically sent. Clear all cookies with Ctrl+K and confirm they're gone.*
 
 ### Proxy Settings
-![Proxy Demo](demos/demo-proxy.gif?v=0.1.17)
-*P to open settings • Enter proxy URL • Enter to save • Esc to cancel*
+![Proxy Demo](demos/demo-proxy.gif?v=0.1.18)
+*Configure an HTTP proxy with P. All requests route through the proxy. Clear the proxy URL to disable. Useful for debugging with mitmproxy, Charles, or Fiddler.*
 
 ### TLS/Certificate Settings
-![TLS Demo](demos/demo-tls.gif?v=0.1.17)
-*Ctrl+T to open • Configure client certs • Tab between fields • Enter to save*
+![TLS Demo](demos/demo-tls.gif?v=0.1.18)
+*Configure mTLS: Set client certificate, private key, and CA certificate paths. Toggle "Skip TLS Verification" for self-signed certs. Settings persist across sessions.*
 
 ### Collection Runner
-![Runner Demo](demos/demo-runner.gif?v=0.1.17)
-*Ctrl+R to run collection • Shows progress • Displays test results*
+![Runner Demo](demos/demo-runner.gif?v=0.1.18)
+*Run all requests in a collection with Ctrl+R. Watch progress as each request executes. View pass/fail results, response times, and test assertion outcomes.*
 
 ## Installation
 
@@ -371,45 +353,16 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `F` | Create new folder |
 | `r` | Rename collection |
 | `D` | Delete collection/folder |
-| `d` | Delete request (or bulk delete when items selected) |
-| `m` | Move request/folder (or bulk move when items selected) |
+| `d` | Delete request |
+| `m` | Move request/folder |
 | `y` | Duplicate request/folder |
-| `c` | Copy request as cURL (or bulk copy when items selected) |
+| `c` | Copy request as cURL |
 | `E` | Export collection to Postman |
 | `I` | Import collection (Postman/OpenAPI) |
 | `K/J` | Move request up/down |
 | `R` | Rename request/folder |
-| `/` | Search (name, URL, body, headers) |
+| `/` | Search |
 | `H` | Switch to History |
-
-#### Bulk Selection
-| Key | Action |
-|-----|--------|
-| `Space` | Toggle selection on current item |
-| `v` | Enter visual mode (vim-style range select) |
-| `Ctrl+a` | Select all requests/folders |
-| `Escape` | Clear all selections |
-
-**Visual Mode:** Use `j/k` to extend selection, `G/gg` to extend to end/start. Press `v` or `Escape` to exit.
-
-#### Favorites
-| Key | Action |
-|-----|--------|
-| `*` | Toggle star/favorite on current request |
-
-Starred requests display a ★ indicator for quick identification.
-
-### History Panel
-| Key | Action |
-|-----|--------|
-| `j/k` | Navigate up/down |
-| `Enter` | Load request |
-| `m` | Cycle method filter (GET/POST/PUT...) |
-| `s` | Cycle status filter (2xx/3xx/4xx/5xx) |
-| `x` | Clear all filters |
-| `/` | Search history |
-| `r` | Refresh history |
-| `C` | Switch to Collections |
 
 ### Request Panel
 | Key | Action |

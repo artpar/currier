@@ -1,76 +1,97 @@
 # Currier Response Demo
-# Shows: View response, scroll, switch tabs, copy
+# Shows: Complete response exploration - body, headers, cookies tabs, scrolling, copying
 
 Output demos/demo-response.gif
 
 Set Shell "bash"
 Set FontSize 14
 Set Width 1200
-Set Height 600
+Set Height 700
 Set Theme "Catppuccin Mocha"
-Set PlaybackSpeed 1
+Set TypingSpeed 30ms
 
 Type "currier"
 Enter
-Sleep 1s
+Sleep 2500ms
 
-# Create and send request
+# Create a request that returns rich response data
 Type "n"
-Sleep 200ms
-Type "https://httpbin.org/get"
-Alt+Enter
-Sleep 1.5s
+Sleep 800ms
+Type "https://httpbin.org/response-headers?X-Custom=demo&Server=currier"
+Sleep 1000ms
 
-# Focus response pane
+# Send request
+Enter
+Sleep 3000ms
+
+# Focus on response pane
 Type "3"
-Sleep 300ms
+Sleep 1500ms
 
-# Scroll down
+# We're on Body tab - scroll through the JSON response
 Type "j"
-Sleep 150ms
+Sleep 400ms
 Type "j"
-Sleep 150ms
+Sleep 400ms
 Type "j"
-Sleep 150ms
-Type "j"
-Sleep 150ms
+Sleep 800ms
 
-# Scroll up
-Type "k"
-Sleep 150ms
-Type "k"
-Sleep 200ms
-
-# Go to bottom
+# Jump to bottom
 Type "G"
-Sleep 300ms
+Sleep 1200ms
 
-# Go to top
+# Jump to top
 Type "gg"
-Sleep 300ms
+Sleep 1200ms
 
-# Switch to Headers tab
+# Switch to Headers tab to see response headers
 Type "]"
+Sleep 1500ms
+
+# Scroll through headers
+Type "j"
 Sleep 400ms
-
-# Switch to Timing tab
-Type "]"
-Sleep 200ms
-Type "]"
+Type "j"
 Sleep 400ms
+Type "j"
+Sleep 400ms
+Type "j"
+Sleep 1000ms
 
-# Back to Body
-Type "["
-Sleep 200ms
-Type "["
-Sleep 200ms
-Type "["
-Sleep 300ms
+# Switch to Cookies tab
+Type "]"
+Sleep 1500ms
 
-# Copy response
-Type "y"
+# Back to Body tab
+Type "["
 Sleep 500ms
+Type "["
+Sleep 1000ms
+
+# Copy the response body
+Type "y"
+Sleep 1500ms
+
+# Now make a request that sets cookies so we can see them
+Type "n"
+Sleep 800ms
+Type "https://httpbin.org/cookies/set/session/demo123"
+Sleep 1000ms
+
+Enter
+Sleep 3000ms
+
+# Go to response and check Cookies tab
+Type "3"
+Sleep 1000ms
+Type "]"
+Sleep 800ms
+Type "]"
+Sleep 1500ms
+
+# Now we can see the cookie that was set
+Sleep 1500ms
 
 # Quit
 Type "q"
-Sleep 300ms
+Sleep 500ms
