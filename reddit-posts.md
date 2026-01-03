@@ -338,8 +338,8 @@ https://github.com/artpar/currier
 1. r/golang has rules about AI-generated content - mention the 107 e2e tests and human effort
 2. Don't post all at once - space out over days/weeks
 3. **Demo GIF for posts:** `https://raw.githubusercontent.com/artpar/currier/main/demos/demo-showcase.gif`
-   - Shows: GET/POST requests, vim navigation, headers, environment switching, collection runner, history, help
-   - 1.5MB, ~35 seconds, complete workflow
+   - Shows: GET/POST requests, vim navigation, pre-request scripts, test assertions, test results, environment switcher with variable preview, environment editor, collection runner, history with search
+   - 1.4MB, ~45 seconds, complete feature showcase
 4. Engage with comments genuinely
 5. Accept criticism - these communities are direct
 
