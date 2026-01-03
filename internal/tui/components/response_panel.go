@@ -222,11 +222,29 @@ func (p *ResponsePanel) maxScrollOffset() int {
 	if p.response == nil {
 		return 0
 	}
-	body := p.response.Body().String()
-	lines := strings.Count(body, "\n") + 1
+
+	// Get content lines for current tab
+	var lines []string
+	switch p.activeTab {
+	case ResponseTabBody:
+		lines = p.renderBodyTab()
+	case ResponseTabHeaders:
+		lines = p.renderHeadersTab()
+	case ResponseTabCookies:
+		lines = p.renderCookiesTab()
+	case ResponseTabTiming:
+		lines = p.renderTimingTab()
+	case ResponseTabConsole:
+		lines = p.renderConsoleTab()
+	case ResponseTabTests:
+		lines = p.renderTestsTab()
+	default:
+		return 0
+	}
+
 	visibleLines := p.height - 8
-	if lines > visibleLines {
-		return lines - visibleLines
+	if len(lines) > visibleLines {
+		return len(lines) - visibleLines
 	}
 	return 0
 }
