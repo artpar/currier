@@ -961,11 +961,8 @@ func (v *MainView) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			v.focusPane(PaneResponse)
 			return v, nil
 		case "n":
-			// Create a new request and add it to a collection
+			// Create a scratch request (not added to collection until saved with 's')
 			newReq := core.NewRequestDefinition("New Request", "GET", "")
-
-			// Add to collection tree (creates default collection if none exist)
-			v.tree.AddRequest(newReq, nil)
 
 			// Set it in the request panel
 			v.request.SetRequest(newReq)
