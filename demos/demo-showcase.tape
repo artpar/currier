@@ -131,20 +131,23 @@ Type "j"
 Sleep 400ms
 
 # ============================================
-# PART 4: Environment switching
+# PART 4: Environment switching with variable preview
 # ============================================
 
 # Open environment switcher
 Type "V"
-Sleep 700ms
+Sleep 800ms
 
-# Navigate environments
+# Navigate environments - variables update in right panel
 Type "j"
-Sleep 300ms
+Sleep 600ms
 Type "j"
-Sleep 300ms
+Sleep 600ms
 Type "k"
-Sleep 300ms
+Sleep 600ms
+
+# Show we can edit with 'e' hint visible
+Sleep 400ms
 
 # Select environment
 Enter

@@ -18,6 +18,7 @@ type EnvironmentMeta struct {
 	Name      string
 	IsActive  bool
 	VarCount  int
+	VarNames  []string // Variable names for preview
 	UpdatedAt time.Time
 }
 
@@ -106,11 +107,19 @@ func (s *EnvironmentStore) List(ctx context.Context) ([]EnvironmentMeta, error) 
 			continue
 		}
 
+		// Extract variable names for preview
+		vars := env.Variables()
+		varNames := make([]string, 0, len(vars))
+		for name := range vars {
+			varNames = append(varNames, name)
+		}
+
 		environments = append(environments, EnvironmentMeta{
 			ID:        env.ID(),
 			Name:      env.Name(),
 			IsActive:  env.IsActive(),
-			VarCount:  len(env.Variables()),
+			VarCount:  len(vars),
+			VarNames:  varNames,
 			UpdatedAt: env.UpdatedAt(),
 		})
 	}
