@@ -2,10 +2,12 @@
 # A complete workflow showing what makes Currier feature-complete:
 # 1. Create and send a request
 # 2. Vim keybindings (j/k/gg/G)
-# 3. Environment switching
-# 4. Add headers
-# 5. Collection runner with test results
-# 6. History view
+# 3. Pre-request scripts
+# 4. Test scripts and assertions
+# 5. Environment switching with variable preview
+# 6. Environment editor
+# 7. Collection runner with test results
+# 8. History view
 
 Output demos/demo-showcase.gif
 
@@ -48,26 +50,24 @@ Sleep 400ms
 
 # Scroll with j/k
 Type "j"
-Sleep 120ms
+Sleep 100ms
 Type "j"
-Sleep 120ms
+Sleep 100ms
 Type "j"
-Sleep 120ms
+Sleep 100ms
 Type "j"
-Sleep 120ms
-Type "j"
-Sleep 200ms
+Sleep 150ms
 
 # Jump to bottom with G
 Type "G"
-Sleep 400ms
+Sleep 350ms
 
 # Jump to top with gg
 Type "gg"
-Sleep 500ms
+Sleep 400ms
 
 # ============================================
-# PART 3: Make a POST with headers
+# PART 3: Create POST with pre-request script and tests
 # ============================================
 
 # New request
@@ -82,79 +82,150 @@ Sleep 200ms
 Type "m"
 Sleep 400ms
 
-# Go to Headers tab
+# Go to Headers tab and add header
 Type "]"
-Sleep 250ms
-
-# Add a custom header
+Sleep 200ms
 Type "a"
-Sleep 300ms
-Type "X-Custom-Header"
+Sleep 250ms
+Type "X-Custom"
 Tab
-Type "currier-demo"
-Sleep 300ms
+Type "demo"
+Sleep 200ms
 Escape
-Sleep 300ms
+Sleep 250ms
 
-# Go to Body tab
+# Go to Body tab (] twice more)
+Type "]"
+Sleep 200ms
 Type "]"
 Sleep 250ms
-Type "]"
-Sleep 300ms
 
 # Set JSON body type
 Type "t"
-Sleep 400ms
+Sleep 350ms
 
 # Edit body
 Type "e"
-Sleep 200ms
-Type@40ms '{"tool": "currier", "feature": "complete"}'
-Sleep 300ms
+Sleep 150ms
+Type@35ms '{"name": "currier"}'
+Sleep 250ms
 Escape
-Sleep 300ms
+Sleep 250ms
 
-# Send POST
-Enter
-Sleep 2.2s
+# ============================================
+# PART 4: Add Pre-request Script
+# ============================================
 
-# View response
-Type "3"
+# Go to Pre-Request tab (one more ])
+Type "]"
 Sleep 400ms
-Type "j"
-Sleep 100ms
-Type "j"
-Sleep 100ms
-Type "j"
-Sleep 100ms
-Type "j"
+
+# Edit pre-request script
+Type "e"
+Sleep 200ms
+Type@30ms 'console.log("Pre-request!");'
+Enter
+Type@30ms 'pm.environment.set("timestamp", Date.now());'
+Sleep 400ms
+Escape
 Sleep 400ms
 
 # ============================================
-# PART 4: Environment switching with variable preview
+# PART 5: Add Test Script
+# ============================================
+
+# Go to Tests tab
+Type "]"
+Sleep 400ms
+
+# Edit test script
+Type "e"
+Sleep 200ms
+Type@30ms 'pm.test("Status is 200", function() {'
+Enter
+Type@30ms '  pm.response.to.have.status(200);'
+Enter
+Type@30ms '});'
+Sleep 400ms
+Escape
+Sleep 400ms
+
+# ============================================
+# PART 6: Send and view test results
+# ============================================
+
+# Send POST request
+Enter
+Sleep 2.5s
+
+# View response - go to Tests tab to see results
+Type "3"
+Sleep 400ms
+
+# Navigate to Tests tab in response (5 times ])
+Type "]"
+Sleep 200ms
+Type "]"
+Sleep 200ms
+Type "]"
+Sleep 200ms
+Type "]"
+Sleep 200ms
+Type "]"
+Sleep 600ms
+
+# Show test passed
+Sleep 800ms
+
+# ============================================
+# PART 7: Environment switching with variable preview
 # ============================================
 
 # Open environment switcher
 Type "V"
-Sleep 800ms
+Sleep 700ms
 
 # Navigate environments - variables update in right panel
 Type "j"
-Sleep 600ms
+Sleep 500ms
 Type "j"
-Sleep 600ms
+Sleep 500ms
 Type "k"
-Sleep 600ms
-
-# Show we can edit with 'e' hint visible
-Sleep 400ms
-
-# Select environment
-Enter
-Sleep 600ms
+Sleep 500ms
 
 # ============================================
-# PART 5: Save to collection
+# PART 8: Edit environment variables
+# ============================================
+
+# Press 'e' to edit the selected environment
+Type "e"
+Sleep 700ms
+
+# Navigate in editor
+Type "j"
+Sleep 300ms
+Type "j"
+Sleep 300ms
+
+# Edit a variable value
+Type "e"
+Sleep 200ms
+# Add some text
+Type "https://api.example.com"
+Sleep 400ms
+Escape
+Sleep 400ms
+
+# Save and close editor
+Escape
+Sleep 500ms
+
+# Close environment switcher
+Escape
+Sleep 400ms
+
+# ============================================
+# PART 9: Save to collection
 # ============================================
 
 # Save current request
@@ -162,15 +233,15 @@ Type "s"
 Sleep 500ms
 Type "Demo Collection"
 Enter
-Sleep 700ms
+Sleep 600ms
 
 # ============================================
-# PART 6: Collection Runner
+# PART 10: Collection Runner
 # ============================================
 
 # Go to collections pane
 Type "1"
-Sleep 400ms
+Sleep 300ms
 
 # Navigate to the collection
 Type "j"
@@ -178,44 +249,40 @@ Sleep 200ms
 
 # Expand collection
 Type "l"
-Sleep 400ms
+Sleep 300ms
 
 # Go back to collection level
 Type "h"
-Sleep 300ms
+Sleep 250ms
 
 # Run collection with Ctrl+R
 Ctrl+R
-Sleep 800ms
+Sleep 700ms
 
 # Watch runner execute
-Sleep 1.5s
-Sleep 1.5s
+Sleep 1.2s
+Sleep 1.2s
 
 # View results
-Sleep 800ms
+Sleep 600ms
 
 # Navigate results
-Type "j"
-Sleep 200ms
 Type "j"
 Sleep 200ms
 
 # Close runner
 Escape
-Sleep 500ms
+Sleep 400ms
 
 # ============================================
-# PART 7: History view
+# PART 11: History view
 # ============================================
 
 # Switch to History
 Type "H"
-Sleep 600ms
+Sleep 500ms
 
 # Navigate history with j/k
-Type "j"
-Sleep 150ms
 Type "j"
 Sleep 150ms
 Type "j"
@@ -223,27 +290,27 @@ Sleep 150ms
 
 # Show search works
 Type "/"
-Sleep 300ms
+Sleep 250ms
 Type "post"
-Sleep 500ms
-Escape
 Sleep 400ms
+Escape
+Sleep 350ms
 
 # Back to Collections
 Type "C"
-Sleep 500ms
+Sleep 400ms
 
 # ============================================
-# PART 8: Help overlay
+# PART 12: Help overlay
 # ============================================
 
 # Show help
 Type "?"
-Sleep 1.8s
+Sleep 1.5s
 
 # Close help
 Type "?"
-Sleep 400ms
+Sleep 300ms
 
 # Quit
 Type "q"
