@@ -352,3 +352,242 @@ func TestSandbox_ExceptionHandling(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestSandbox_SetGlobal(t *testing.T) {
+	t.Run("sets global string variable", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.SetGlobal("myString", "hello world")
+
+		result, err := engine.Execute(context.Background(), `myString`)
+
+		require.NoError(t, err)
+		assert.Equal(t, "hello world", result)
+	})
+
+	t.Run("sets global number variable", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.SetGlobal("myNumber", 42)
+
+		result, err := engine.Execute(context.Background(), `myNumber`)
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(42), result)
+	})
+
+	t.Run("sets global object variable", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.SetGlobal("myObj", map[string]interface{}{
+			"name": "test",
+			"value": 123,
+		})
+
+		result, err := engine.Execute(context.Background(), `myObj.name`)
+
+		require.NoError(t, err)
+		assert.Equal(t, "test", result)
+	})
+
+	t.Run("sets global array variable", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.SetGlobal("myArray", []int{1, 2, 3})
+
+		result, err := engine.Execute(context.Background(), `myArray.length`)
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(3), result)
+	})
+
+	t.Run("overwrites existing global", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.SetGlobal("myVar", "first")
+		engine.SetGlobal("myVar", "second")
+
+		result, err := engine.Execute(context.Background(), `myVar`)
+
+		require.NoError(t, err)
+		assert.Equal(t, "second", result)
+	})
+}
+
+func TestSandbox_RegisterFunction(t *testing.T) {
+	t.Run("registers a simple function", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.RegisterFunction("add", func(a, b int) int {
+			return a + b
+		})
+
+		result, err := engine.Execute(context.Background(), `add(2, 3)`)
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(5), result)
+	})
+
+	t.Run("registers a string function", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.RegisterFunction("greet", func(name string) string {
+			return "Hello, " + name + "!"
+		})
+
+		result, err := engine.Execute(context.Background(), `greet("World")`)
+
+		require.NoError(t, err)
+		assert.Equal(t, "Hello, World!", result)
+	})
+
+	t.Run("registers a no-arg function", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.RegisterFunction("getConstant", func() int {
+			return 42
+		})
+
+		result, err := engine.Execute(context.Background(), `getConstant()`)
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(42), result)
+	})
+
+	t.Run("registers a function with side effects", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		var capturedValue string
+		engine.RegisterFunction("capture", func(val string) {
+			capturedValue = val
+		})
+
+		_, err := engine.Execute(context.Background(), `capture("test value")`)
+
+		require.NoError(t, err)
+		assert.Equal(t, "test value", capturedValue)
+	})
+}
+
+func TestSandbox_RegisterObject(t *testing.T) {
+	t.Run("registers object with methods", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.RegisterObject("calculator", map[string]interface{}{
+			"add": func(a, b int) int { return a + b },
+			"sub": func(a, b int) int { return a - b },
+			"mul": func(a, b int) int { return a * b },
+		})
+
+		result, err := engine.Execute(context.Background(), `calculator.add(5, 3)`)
+		require.NoError(t, err)
+		assert.Equal(t, int64(8), result)
+
+		result, err = engine.Execute(context.Background(), `calculator.sub(10, 4)`)
+		require.NoError(t, err)
+		assert.Equal(t, int64(6), result)
+
+		result, err = engine.Execute(context.Background(), `calculator.mul(3, 4)`)
+		require.NoError(t, err)
+		assert.Equal(t, int64(12), result)
+	})
+
+	t.Run("registers object with properties", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.RegisterObject("config", map[string]interface{}{
+			"name":    "TestApp",
+			"version": "1.0.0",
+			"debug":   true,
+		})
+
+		result, err := engine.Execute(context.Background(), `config.name`)
+		require.NoError(t, err)
+		assert.Equal(t, "TestApp", result)
+
+		result, err = engine.Execute(context.Background(), `config.version`)
+		require.NoError(t, err)
+		assert.Equal(t, "1.0.0", result)
+
+		result, err = engine.Execute(context.Background(), `config.debug`)
+		require.NoError(t, err)
+		assert.Equal(t, true, result)
+	})
+
+	t.Run("registers nested object", func(t *testing.T) {
+		engine := NewSandboxedEngine()
+		engine.RegisterObject("app", map[string]interface{}{
+			"settings": map[string]interface{}{
+				"theme": "dark",
+				"lang":  "en",
+			},
+		})
+
+		result, err := engine.Execute(context.Background(), `app.settings.theme`)
+		require.NoError(t, err)
+		assert.Equal(t, "dark", result)
+	})
+}
+
+func TestSandboxedScope_SetIterationLimit(t *testing.T) {
+	t.Run("sets iteration limit on scope", func(t *testing.T) {
+		scope := NewSandboxedScope()
+		scope.SetIterationLimit(1000)
+
+		// Should execute without issues
+		result, err := scope.Execute(context.Background(), `1 + 1`)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), result)
+	})
+}
+
+func TestSandboxedScope_DisableEval(t *testing.T) {
+	t.Run("disables eval on scope", func(t *testing.T) {
+		scope := NewSandboxedScope()
+		scope.DisableEval()
+
+		_, err := scope.Execute(context.Background(), `eval("1 + 1")`)
+		assert.Error(t, err)
+	})
+}
+
+func TestSandboxedScope_SetSandboxConsoleHandler(t *testing.T) {
+	t.Run("sets console handler on scope", func(t *testing.T) {
+		scope := NewSandboxedScope()
+		var capturedLevel, capturedMsg string
+		scope.SetSandboxConsoleHandler(func(level, msg string) {
+			capturedLevel = level
+			capturedMsg = msg
+		})
+
+		_, err := scope.Execute(context.Background(), `console.log("test message")`)
+		require.NoError(t, err)
+		assert.Equal(t, "log", capturedLevel)
+		assert.Equal(t, "test message", capturedMsg)
+	})
+
+	t.Run("captures console.warn", func(t *testing.T) {
+		scope := NewSandboxedScope()
+		var capturedLevel string
+		scope.SetSandboxConsoleHandler(func(level, msg string) {
+			capturedLevel = level
+		})
+
+		_, err := scope.Execute(context.Background(), `console.warn("warning")`)
+		require.NoError(t, err)
+		assert.Equal(t, "warn", capturedLevel)
+	})
+
+	t.Run("captures console.info", func(t *testing.T) {
+		scope := NewSandboxedScope()
+		var capturedLevel string
+		scope.SetSandboxConsoleHandler(func(level, msg string) {
+			capturedLevel = level
+		})
+
+		_, err := scope.Execute(context.Background(), `console.info("info")`)
+		require.NoError(t, err)
+		assert.Equal(t, "info", capturedLevel)
+	})
+
+	t.Run("captures console.debug", func(t *testing.T) {
+		scope := NewSandboxedScope()
+		var capturedLevel string
+		scope.SetSandboxConsoleHandler(func(level, msg string) {
+			capturedLevel = level
+		})
+
+		_, err := scope.Execute(context.Background(), `console.debug("debug")`)
+		require.NoError(t, err)
+		assert.Equal(t, "debug", capturedLevel)
+	})
+}

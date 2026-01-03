@@ -507,3 +507,57 @@ func TestScope_Reset(t *testing.T) {
 		assert.Equal(t, "", scope.GetRequestURL())
 	})
 }
+
+func TestScope_CloneWithAllFields(t *testing.T) {
+	t.Run("clone preserves all fields", func(t *testing.T) {
+		scope := NewScope()
+
+		// Set all fields
+		scope.SetRequestMethod("POST")
+		scope.SetRequestURL("https://api.example.com/test")
+		scope.SetRequestHeaders(map[string]string{"Content-Type": "application/json"})
+		scope.SetRequestBody(`{"test": "data"}`)
+
+		scope.SetResponseStatus(201)
+		scope.SetResponseStatusText("Created")
+		scope.SetResponseHeaders(map[string]string{"X-Custom": "value"})
+		scope.SetResponseBody(`{"id": 123}`)
+		scope.SetResponseTime(150)
+		scope.SetResponseSize(50)
+
+		scope.SetVariable("global_var", "global_value")
+		scope.SetEnvironmentVariable("env_var", "env_value")
+		scope.SetEnvironmentName("Production")
+
+		// Clone
+		clone := scope.Clone()
+
+		// Verify URL in clone
+		assert.Equal(t, "https://api.example.com/test", clone.GetRequestURL())
+		assert.Equal(t, `{"test": "data"}`, clone.GetRequestBody())
+
+		// Verify headers
+		headers := clone.GetRequestHeaders()
+		assert.Equal(t, "application/json", headers["Content-Type"])
+
+		assert.Equal(t, "global_value", clone.GetVariable("global_var"))
+		assert.Equal(t, "env_value", clone.GetEnvironmentVariable("env_var"))
+	})
+
+	t.Run("clone is independent of original", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetVariable("key", "original")
+		scope.SetRequestHeaders(map[string]string{"Header": "original"})
+
+		clone := scope.Clone()
+
+		// Modify original
+		scope.SetVariable("key", "modified")
+		scope.SetRequestHeaders(map[string]string{"Header": "modified"})
+
+		// Clone should retain original values
+		assert.Equal(t, "original", clone.GetVariable("key"))
+		headers := clone.GetRequestHeaders()
+		assert.Equal(t, "original", headers["Header"])
+	})
+}

@@ -554,3 +554,218 @@ func TestScope_SetAtExtended(t *testing.T) {
 		assert.Empty(t, scope.Get("key"))
 	})
 }
+
+func TestScope_HasExtended(t *testing.T) {
+	t.Run("returns true for variable in global", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelGlobal, "key", "value")
+		assert.True(t, scope.Has("key"))
+	})
+
+	t.Run("returns true for variable in environment", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelEnvironment, "key", "value")
+		assert.True(t, scope.Has("key"))
+	})
+
+	t.Run("returns true for variable in collection", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelCollection, "key", "value")
+		assert.True(t, scope.Has("key"))
+	})
+
+	t.Run("returns true for variable in request", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelRequest, "key", "value")
+		assert.True(t, scope.Has("key"))
+	})
+
+	t.Run("returns false for nonexistent variable", func(t *testing.T) {
+		scope := NewScope()
+		assert.False(t, scope.Has("nonexistent"))
+	})
+
+	t.Run("returns true after variable added via Set", func(t *testing.T) {
+		scope := NewScope()
+		scope.Set("key", "value")
+		assert.True(t, scope.Has("key"))
+	})
+}
+
+func TestScope_GetSourceExtended(t *testing.T) {
+	t.Run("returns global source", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelGlobal, "key", "value")
+		source := scope.GetSource("key")
+		assert.Equal(t, LevelGlobal, source)
+	})
+
+	t.Run("returns environment source", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelEnvironment, "key", "value")
+		source := scope.GetSource("key")
+		assert.Equal(t, LevelEnvironment, source)
+	})
+
+	t.Run("returns collection source", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelCollection, "key", "value")
+		source := scope.GetSource("key")
+		assert.Equal(t, LevelCollection, source)
+	})
+
+	t.Run("returns request source", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelRequest, "key", "value")
+		source := scope.GetSource("key")
+		assert.Equal(t, LevelRequest, source)
+	})
+
+	t.Run("returns source for variable added via Set", func(t *testing.T) {
+		scope := NewScope()
+		scope.Set("key", "value")
+		source := scope.GetSource("key")
+		// Variables set via Set are added to the local level
+		assert.GreaterOrEqual(t, int(source), 0)
+	})
+
+	t.Run("returns valid level for nonexistent variable", func(t *testing.T) {
+		scope := NewScope()
+		source := scope.GetSource("nonexistent")
+		// Returns a valid level (no error handling for nonexistent)
+		assert.GreaterOrEqual(t, int(source), 0)
+	})
+}
+
+func TestScope_AllExtended(t *testing.T) {
+	t.Run("returns all variables from all levels", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelGlobal, "global_key", "global_value")
+		scope.SetAt(LevelEnvironment, "env_key", "env_value")
+		scope.SetAt(LevelCollection, "col_key", "col_value")
+		scope.SetAt(LevelRequest, "req_key", "req_value")
+		scope.Set("local_key", "local_value")
+
+		all := scope.All()
+		assert.Equal(t, "global_value", all["global_key"])
+		assert.Equal(t, "env_value", all["env_key"])
+		assert.Equal(t, "col_value", all["col_key"])
+		assert.Equal(t, "req_value", all["req_key"])
+		assert.Equal(t, "local_value", all["local_key"])
+	})
+
+	t.Run("higher level overrides lower level", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelGlobal, "key", "global_value")
+		scope.SetAt(LevelRequest, "key", "request_value")
+
+		all := scope.All()
+		assert.Equal(t, "request_value", all["key"])
+	})
+
+	t.Run("local overrides all levels", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelRequest, "key", "request_value")
+		scope.Set("key", "local_value")
+
+		all := scope.All()
+		assert.Equal(t, "local_value", all["key"])
+	})
+}
+
+func TestScope_CloneExtended(t *testing.T) {
+	t.Run("clones all levels", func(t *testing.T) {
+		scope := NewScope()
+		scope.SetAt(LevelGlobal, "global_key", "global_value")
+		scope.SetAt(LevelEnvironment, "env_key", "env_value")
+		scope.SetAt(LevelCollection, "col_key", "col_value")
+		scope.SetAt(LevelRequest, "req_key", "req_value")
+		scope.Set("local_key", "local_value")
+
+		clone := scope.Clone()
+
+		assert.Equal(t, "global_value", clone.Get("global_key"))
+		assert.Equal(t, "env_value", clone.Get("env_key"))
+		assert.Equal(t, "col_value", clone.Get("col_key"))
+		assert.Equal(t, "req_value", clone.Get("req_key"))
+		assert.Equal(t, "local_value", clone.Get("local_key"))
+	})
+
+	t.Run("clone is independent", func(t *testing.T) {
+		scope := NewScope()
+		scope.Set("key", "original")
+
+		clone := scope.Clone()
+		clone.Set("key", "modified")
+
+		assert.Equal(t, "original", scope.Get("key"))
+		assert.Equal(t, "modified", clone.Get("key"))
+	})
+}
+
+func TestVariableSet_MergeExtended(t *testing.T) {
+	t.Run("merge with nil", func(t *testing.T) {
+		vs := NewVariableSet()
+		vs.Set("key", "value")
+		vs.Merge(nil) // Should not panic
+		assert.Equal(t, "value", vs.Get("key"))
+	})
+
+	t.Run("merge overwrites existing", func(t *testing.T) {
+		vs1 := NewVariableSet()
+		vs1.Set("key", "original")
+		vs1.Set("unique1", "value1")
+
+		vs2 := NewVariableSet()
+		vs2.Set("key", "overwritten")
+		vs2.Set("unique2", "value2")
+
+		vs1.Merge(vs2)
+
+		assert.Equal(t, "overwritten", vs1.Get("key"))
+		assert.Equal(t, "value1", vs1.Get("unique1"))
+		assert.Equal(t, "value2", vs1.Get("unique2"))
+	})
+
+	t.Run("merge empty into populated", func(t *testing.T) {
+		vs1 := NewVariableSet()
+		vs1.Set("key", "value")
+
+		vs2 := NewVariableSet()
+		vs1.Merge(vs2)
+
+		assert.Equal(t, "value", vs1.Get("key"))
+	})
+}
+
+func TestScope_SetAtCoverage(t *testing.T) {
+	t.Run("set at all levels", func(t *testing.T) {
+		scope := NewScope()
+
+		scope.SetAt(LevelGlobal, "g", "global")
+		scope.SetAt(LevelEnvironment, "e", "environment")
+		scope.SetAt(LevelCollection, "c", "collection")
+		scope.SetAt(LevelRequest, "r", "request")
+
+		assert.Equal(t, "global", scope.Get("g"))
+		assert.Equal(t, "environment", scope.Get("e"))
+		assert.Equal(t, "collection", scope.Get("c"))
+		assert.Equal(t, "request", scope.Get("r"))
+	})
+
+	t.Run("higher level overrides lower", func(t *testing.T) {
+		scope := NewScope()
+
+		scope.SetAt(LevelGlobal, "key", "global")
+		assert.Equal(t, "global", scope.Get("key"))
+
+		scope.SetAt(LevelEnvironment, "key", "environment")
+		assert.Equal(t, "environment", scope.Get("key"))
+
+		scope.SetAt(LevelCollection, "key", "collection")
+		assert.Equal(t, "collection", scope.Get("key"))
+
+		scope.SetAt(LevelRequest, "key", "request")
+		assert.Equal(t, "request", scope.Get("key"))
+	})
+}

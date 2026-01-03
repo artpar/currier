@@ -1901,3 +1901,139 @@ func TestCollection_MoveFolderUpDown_Integration(t *testing.T) {
 		assert.Equal(t, "C", c.Folders()[3].Name())
 	})
 }
+
+func TestFolder_SetName(t *testing.T) {
+	t.Run("sets folder name", func(t *testing.T) {
+		folder := NewFolder("Original")
+		assert.Equal(t, "Original", folder.Name())
+
+		folder.SetName("New Name")
+		assert.Equal(t, "New Name", folder.Name())
+	})
+}
+
+func TestRequestDefinition_SetName(t *testing.T) {
+	t.Run("sets request name", func(t *testing.T) {
+		req := NewRequestDefinition("Original Request", "GET", "http://example.com")
+		assert.Equal(t, "Original Request", req.Name())
+
+		req.SetName("Updated Request")
+		assert.Equal(t, "Updated Request", req.Name())
+	})
+}
+
+func TestRequestDefinition_QueryParamsNil(t *testing.T) {
+	t.Run("QueryParams returns empty map when nil", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "http://example.com")
+		// New request has nil queryParams
+		params := req.QueryParams()
+		assert.NotNil(t, params)
+		assert.Len(t, params, 0)
+	})
+
+	t.Run("GetQueryParam returns empty string when nil", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "http://example.com")
+		// New request has nil queryParams
+		value := req.GetQueryParam("nonexistent")
+		assert.Equal(t, "", value)
+	})
+
+	t.Run("SetQueryParam initializes map when nil", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "http://example.com")
+		// New request has nil queryParams
+		req.SetQueryParam("key", "value")
+		assert.Equal(t, "value", req.GetQueryParam("key"))
+	})
+
+	t.Run("RemoveQueryParam is safe when nil", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "http://example.com")
+		// New request has nil queryParams
+		req.RemoveQueryParam("nonexistent")
+		// Should not panic
+		assert.NotNil(t, req)
+	})
+}
+
+func TestRequestDefinition_QueryParamsWithValues(t *testing.T) {
+	t.Run("QueryParams returns copy of params", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "http://example.com?page=1&size=10")
+		params := req.QueryParams()
+
+		// Modifying returned map should not affect original
+		params["extra"] = "value"
+		assert.Equal(t, "", req.GetQueryParam("extra"))
+	})
+
+	t.Run("SetQueryParam updates existing", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "http://example.com")
+		req.SetQueryParam("key", "value1")
+		req.SetQueryParam("key", "value2")
+		assert.Equal(t, "value2", req.GetQueryParam("key"))
+	})
+
+	t.Run("RemoveQueryParam removes existing", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "http://example.com")
+		req.SetQueryParam("key", "value")
+		assert.Equal(t, "value", req.GetQueryParam("key"))
+
+		req.RemoveQueryParam("key")
+		assert.Equal(t, "", req.GetQueryParam("key"))
+	})
+
+	t.Run("GetQueryParam returns empty for non-existent key", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "http://example.com")
+		assert.Equal(t, "", req.GetQueryParam("nonexistent"))
+	})
+
+	t.Run("SetQueryParam with empty value", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "http://example.com")
+		req.SetQueryParam("key", "")
+		params := req.QueryParams()
+		_, exists := params["key"]
+		assert.True(t, exists)
+	})
+
+	t.Run("RemoveQueryParam for non-existent key", func(t *testing.T) {
+		req := NewRequestDefinition("Test", "GET", "http://example.com")
+		req.RemoveQueryParam("nonexistent") // Should not panic
+	})
+}
+
+func TestRequestDefinition_QueryParamCoverage(t *testing.T) {
+	t.Run("GetQueryParam with nil queryParams", func(t *testing.T) {
+		req := &RequestDefinition{
+			id:     "test-id",
+			name:   "Test",
+			method: "GET",
+			url:    "http://example.com",
+			// queryParams is nil
+		}
+		assert.Equal(t, "", req.GetQueryParam("anykey"))
+	})
+
+	t.Run("SetQueryParam initializes nil queryParams", func(t *testing.T) {
+		req := &RequestDefinition{
+			id:     "test-id",
+			name:   "Test",
+			method: "GET",
+			url:    "http://example.com",
+			// queryParams is nil
+		}
+		req.SetQueryParam("key", "value")
+		assert.Equal(t, "value", req.GetQueryParam("key"))
+	})
+
+	t.Run("QueryParams with nil returns empty map", func(t *testing.T) {
+		req := &RequestDefinition{
+			id:     "test-id",
+			name:   "Test",
+			method: "GET",
+			url:    "http://example.com",
+			// queryParams is nil
+		}
+		params := req.QueryParams()
+		assert.NotNil(t, params)
+		assert.Len(t, params, 0)
+	})
+}
+

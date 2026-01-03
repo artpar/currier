@@ -560,3 +560,146 @@ func TestEngine_Options(t *testing.T) {
 		assert.False(t, engine.GetOption("nonexistent"))
 	})
 }
+
+func TestEngine_VariablesWithData(t *testing.T) {
+	t.Run("Variables returns copy of variables", func(t *testing.T) {
+		engine := NewEngine()
+		engine.SetVariable("key1", "value1")
+		engine.SetVariable("key2", "value2")
+		engine.SetVariable("key3", "value3")
+
+		vars := engine.Variables()
+		assert.Equal(t, 3, len(vars))
+		assert.Equal(t, "value1", vars["key1"])
+		assert.Equal(t, "value2", vars["key2"])
+		assert.Equal(t, "value3", vars["key3"])
+	})
+
+	t.Run("modifying returned map doesn't affect engine", func(t *testing.T) {
+		engine := NewEngine()
+		engine.SetVariable("key", "original")
+
+		vars := engine.Variables()
+		vars["key"] = "modified"
+
+		assert.Equal(t, "original", engine.GetVariable("key"))
+	})
+}
+
+func TestEngine_CloneWithData(t *testing.T) {
+	t.Run("Clone copies variables", func(t *testing.T) {
+		engine := NewEngine()
+		engine.SetVariable("key1", "value1")
+		engine.SetVariable("key2", "value2")
+
+		clone := engine.Clone()
+
+		assert.Equal(t, "value1", clone.GetVariable("key1"))
+		assert.Equal(t, "value2", clone.GetVariable("key2"))
+	})
+
+	t.Run("Clone copies options", func(t *testing.T) {
+		engine := NewEngine()
+		engine.SetOption("strict", true)
+		engine.SetOption("debug", false)
+
+		clone := engine.Clone()
+
+		assert.True(t, clone.GetOption("strict"))
+		assert.False(t, clone.GetOption("debug"))
+	})
+
+	t.Run("Clone is independent from original", func(t *testing.T) {
+		engine := NewEngine()
+		engine.SetVariable("key", "original")
+
+		clone := engine.Clone()
+		clone.SetVariable("key", "modified")
+
+		assert.Equal(t, "original", engine.GetVariable("key"))
+		assert.Equal(t, "modified", clone.GetVariable("key"))
+	})
+}
+
+func TestEngine_ClearExtended(t *testing.T) {
+	t.Run("Clear removes all variables", func(t *testing.T) {
+		engine := NewEngine()
+		engine.SetVariable("key1", "value1")
+		engine.SetVariable("key2", "value2")
+
+		engine.Clear()
+
+		assert.False(t, engine.HasVariable("key1"))
+		assert.False(t, engine.HasVariable("key2"))
+	})
+}
+
+func TestEngine_DeleteVariable(t *testing.T) {
+	t.Run("DeleteVariable removes a specific variable", func(t *testing.T) {
+		engine := NewEngine()
+		engine.SetVariable("key1", "value1")
+		engine.SetVariable("key2", "value2")
+
+		engine.DeleteVariable("key1")
+
+		assert.False(t, engine.HasVariable("key1"))
+		assert.True(t, engine.HasVariable("key2"))
+	})
+}
+
+func TestEngine_InterpolateMapExtended(t *testing.T) {
+	t.Run("InterpolateMap handles empty map", func(t *testing.T) {
+		engine := NewEngine()
+		result, err := engine.InterpolateMap(map[string]string{})
+		require.NoError(t, err)
+		assert.Len(t, result, 0)
+	})
+
+	t.Run("InterpolateMap processes multiple keys", func(t *testing.T) {
+		engine := NewEngine()
+		engine.SetVariable("name", "test")
+		engine.SetVariable("version", "1.0")
+
+		input := map[string]string{
+			"title":   "{{name}}",
+			"ver":     "v{{version}}",
+			"literal": "no vars",
+		}
+
+		result, err := engine.InterpolateMap(input)
+		require.NoError(t, err)
+		assert.Equal(t, "test", result["title"])
+		assert.Equal(t, "v1.0", result["ver"])
+		assert.Equal(t, "no vars", result["literal"])
+	})
+}
+
+func TestEngine_ExtractVariablesExtended(t *testing.T) {
+	t.Run("ExtractVariables returns empty for no variables", func(t *testing.T) {
+		engine := NewEngine()
+		vars := engine.ExtractVariables("no variables here")
+		assert.Len(t, vars, 0)
+	})
+
+	t.Run("ExtractVariables finds multiple variables", func(t *testing.T) {
+		engine := NewEngine()
+		vars := engine.ExtractVariables("{{var1}} and {{var2}} and {{var1}}")
+		// May contain duplicates depending on implementation
+		assert.GreaterOrEqual(t, len(vars), 2)
+	})
+}
+
+func TestEngine_ValidateExtended(t *testing.T) {
+	t.Run("Validate returns no error for valid input", func(t *testing.T) {
+		engine := NewEngine()
+		engine.SetVariable("name", "test")
+		err := engine.Validate("Hello {{name}}")
+		assert.NoError(t, err)
+	})
+
+	t.Run("Validate returns no error for plain text", func(t *testing.T) {
+		engine := NewEngine()
+		err := engine.Validate("no variables here")
+		assert.NoError(t, err)
+	})
+}

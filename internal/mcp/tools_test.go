@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/history"
 )
 
@@ -157,9 +158,54 @@ func TestErrorContent(t *testing.T) {
 }
 
 func TestGetFolderByName(t *testing.T) {
-	// This tests the helper function for finding subfolders
-	// Since core.Folder is internal, we just verify the function exists and compiles
-	// Full integration testing would be done with real collections
+	t.Run("finds subfolder by name", func(t *testing.T) {
+		parent := core.NewFolder("parent")
+		child1 := parent.AddFolder("child1")
+		_ = parent.AddFolder("child2")
+		_ = parent.AddFolder("child3")
+
+		found, ok := getFolderByName(parent, "child1")
+		if !ok {
+			t.Fatal("expected to find child1")
+		}
+		if found != child1 {
+			t.Error("found wrong folder")
+		}
+	})
+
+	t.Run("returns false for non-existent folder", func(t *testing.T) {
+		parent := core.NewFolder("parent")
+		_ = parent.AddFolder("child1")
+
+		_, ok := getFolderByName(parent, "nonexistent")
+		if ok {
+			t.Error("expected not to find nonexistent folder")
+		}
+	})
+
+	t.Run("returns false for empty folder", func(t *testing.T) {
+		parent := core.NewFolder("parent")
+
+		_, ok := getFolderByName(parent, "anything")
+		if ok {
+			t.Error("expected not to find folder in empty parent")
+		}
+	})
+
+	t.Run("finds last folder in list", func(t *testing.T) {
+		parent := core.NewFolder("parent")
+		_ = parent.AddFolder("first")
+		_ = parent.AddFolder("second")
+		last := parent.AddFolder("last")
+
+		found, ok := getFolderByName(parent, "last")
+		if !ok {
+			t.Fatal("expected to find last folder")
+		}
+		if found != last {
+			t.Error("found wrong folder")
+		}
+	})
 }
 
 func TestPaginationResult(t *testing.T) {
@@ -1541,6 +1587,15 @@ func TestApplyPaginationEdgeCases(t *testing.T) {
 			wantTotal: 5,
 			wantMore:  false,
 		},
+		{
+			name:      "limit exceeds MaxPageSize",
+			items:     make([]int, 300), // 300 items
+			offset:    0,
+			limit:     500, // Exceeds MaxPageSize of 200
+			wantLen:   200, // Should be capped at MaxPageSize
+			wantTotal: 300,
+			wantMore:  true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1852,4 +1907,516 @@ func TestExportAsCurlArgs(t *testing.T) {
 	if decoded.Request != "Get Users" {
 		t.Errorf("Request = %q, want %q", decoded.Request, "Get Users")
 	}
+}
+
+func TestRenameCollectionArgsJSON(t *testing.T) {
+	args := renameCollectionArgs{
+		Name:    "Original Name",
+		NewName: "New Name",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded renameCollectionArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "Original Name" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "Original Name")
+	}
+	if decoded.NewName != "New Name" {
+		t.Errorf("NewName = %q, want %q", decoded.NewName, "New Name")
+	}
+}
+
+func TestUpdateRequestArgsJSON(t *testing.T) {
+	args := updateRequestArgs{
+		Collection: "Test API",
+		Request:    "Get Users",
+		Method:     "POST",
+		URL:        "http://api.example.com/users",
+		Headers:    map[string]string{"Content-Type": "application/json"},
+		Body:       `{"name": "test"}`,
+		NewName:    "Create User",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded updateRequestArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Collection != "Test API" {
+		t.Errorf("Collection = %q, want %q", decoded.Collection, "Test API")
+	}
+	if decoded.Request != "Get Users" {
+		t.Errorf("Request = %q, want %q", decoded.Request, "Get Users")
+	}
+	if decoded.Method != "POST" {
+		t.Errorf("Method = %q, want %q", decoded.Method, "POST")
+	}
+}
+
+func TestGetCollectionArgsJSON(t *testing.T) {
+	args := getCollectionArgs{
+		Name: "Test API",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded getCollectionArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "Test API" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "Test API")
+	}
+}
+
+func TestGetRequestArgsJSON(t *testing.T) {
+	args := getRequestArgs{
+		Collection: "Test API",
+		Request:    "Get Users",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded getRequestArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Collection != "Test API" {
+		t.Errorf("Collection = %q, want %q", decoded.Collection, "Test API")
+	}
+	if decoded.Request != "Get Users" {
+		t.Errorf("Request = %q, want %q", decoded.Request, "Get Users")
+	}
+}
+
+func TestCreateCollectionArgsJSON(t *testing.T) {
+	args := createCollectionArgs{
+		Name:        "New API",
+		Description: "A test API collection",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded createCollectionArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "New API" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "New API")
+	}
+	if decoded.Description != "A test API collection" {
+		t.Errorf("Description = %q, want %q", decoded.Description, "A test API collection")
+	}
+}
+
+func TestSaveRequestArgsJSON(t *testing.T) {
+	args := saveRequestArgs{
+		Collection: "Test API",
+		Name:       "Get User",
+		Method:     "GET",
+		URL:        "https://api.example.com/users/1",
+		Headers:    map[string]string{"Accept": "application/json"},
+		Body:       "",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded saveRequestArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Collection != "Test API" {
+		t.Errorf("Collection = %q, want %q", decoded.Collection, "Test API")
+	}
+	if decoded.Name != "Get User" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "Get User")
+	}
+	if decoded.Method != "GET" {
+		t.Errorf("Method = %q, want %q", decoded.Method, "GET")
+	}
+}
+
+func TestRunCollectionArgsJSON(t *testing.T) {
+	args := runCollectionArgs{
+		Name:        "Test API",
+		Environment: "production",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded runCollectionArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "Test API" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "Test API")
+	}
+	if decoded.Environment != "production" {
+		t.Errorf("Environment = %q, want %q", decoded.Environment, "production")
+	}
+}
+
+func TestDeleteCollectionArgsJSON(t *testing.T) {
+	args := deleteCollectionArgs{
+		Name: "Old API",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded deleteCollectionArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Name != "Old API" {
+		t.Errorf("Name = %q, want %q", decoded.Name, "Old API")
+	}
+}
+
+func TestDeleteRequestArgsJSON(t *testing.T) {
+	args := deleteRequestArgs{
+		Collection: "Test API",
+		Request:    "Delete User",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var decoded deleteRequestArgs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if decoded.Collection != "Test API" {
+		t.Errorf("Collection = %q, want %q", decoded.Collection, "Test API")
+	}
+	if decoded.Request != "Delete User" {
+		t.Errorf("Request = %q, want %q", decoded.Request, "Delete User")
+	}
+}
+
+func TestContainsHelper(t *testing.T) {
+	tests := []struct {
+		name   string
+		s      string
+		substr string
+		want   bool
+	}{
+		{"empty string and empty substr", "", "", true},
+		{"empty string with substr", "", "test", false},
+		{"string with empty substr", "test", "", true},
+		{"exact match", "test", "test", true},
+		{"substring found", "hello world", "world", true},
+		{"substring not found", "hello world", "foo", false},
+		{"case sensitive match", "Test", "test", false},
+		{"prefix match", "testing", "test", true},
+		{"suffix match", "testing", "ing", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := contains(tt.s, tt.substr)
+			if got != tt.want {
+				t.Errorf("contains(%q, %q) = %v, want %v", tt.s, tt.substr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSearchSubstringHelper(t *testing.T) {
+	tests := []struct {
+		name   string
+		s      string
+		substr string
+		want   bool
+	}{
+		{"empty strings", "", "", true},
+		{"empty substr", "test", "", true},
+		{"empty string with substr", "", "test", false},
+		{"exact match", "test", "test", true},
+		{"substring at start", "testing", "test", true},
+		{"substring at end", "testing", "ing", true},
+		{"substring in middle", "hello world", "lo wo", true},
+		{"substring not found", "hello", "world", false},
+		{"case sensitive", "Hello", "hello", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := searchSubstring(tt.s, tt.substr)
+			if got != tt.want {
+				t.Errorf("searchSubstring(%q, %q) = %v, want %v", tt.s, tt.substr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPaginationEdgeCasesNew(t *testing.T) {
+	items := []string{"a", "b", "c", "d", "e"}
+
+	tests := []struct {
+		name      string
+		offset    int
+		limit     int
+		wantLen   int
+		wantTotal int
+	}{
+		{"negative offset treated as zero", -5, 2, 2, 5},
+		{"limit larger than items", 0, 100, 5, 5},
+		{"offset at end", 5, 2, 0, 5},
+		{"offset past end", 10, 2, 0, 5},
+		{"zero limit uses default", 0, 0, 5, 5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, info := applyPagination(items, tt.offset, tt.limit)
+			if len(result) != tt.wantLen {
+				t.Errorf("len = %d, want %d", len(result), tt.wantLen)
+			}
+			if info.Total != tt.wantTotal {
+				t.Errorf("total = %d, want %d", info.Total, tt.wantTotal)
+			}
+		})
+	}
+}
+
+func TestFormatEnvVarsFromEnvironment(t *testing.T) {
+	env := core.NewEnvironment("test")
+	env.SetVariable("key1", "value1")
+	env.SetVariable("key2", "value2")
+	env.SetSecret("secret1", "secretvalue")
+
+	vars := env.Variables()
+	if len(vars) < 2 {
+		t.Errorf("expected at least 2 variables, got %d", len(vars))
+	}
+
+	// Verify environment name
+	if env.Name() != "test" {
+		t.Errorf("expected name 'test', got %s", env.Name())
+	}
+}
+
+func TestRequestArgsValidation(t *testing.T) {
+	t.Run("valid request args with URL", func(t *testing.T) {
+		args := sendRequestArgs{
+			Method: "GET",
+			URL:    "https://example.com/api",
+		}
+		if args.URL == "" {
+			t.Error("URL should not be empty")
+		}
+	})
+
+	t.Run("request args with headers", func(t *testing.T) {
+		args := sendRequestArgs{
+			Method: "POST",
+			URL:    "https://example.com/api",
+			Headers: map[string]string{
+				"Content-Type":  "application/json",
+				"Authorization": "Bearer token",
+			},
+		}
+		if len(args.Headers) != 2 {
+			t.Errorf("expected 2 headers, got %d", len(args.Headers))
+		}
+	})
+
+	t.Run("request args with body", func(t *testing.T) {
+		args := sendRequestArgs{
+			Method: "POST",
+			URL:    "https://example.com/api",
+			Body:   `{"key": "value"}`,
+		}
+		if args.Body == "" {
+			t.Error("Body should not be empty")
+		}
+	})
+}
+
+func TestSaveRequestArgsValidationNew(t *testing.T) {
+	t.Run("save request with collection and folder", func(t *testing.T) {
+		args := saveRequestArgs{
+			Collection: "MyCollection",
+			Folder:     "MyFolder",
+			Name:       "Test Request",
+			Method:     "GET",
+			URL:        "https://example.com",
+		}
+		if args.Collection == "" || args.Name == "" {
+			t.Error("Collection and Name should not be empty")
+		}
+	})
+}
+
+
+func TestCreateFolderArgsJSONNew(t *testing.T) {
+	args := createFolderArgs{
+		Collection: "TestCollection",
+		Name:       "NewFolder",
+		Parent:     "ParentFolder",
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var parsed createFolderArgs
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if parsed.Collection != args.Collection {
+		t.Error("Collection doesn't match")
+	}
+	if parsed.Name != args.Name {
+		t.Error("Name doesn't match")
+	}
+}
+
+func TestEnvironmentArgsJSONNew(t *testing.T) {
+	t.Run("create environment args", func(t *testing.T) {
+		args := createEnvironmentArgs{
+			Name: "Production",
+		}
+		data, err := json.Marshal(args)
+		if err != nil {
+			t.Fatalf("failed to marshal: %v", err)
+		}
+		if !strings.Contains(string(data), "Production") {
+			t.Error("serialized data should contain name")
+		}
+	})
+
+	t.Run("set environment variable args", func(t *testing.T) {
+		args := setEnvVarArgs{
+			Environment: "Production",
+			Key:         "API_URL",
+			Value:       "https://api.example.com",
+		}
+		if args.Key == "" {
+			t.Error("Key should not be empty")
+		}
+	})
+}
+
+func TestHistoryQueryArgsNew(t *testing.T) {
+	t.Run("get history with filters", func(t *testing.T) {
+		args := getHistoryArgs{
+			Limit:  50,
+			Filter: "GET",
+		}
+		if args.Limit != 50 {
+			t.Errorf("expected limit 50, got %d", args.Limit)
+		}
+	})
+
+	t.Run("search history args", func(t *testing.T) {
+		args := searchHistoryArgs{
+			Query: "api/users",
+			Limit: 25,
+		}
+		if args.Query != "api/users" {
+			t.Errorf("expected query 'api/users', got %s", args.Query)
+		}
+	})
+}
+
+func TestImportExportArgsJSONNew(t *testing.T) {
+	t.Run("import collection args", func(t *testing.T) {
+		args := importCollectionArgs{
+			Content: `{"info":{"name":"Test"}}`,
+			Format:  "postman",
+		}
+		data, err := json.Marshal(args)
+		if err != nil {
+			t.Fatalf("failed to marshal: %v", err)
+		}
+		if !strings.Contains(string(data), "postman") {
+			t.Error("serialized data should contain format")
+		}
+	})
+
+	t.Run("export collection args", func(t *testing.T) {
+		args := exportCollectionArgs{
+			Name:   "MyCollection",
+			Format: "openapi",
+		}
+		if args.Format != "openapi" {
+			t.Errorf("expected format 'openapi', got %s", args.Format)
+		}
+	})
+}
+
+func TestWebSocketArgsJSONNew(t *testing.T) {
+	t.Run("websocket connect args", func(t *testing.T) {
+		args := wsConnectArgs{
+			Endpoint: "wss://example.com/ws",
+			Headers: map[string]string{
+				"Authorization": "Bearer token",
+			},
+		}
+		if args.Endpoint == "" {
+			t.Error("Endpoint should not be empty")
+		}
+	})
+
+	t.Run("websocket send args", func(t *testing.T) {
+		args := wsSendArgs{
+			ConnectionID: "conn-123",
+			Message:      `{"type": "ping"}`,
+		}
+		if args.ConnectionID == "" {
+			t.Error("ConnectionID should not be empty")
+		}
+	})
+
+	t.Run("websocket get messages args", func(t *testing.T) {
+		args := wsGetMessagesArgs{
+			ConnectionID: "conn-123",
+			Limit:        100,
+		}
+		if args.Limit != 100 {
+			t.Errorf("expected limit 100, got %d", args.Limit)
+		}
+	})
 }

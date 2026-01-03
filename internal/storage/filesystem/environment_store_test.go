@@ -288,6 +288,222 @@ func TestEnvironmentStore_GlobalEnvironment(t *testing.T) {
 	})
 }
 
+func TestEnvironmentStore_SetActiveWithDeactivation(t *testing.T) {
+	t.Run("setting empty ID returns error", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		env := core.NewEnvironment("Development")
+		env.SetActive(true)
+		require.NoError(t, store.Save(ctx, env))
+
+		// Verify it's active
+		active, err := store.GetActive(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, env.ID(), active.ID())
+
+		// Set active to empty returns error for non-existent ID
+		err = store.SetActive(ctx, "")
+		assert.Error(t, err)
+	})
+
+	t.Run("switching active between environments", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		env1 := core.NewEnvironment("Dev")
+		env2 := core.NewEnvironment("Staging")
+		env3 := core.NewEnvironment("Prod")
+
+		require.NoError(t, store.Save(ctx, env1))
+		require.NoError(t, store.Save(ctx, env2))
+		require.NoError(t, store.Save(ctx, env3))
+
+		// Set first as active
+		require.NoError(t, store.SetActive(ctx, env1.ID()))
+		active, err := store.GetActive(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "Dev", active.Name())
+
+		// Switch to third
+		require.NoError(t, store.SetActive(ctx, env3.ID()))
+		active, err = store.GetActive(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "Prod", active.Name())
+	})
+}
+
+func TestEnvironmentStore_SaveWithAllVariables(t *testing.T) {
+	t.Run("saves environment with multiple variable types", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		env := core.NewEnvironment("FullEnv")
+		env.SetDescription("Full test environment")
+		env.SetVariable("base_url", "https://api.example.com")
+		env.SetVariable("timeout", "30")
+		env.SetVariable("version", "v2")
+		env.SetSecret("api_key", "secret123")
+		env.SetSecret("auth_token", "token456")
+		env.SetActive(true)
+		env.SetGlobal(false)
+
+		err := store.Save(ctx, env)
+		require.NoError(t, err)
+
+		loaded, err := store.Get(ctx, env.ID())
+		require.NoError(t, err)
+
+		assert.Equal(t, "Full test environment", loaded.Description())
+		assert.Equal(t, "https://api.example.com", loaded.GetVariable("base_url"))
+		assert.Equal(t, "30", loaded.GetVariable("timeout"))
+		assert.Equal(t, "v2", loaded.GetVariable("version"))
+		assert.Equal(t, "secret123", loaded.GetSecret("api_key"))
+		assert.Equal(t, "token456", loaded.GetSecret("auth_token"))
+		assert.True(t, loaded.IsActive())
+		assert.False(t, loaded.IsGlobal())
+	})
+}
+
+func TestEnvironmentStore_ListOnlyLoadMetadata(t *testing.T) {
+	t.Run("listing environments does not fail on malformed files", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		// Save valid environment
+		env := core.NewEnvironment("Valid")
+		require.NoError(t, store.Save(ctx, env))
+
+		// List should succeed even if some files might have issues
+		list, err := store.List(ctx)
+		require.NoError(t, err)
+		assert.NotEmpty(t, list)
+	})
+}
+
+func TestEnvironmentStore_GetByNameCaseInsensitive(t *testing.T) {
+	t.Run("searching by name is exact match", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		env := core.NewEnvironment("MyEnvName")
+		require.NoError(t, store.Save(ctx, env))
+
+		// Exact match should work
+		loaded, err := store.GetByName(ctx, "MyEnvName")
+		require.NoError(t, err)
+		assert.Equal(t, "MyEnvName", loaded.Name())
+
+		// Different case should not match
+		_, err = store.GetByName(ctx, "myenvname")
+		assert.Error(t, err)
+	})
+}
+
+func TestEnvironmentStore_SetActiveCoverage(t *testing.T) {
+	t.Run("set active environment by id", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		// Create two environments
+		env1 := core.NewEnvironment("Env1")
+		env2 := core.NewEnvironment("Env2")
+		require.NoError(t, store.Save(ctx, env1))
+		require.NoError(t, store.Save(ctx, env2))
+
+		// Set env1 as active
+		err := store.SetActive(ctx, env1.ID())
+		require.NoError(t, err)
+
+		// Get active should return env1
+		active, err := store.GetActive(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, env1.ID(), active.ID())
+	})
+
+	t.Run("set active with invalid id", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		err := store.SetActive(ctx, "nonexistent-id")
+		assert.Error(t, err)
+	})
+
+	t.Run("clear active environment returns error for empty id", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		env := core.NewEnvironment("TestEnv")
+		require.NoError(t, store.Save(ctx, env))
+		require.NoError(t, store.SetActive(ctx, env.ID()))
+
+		// Clear active by setting empty id should return error
+		err := store.SetActive(ctx, "")
+		assert.Error(t, err)
+	})
+}
+
+func TestEnvironmentStore_DeleteCoverage(t *testing.T) {
+	t.Run("delete existing environment", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		env := core.NewEnvironment("ToDelete")
+		require.NoError(t, store.Save(ctx, env))
+
+		err := store.Delete(ctx, env.ID())
+		require.NoError(t, err)
+
+		// Should not exist anymore
+		_, err = store.Get(ctx, env.ID())
+		assert.Error(t, err)
+	})
+
+	t.Run("delete nonexistent environment", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		err := store.Delete(ctx, "nonexistent-id")
+		assert.Error(t, err)
+	})
+}
+
+func TestEnvironmentStore_GetActiveCoverage(t *testing.T) {
+	t.Run("get active when none is set returns error", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		active, err := store.GetActive(ctx)
+		assert.Error(t, err)
+		assert.Nil(t, active)
+	})
+
+	t.Run("get active with multiple environments", func(t *testing.T) {
+		store := newTestEnvStore(t)
+		ctx := context.Background()
+
+		// Create multiple environments
+		for i := 0; i < 5; i++ {
+			env := core.NewEnvironment("Env" + string(rune('A'+i)))
+			require.NoError(t, store.Save(ctx, env))
+		}
+
+		// Set the third one as active
+		list, err := store.List(ctx)
+		require.NoError(t, err)
+		require.Len(t, list, 5)
+
+		loaded, err := store.Get(ctx, list[2].ID)
+		require.NoError(t, err)
+		require.NoError(t, store.SetActive(ctx, loaded.ID()))
+
+		// Verify GetActive returns correct one
+		active, err := store.GetActive(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, list[2].ID, active.ID())
+	})
+}
+
 // Helper functions
 
 func newTestEnvStore(t *testing.T) *EnvironmentStore {

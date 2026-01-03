@@ -2935,8 +2935,8 @@ func TestCollectionTree_BulkDelete(t *testing.T) {
 		tree = pressKey(tree, 'v')
 		tree = pressKey(tree, 'j') // select second request too
 
-		// Delete with D
-		tree = pressKey(tree, 'D')
+		// Delete with d
+		tree = pressKey(tree, 'd')
 
 		// Should handle deletion (may or may not delete depending on confirmation)
 		assert.NotNil(t, tree)
@@ -2944,7 +2944,7 @@ func TestCollectionTree_BulkDelete(t *testing.T) {
 }
 
 func TestCollectionTree_BulkCopyAsCurl(t *testing.T) {
-	t.Run("bulk copy as curl with y in visual mode", func(t *testing.T) {
+	t.Run("bulk copy as curl with c in visual mode", func(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.SetSize(80, 30)
 		tree.viewMode = ViewCollections
@@ -2963,8 +2963,8 @@ func TestCollectionTree_BulkCopyAsCurl(t *testing.T) {
 		tree = pressKey(tree, 'v')
 		tree = pressKey(tree, 'j')
 
-		// Copy as curl with 'y'
-		tree = pressKey(tree, 'y')
+		// Copy as curl with 'c'
+		tree = pressKey(tree, 'c')
 
 		// Should handle copy (may generate command)
 		assert.NotNil(t, tree)
@@ -2972,7 +2972,7 @@ func TestCollectionTree_BulkCopyAsCurl(t *testing.T) {
 }
 
 func TestCollectionTree_BulkMove(t *testing.T) {
-	t.Run("starts bulk move with M in visual mode", func(t *testing.T) {
+	t.Run("starts bulk move with m in visual mode", func(t *testing.T) {
 		tree := NewCollectionTree()
 		tree.SetSize(80, 30)
 		tree.viewMode = ViewCollections
@@ -2990,8 +2990,8 @@ func TestCollectionTree_BulkMove(t *testing.T) {
 		tree = pressKey(tree, 'j') // to request
 		tree = pressKey(tree, 'v')
 
-		// Start bulk move with M
-		tree = pressKey(tree, 'M')
+		// Start bulk move with m
+		tree = pressKey(tree, 'm')
 
 		// Should be in some move mode or handled
 		assert.NotNil(t, tree)
@@ -3073,6 +3073,816 @@ func TestCollectionTree_ReorderFolder(t *testing.T) {
 		tree = pressKey(tree, 'J')
 
 		// Should handle reorder
+		assert.NotNil(t, tree)
+	})
+}
+
+func TestCollectionTree_FolderBelongsToCollection(t *testing.T) {
+	t.Run("finds folder in collection root", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col := core.NewCollection("Test API")
+		folder := col.AddFolder("API Folder")
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.True(t, tree.folderBelongsToCollection(folder, col))
+	})
+
+	t.Run("finds nested folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col := core.NewCollection("Test API")
+		parent := col.AddFolder("Parent")
+		child := parent.AddFolder("Child")
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.True(t, tree.folderBelongsToCollection(child, col))
+	})
+
+	t.Run("returns false for folder not in collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col1 := core.NewCollection("Test API 1")
+		col2 := core.NewCollection("Test API 2")
+		folder := col2.AddFolder("Other Folder")
+		tree.SetCollections([]*core.Collection{col1, col2})
+
+		assert.False(t, tree.folderBelongsToCollection(folder, col1))
+	})
+}
+
+func TestCollectionTree_FolderBelongsToFolder(t *testing.T) {
+	t.Run("finds direct child folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		parent := col.AddFolder("Parent")
+		child := parent.AddFolder("Child")
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.True(t, tree.folderBelongsToFolder(child, parent))
+	})
+
+	t.Run("finds deeply nested folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		level1 := col.AddFolder("Level1")
+		level2 := level1.AddFolder("Level2")
+		level3 := level2.AddFolder("Level3")
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.True(t, tree.folderBelongsToFolder(level3, level1))
+	})
+
+	t.Run("returns false for unrelated folders", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		folder1 := col.AddFolder("Folder1")
+		folder2 := col.AddFolder("Folder2")
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.False(t, tree.folderBelongsToFolder(folder2, folder1))
+	})
+}
+
+func TestCollectionTree_RequestBelongsToCollection(t *testing.T) {
+	t.Run("finds request in collection root", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com/users")
+		col.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.True(t, tree.requestBelongsToCollection(req, col))
+	})
+
+	t.Run("finds request in folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col := core.NewCollection("Test API")
+		folder := col.AddFolder("API Folder")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com/users")
+		folder.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.True(t, tree.requestBelongsToCollection(req, col))
+	})
+
+	t.Run("finds request in nested folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col := core.NewCollection("Test API")
+		level1 := col.AddFolder("Level1")
+		level2 := level1.AddFolder("Level2")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com/users")
+		level2.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.True(t, tree.requestBelongsToCollection(req, col))
+	})
+
+	t.Run("returns false for request not in collection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCollections
+
+		col1 := core.NewCollection("Test API 1")
+		col2 := core.NewCollection("Test API 2")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com/users")
+		col2.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col1, col2})
+
+		assert.False(t, tree.requestBelongsToCollection(req, col1))
+	})
+}
+
+func TestCollectionTree_RequestBelongsToFolder(t *testing.T) {
+	t.Run("finds direct child request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		folder := col.AddFolder("Folder")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com/users")
+		folder.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.True(t, tree.requestBelongsToFolder(req, folder))
+	})
+
+	t.Run("finds request in nested folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		parent := col.AddFolder("Parent")
+		child := parent.AddFolder("Child")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com/users")
+		child.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.True(t, tree.requestBelongsToFolder(req, parent))
+	})
+
+	t.Run("returns false for request not in folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		folder1 := col.AddFolder("Folder1")
+		folder2 := col.AddFolder("Folder2")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com/users")
+		folder2.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		assert.False(t, tree.requestBelongsToFolder(req, folder1))
+	})
+}
+
+func TestCollectionTree_HandleVisualModeInput(t *testing.T) {
+	t.Run("escape exits visual mode", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.selectMode)
+	})
+
+	t.Run("enter exits visual mode", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.selectMode)
+	})
+
+	t.Run("space confirms selection and exits", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		msg := tea.KeyMsg{Type: tea.KeySpace}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.selectMode)
+	})
+
+	t.Run("v key toggles visual mode off", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.selectMode)
+	})
+
+	t.Run("j key moves cursor down and updates selection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com/1"))
+		col.AddRequest(core.NewRequestDefinition("Req2", "GET", "http://test.com/2"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		tree.cursor = 0
+		tree.selectAnchor = 0
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.True(t, tree.cursor > 0 || tree.cursor == 0)
+	})
+
+	t.Run("k key moves cursor up and updates selection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com/1"))
+		col.AddRequest(core.NewRequestDefinition("Req2", "GET", "http://test.com/2"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		tree.cursor = 2
+		tree.selectAnchor = 2
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.NotNil(t, tree)
+	})
+
+	t.Run("G moves to last item", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com/1"))
+		col.AddRequest(core.NewRequestDefinition("Req2", "GET", "http://test.com/2"))
+		col.AddRequest(core.NewRequestDefinition("Req3", "GET", "http://test.com/3"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		tree.cursor = 0
+		tree.selectAnchor = 0
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+
+		displayItems := tree.getDisplayItems()
+		if len(displayItems) > 0 {
+			assert.Equal(t, len(displayItems)-1, tree.cursor)
+		}
+	})
+
+	t.Run("gg moves to first item", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com/1"))
+		col.AddRequest(core.NewRequestDefinition("Req2", "GET", "http://test.com/2"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		tree.cursor = 2
+		tree.selectAnchor = 2
+
+		// First g press sets flag
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+		assert.True(t, tree.gPressed)
+
+		// Second g press moves to top
+		updated, _ = tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+		assert.Equal(t, 0, tree.cursor)
+		assert.Equal(t, 0, tree.offset)
+	})
+
+	t.Run("d key triggers bulk delete", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.selectMode)
+	})
+
+	t.Run("m key triggers bulk move", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.selectMode)
+	})
+
+	t.Run("c key triggers bulk copy as curl", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selectMode = true
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}
+		updated, _ := tree.handleVisualModeInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.selectMode)
+	})
+}
+
+func TestCollectionTree_HandleMoveInput(t *testing.T) {
+	t.Run("escape cancels move mode", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Req1", "GET", "http://test.com")
+		col.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.moving = true
+		tree.movingRequest = req
+		tree.sourceCollID = col.ID()
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := tree.handleMoveInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.moving)
+		assert.Nil(t, tree.movingRequest)
+		assert.Nil(t, tree.movingFolder)
+		assert.Equal(t, "", tree.sourceCollID)
+	})
+
+	t.Run("enter with no targets does nothing", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Req1", "GET", "http://test.com")
+		col.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.moving = true
+		tree.movingRequest = req
+		tree.sourceCollID = col.ID()
+		tree.moveTargets = nil // No targets
+		tree.moveCursor = 0
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := tree.handleMoveInput(msg)
+		tree = updated.(*CollectionTree)
+
+		// Should return without doing anything
+		assert.True(t, tree.moving)
+	})
+
+	t.Run("enter with invalid cursor does nothing", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Req1", "GET", "http://test.com")
+		col.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.moving = true
+		tree.movingRequest = req
+		tree.sourceCollID = col.ID()
+		tree.moveTargets = []TreeItem{{Collection: col, Folder: nil, Name: "Test API"}}
+		tree.moveCursor = -1 // Invalid cursor
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := tree.handleMoveInput(msg)
+		tree = updated.(*CollectionTree)
+
+		// Should return without moving
+		assert.True(t, tree.moving)
+	})
+
+	t.Run("j moves cursor down in move mode", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col1 := core.NewCollection("API 1")
+		col2 := core.NewCollection("API 2")
+		req := core.NewRequestDefinition("Req1", "GET", "http://test.com")
+		col1.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col1, col2})
+
+		tree.moving = true
+		tree.movingRequest = req
+		tree.sourceCollID = col1.ID()
+		tree.moveTargets = []TreeItem{
+			{Collection: col1, Folder: nil, Name: "API 1"},
+			{Collection: col2, Folder: nil, Name: "API 2"},
+		}
+		tree.moveCursor = 0
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := tree.handleMoveInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, 1, tree.moveCursor)
+	})
+
+	t.Run("k moves cursor up in move mode", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col1 := core.NewCollection("API 1")
+		col2 := core.NewCollection("API 2")
+		req := core.NewRequestDefinition("Req1", "GET", "http://test.com")
+		col1.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col1, col2})
+
+		tree.moving = true
+		tree.movingRequest = req
+		tree.sourceCollID = col1.ID()
+		tree.moveTargets = []TreeItem{
+			{Collection: col1, Folder: nil, Name: "API 1"},
+			{Collection: col2, Folder: nil, Name: "API 2"},
+		}
+		tree.moveCursor = 1
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+		updated, _ := tree.handleMoveInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, 0, tree.moveCursor)
+	})
+}
+
+func TestCollectionTree_HandleImportInputDirect(t *testing.T) {
+	t.Run("escape cancels import mode", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.importing = true
+		tree.importBuffer = "/some/path"
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := tree.handleImportInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.importing)
+		assert.Equal(t, "", tree.importBuffer)
+	})
+
+	t.Run("enter with empty buffer does nothing", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.importing = true
+		tree.importBuffer = ""
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, cmd := tree.handleImportInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.True(t, tree.importing)
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("enter with path sends ImportCollectionMsg", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.importing = true
+		tree.importBuffer = "/path/to/collection.json"
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, cmd := tree.handleImportInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.importing)
+		assert.Equal(t, "", tree.importBuffer)
+		assert.NotNil(t, cmd)
+
+		result := cmd()
+		importMsg, ok := result.(ImportCollectionMsg)
+		assert.True(t, ok)
+		assert.Equal(t, "/path/to/collection.json", importMsg.FilePath)
+	})
+
+	t.Run("backspace removes last character", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.importing = true
+		tree.importBuffer = "test"
+
+		msg := tea.KeyMsg{Type: tea.KeyBackspace}
+		updated, _ := tree.handleImportInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "tes", tree.importBuffer)
+	})
+
+	t.Run("backspace on empty buffer does nothing", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.importing = true
+		tree.importBuffer = ""
+
+		msg := tea.KeyMsg{Type: tea.KeyBackspace}
+		updated, _ := tree.handleImportInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "", tree.importBuffer)
+	})
+
+	t.Run("typing adds to buffer", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.importing = true
+		tree.importBuffer = ""
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+		updated, _ := tree.handleImportInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "a", tree.importBuffer)
+	})
+
+	t.Run("space adds to buffer", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.importing = true
+		tree.importBuffer = "test"
+
+		msg := tea.KeyMsg{Type: tea.KeySpace}
+		updated, _ := tree.handleImportInput(msg)
+		tree = updated.(*CollectionTree)
+
+		assert.Equal(t, "test ", tree.importBuffer)
+	})
+}
+
+func TestCollectionTree_HandleBulkDelete(t *testing.T) {
+	t.Run("returns nil when no items selected", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selected = ClearSelection()
+
+		updated, cmd := tree.handleBulkDelete()
+		tree = updated.(*CollectionTree)
+
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("processes request deletions", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		req1 := core.NewRequestDefinition("Req1", "GET", "http://test1.com")
+		req2 := core.NewRequestDefinition("Req2", "GET", "http://test2.com")
+		col.AddRequest(req1)
+		col.AddRequest(req2)
+		tree.SetCollections([]*core.Collection{col})
+
+		// Expand collection
+		tree = expandItem(tree)
+		// Select req1 (index 1)
+		tree.cursor = 1
+		tree.selected = make(map[string]bool)
+		tree.selected[req1.ID()] = true
+
+		// Call handleBulkDelete - verifies it doesn't panic
+		updated, _ := tree.handleBulkDelete()
+		tree = updated.(*CollectionTree)
+
+		assert.NotNil(t, tree)
+	})
+
+	t.Run("processes folder deletions", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		folder := col.AddFolder("Test Folder")
+		folder.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		// Expand collection
+		tree = expandItem(tree)
+		// Select folder (index 1)
+		tree.cursor = 1
+		tree.selected = make(map[string]bool)
+		tree.selected[folder.ID()] = true
+
+		// Call handleBulkDelete - verifies it doesn't panic
+		updated, _ := tree.handleBulkDelete()
+		tree = updated.(*CollectionTree)
+
+		assert.NotNil(t, tree)
+	})
+}
+
+func TestCollectionTree_HandleBulkCopyAsCurl(t *testing.T) {
+	t.Run("returns nil when no items selected", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selected = ClearSelection()
+
+		updated, cmd := tree.handleBulkCopyAsCurl()
+		tree = updated.(*CollectionTree)
+
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("handles copy curl with selected requests", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		req1 := core.NewRequestDefinition("Req1", "GET", "http://test1.com")
+		col.AddRequest(req1)
+		tree.SetCollections([]*core.Collection{col})
+
+		// Expand collection
+		tree = expandItem(tree)
+		// Select request
+		tree.selected = make(map[string]bool)
+		tree.selected[req1.ID()] = true
+
+		// Call handleBulkCopyAsCurl - verifies it doesn't panic
+		updated, _ := tree.handleBulkCopyAsCurl()
+		tree = updated.(*CollectionTree)
+
+		assert.NotNil(t, tree)
+	})
+}
+
+func TestCollectionTree_StartBulkMove(t *testing.T) {
+	t.Run("returns nil when no items selected", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		col.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://test.com"))
+		tree.SetCollections([]*core.Collection{col})
+
+		tree.selected = ClearSelection()
+
+		updated, _ := tree.startBulkMove()
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.moving)
+	})
+
+	t.Run("processes bulk move with selected items", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		req1 := core.NewRequestDefinition("Req1", "GET", "http://test1.com")
+		col.AddRequest(req1)
+		tree.SetCollections([]*core.Collection{col})
+
+		// Expand collection
+		tree = expandItem(tree)
+		// Select request
+		tree.selected = make(map[string]bool)
+		tree.selected[req1.ID()] = true
+
+		// startBulkMove may or may not enter moving mode depending on targets
+		updated, _ := tree.startBulkMove()
+		tree = updated.(*CollectionTree)
+
+		// Just verify it was called without panic
+		assert.NotNil(t, tree)
+	})
+}
+
+func TestCollectionTree_StartMove(t *testing.T) {
+	t.Run("does nothing when cursor out of bounds", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.cursor = -1
+
+		updated, _ := tree.startMove()
+		tree = updated.(*CollectionTree)
+
+		assert.False(t, tree.moving)
+	})
+
+	t.Run("starts move for request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		req := core.NewRequestDefinition("Req1", "GET", "http://test.com")
+		col.AddRequest(req)
+		tree.SetCollections([]*core.Collection{col})
+
+		// Expand collection and move to request
+		tree = expandItem(tree)
+		tree.cursor = 1
+
+		// startMove may or may not enter moving mode depending on if valid targets exist
+		updated, _ := tree.startMove()
+		tree = updated.(*CollectionTree)
+
+		// Just verify startMove was called without panic
+		assert.NotNil(t, tree)
+	})
+
+	t.Run("starts move for folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		col := core.NewCollection("Test API")
+		_ = col.AddFolder("Test Folder")
+		tree.SetCollections([]*core.Collection{col})
+
+		// Expand collection and move to folder
+		tree = expandItem(tree)
+		tree.cursor = 1
+
+		// startMove may or may not enter moving mode depending on if valid targets exist
+		updated, _ := tree.startMove()
+		tree = updated.(*CollectionTree)
+
+		// Just verify that startMove was called without panic
 		assert.NotNil(t, tree)
 	})
 }

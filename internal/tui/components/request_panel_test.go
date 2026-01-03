@@ -3391,3 +3391,299 @@ func TestRequestPanel_CursorPosition(t *testing.T) {
 		assert.GreaterOrEqual(t, pos, 0)
 	})
 }
+
+func TestRequestPanel_FormFieldEditingViaKeys(t *testing.T) {
+	t.Run("can navigate to body tab", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.SetSize(80, 40)
+
+		// Navigate tabs with Tab key
+		for i := 0; i < 2; i++ {
+			msg := tea.KeyMsg{Type: tea.KeyTab}
+			updated, _ := panel.Update(msg)
+			panel = updated.(*RequestPanel)
+		}
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("handles escape when editing form field", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.SetSize(80, 40)
+		panel.editingFormField = true
+		panel.formKeyInput = "testKey"
+		panel.formValueInput = "testValue"
+		panel.formIsNew = true
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.False(t, panel.editingFormField)
+	})
+
+	t.Run("handles enter when editing form field", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.SetSize(80, 40)
+		panel.editingFormField = true
+		panel.formKeyInput = "newKey"
+		panel.formValueInput = "newValue"
+		panel.formIsNew = true
+
+		msg := tea.KeyMsg{Type: tea.KeyEnter}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("handles tab when editing form field", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.SetSize(80, 40)
+		panel.editingFormField = true
+
+		msg := tea.KeyMsg{Type: tea.KeyTab}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("backspace key is handled without panic", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.SetSize(80, 40)
+		panel.editingFormField = true
+		panel.formKeyInput = "testKey"
+
+		msg := tea.KeyMsg{Type: tea.KeyBackspace}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("character input is handled without panic", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.SetSize(80, 40)
+		panel.editingFormField = true
+		panel.formKeyInput = "test"
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.NotNil(t, panel)
+	})
+}
+
+func TestRequestPanel_PreScriptEditingViaKeys(t *testing.T) {
+	t.Run("can navigate to pre-request tab", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.SetSize(80, 40)
+
+		// Navigate to pre-request tab
+		for i := 0; i < 3; i++ {
+			msg := tea.KeyMsg{Type: tea.KeyTab}
+			updated, _ := panel.Update(msg)
+			panel = updated.(*RequestPanel)
+		}
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("handles escape in pre-script editing", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.SetSize(80, 40)
+		panel.editingPreScript = true
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.False(t, panel.editingPreScript)
+	})
+}
+
+func TestRequestPanel_TestScriptEditingViaKeys(t *testing.T) {
+	t.Run("can navigate to tests tab", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.SetSize(80, 40)
+
+		// Navigate to tests tab
+		for i := 0; i < 4; i++ {
+			msg := tea.KeyMsg{Type: tea.KeyTab}
+			updated, _ := panel.Update(msg)
+			panel = updated.(*RequestPanel)
+		}
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("handles escape in test script editing", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.SetSize(80, 40)
+		panel.editingTestScript = true
+
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.False(t, panel.editingTestScript)
+	})
+}
+
+func TestRequestPanel_RenderTabs(t *testing.T) {
+	t.Run("renderQueryTab renders query params", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com?foo=bar&baz=qux")
+		panel.SetRequest(req)
+		panel.SetSize(80, 40)
+
+		panel.activeTab = 1
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renderBodyTab renders body content", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		req.SetBodyJSON(`{"key": "value"}`)
+		panel.SetRequest(req)
+		panel.SetSize(80, 40)
+
+		panel.activeTab = 2
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renderPreRequestTab renders script", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetPreScript("console.log('pre-request');")
+		panel.SetRequest(req)
+		panel.SetSize(80, 40)
+
+		panel.activeTab = 3
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renderTestsTab renders test script", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetPostScript("pm.test('pass', function() { pm.expect(true).to.be.true; });")
+		panel.SetRequest(req)
+		panel.SetSize(80, 40)
+
+		panel.activeTab = 4
+		view := panel.View()
+		assert.NotEmpty(t, view)
+	})
+}
+
+func TestRequestPanel_MoveCursor(t *testing.T) {
+	t.Run("moveCursor handles up key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+
+		// Set cursor and move up
+		panel.cursor = 2
+		msg := tea.KeyMsg{Type: tea.KeyUp}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("moveCursor handles down key", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+
+		panel.cursor = 0
+		msg := tea.KeyMsg{Type: tea.KeyDown}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("moveCursor handles j key for vim down", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+
+		panel.cursor = 0
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.NotNil(t, panel)
+	})
+
+	t.Run("moveCursor handles k key for vim up", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+
+		panel.cursor = 2
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+		updated, _ := panel.Update(msg)
+		panel = updated.(*RequestPanel)
+		assert.NotNil(t, panel)
+	})
+}
+
+func TestRequestPanel_EditingFieldMoreStates(t *testing.T) {
+	t.Run("EditingField returns pre_script when editing pre-script", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.editingPreScript = true
+
+		assert.Equal(t, "pre_script", panel.EditingField())
+	})
+
+	t.Run("EditingField returns test_script when editing test script", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.editingTestScript = true
+
+		assert.Equal(t, "test_script", panel.EditingField())
+	})
+
+	t.Run("EditingField returns method when editing method", func(t *testing.T) {
+		panel := NewRequestPanel()
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.editingMethod = true
+
+		assert.Equal(t, "method", panel.EditingField())
+	})
+}

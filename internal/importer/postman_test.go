@@ -721,3 +721,157 @@ func TestPostmanImporter_Import_RequestOAuth2Auth(t *testing.T) {
 	assert.Equal(t, "request-oauth-token", requests[0].Auth().OAuth2.AccessToken)
 	assert.Equal(t, "Bearer", requests[0].Auth().OAuth2.TokenType)
 }
+
+func TestPostmanImporter_Import_FormDataBody(t *testing.T) {
+	imp := NewPostmanImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"info": {
+			"name": "Test",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		},
+		"item": [
+			{
+				"name": "Upload File",
+				"request": {
+					"method": "POST",
+					"url": "https://example.com/upload",
+					"body": {
+						"mode": "formdata",
+						"formdata": [
+							{"key": "file", "type": "file", "src": "/path/to/file.txt"},
+							{"key": "name", "type": "text", "value": "document.txt"}
+						]
+					}
+				}
+			}
+		]
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	requests := coll.Requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "POST", requests[0].Method())
+	// Body should contain the formdata fields as JSON
+	assert.Contains(t, requests[0].Body(), "file")
+}
+
+func TestPostmanImporter_Import_GraphQLBody(t *testing.T) {
+	imp := NewPostmanImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"info": {
+			"name": "Test",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		},
+		"item": [
+			{
+				"name": "GraphQL Query",
+				"request": {
+					"method": "POST",
+					"url": "https://example.com/graphql",
+					"body": {
+						"mode": "graphql",
+						"graphql": {
+							"query": "query GetUser { user(id: 1) { name email } }",
+							"variables": "{\"id\": 123}"
+						}
+					}
+				}
+			}
+		]
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	requests := coll.Requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "POST", requests[0].Method())
+	// Body should contain the GraphQL query
+	assert.Contains(t, requests[0].Body(), "query")
+	assert.Contains(t, requests[0].Body(), "GetUser")
+}
+
+func TestPostmanImporter_Import_GraphQLBodyWithoutVariables(t *testing.T) {
+	imp := NewPostmanImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"info": {
+			"name": "Test",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		},
+		"item": [
+			{
+				"name": "Simple GraphQL",
+				"request": {
+					"method": "POST",
+					"url": "https://example.com/graphql",
+					"body": {
+						"mode": "graphql",
+						"graphql": {
+							"query": "{ users { id name } }"
+						}
+					}
+				}
+			}
+		]
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	requests := coll.Requests()
+	require.Len(t, requests, 1)
+	assert.Contains(t, requests[0].Body(), "users")
+}
+
+func TestPostmanImporter_Import_WithPreAndPostScripts(t *testing.T) {
+	imp := NewPostmanImporter()
+	ctx := context.Background()
+
+	content := []byte(`{
+		"info": {
+			"name": "Test",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+		},
+		"item": [
+			{
+				"name": "Request with Scripts",
+				"event": [
+					{
+						"listen": "prerequest",
+						"script": {
+							"type": "text/javascript",
+							"exec": ["console.log('pre-request');", "pm.environment.set('var', 'value');"]
+						}
+					},
+					{
+						"listen": "test",
+						"script": {
+							"type": "text/javascript",
+							"exec": ["pm.test('status', function() {", "  pm.response.to.have.status(200);", "});"]
+						}
+					}
+				],
+				"request": {
+					"method": "GET",
+					"url": "https://example.com/api"
+				}
+			}
+		]
+	}`)
+
+	coll, err := imp.Import(ctx, content)
+	require.NoError(t, err)
+
+	requests := coll.Requests()
+	require.Len(t, requests, 1)
+	assert.Contains(t, requests[0].PreScript(), "pre-request")
+	assert.Contains(t, requests[0].PostScript(), "pm.test")
+}

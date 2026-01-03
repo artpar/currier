@@ -1239,3 +1239,108 @@ func TestResponsePanel_ConsoleTabAdditional(t *testing.T) {
 		assert.Empty(t, panel.consoleMessages)
 	})
 }
+
+func TestResponsePanel_RenderBinaryPlaceholder(t *testing.T) {
+	t.Run("renders binary content message", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		// Create response with binary-like headers
+		body := core.NewRawBody([]byte{0x89, 0x50, 0x4E, 0x47}, "image/png") // PNG header
+		headers := core.NewHeaders()
+		headers.Set("Content-Type", "image/png")
+
+		start := time.Now().Add(-100 * time.Millisecond)
+		end := time.Now()
+
+		resp := core.NewResponse("req-456", "http", core.NewStatus(200, "OK")).
+			WithBody(body).
+			WithHeaders(headers).
+			WithTiming(interfaces.TimingInfo{
+				StartTime: start,
+				EndTime:   end,
+			})
+		panel.SetResponse(resp)
+
+		lines := panel.renderBinaryPlaceholder()
+
+		assert.NotEmpty(t, lines)
+		// Check that it contains expected messages
+		joined := strings.Join(lines, "\n")
+		assert.Contains(t, joined, "Binary Content")
+		assert.Contains(t, joined, "image/png")
+	})
+}
+
+func TestResponsePanel_RenderBodyTab(t *testing.T) {
+	t.Run("renders pretty printed JSON when enabled", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetPrettyPrint(true)
+
+		resp := newTestResponse(200, "OK")
+		panel.SetResponse(resp)
+
+		lines := panel.renderBodyTab()
+		assert.NotEmpty(t, lines)
+	})
+
+	t.Run("renders raw JSON when pretty print disabled", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetPrettyPrint(false)
+
+		resp := newTestResponse(200, "OK")
+		panel.SetResponse(resp)
+
+		lines := panel.renderBodyTab()
+		assert.NotEmpty(t, lines)
+	})
+
+	t.Run("returns placeholder for nil response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		lines := panel.renderBodyTab()
+		joined := strings.Join(lines, "\n")
+		assert.Contains(t, joined, "No body")
+	})
+}
+
+func TestResponsePanel_RenderTimingTab(t *testing.T) {
+	t.Run("renders timing info", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+		panel.SetActiveTab(ResponseTabTiming)
+
+		resp := newTestResponse(200, "OK")
+		panel.SetResponse(resp)
+
+		lines := panel.renderTimingTab()
+		assert.NotEmpty(t, lines)
+		joined := strings.Join(lines, "\n")
+		assert.Contains(t, joined, "Total Time")
+	})
+
+	t.Run("shows no timing for nil response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		lines := panel.renderTimingTab()
+		joined := strings.Join(lines, "\n")
+		assert.Contains(t, joined, "No timing")
+	})
+}
+
+func TestTruncateValue(t *testing.T) {
+	t.Run("does not truncate short values", func(t *testing.T) {
+		result := truncateValue("short", 20)
+		assert.Equal(t, "short", result)
+	})
+
+	t.Run("truncates long values", func(t *testing.T) {
+		result := truncateValue("this is a very long value that exceeds the max width", 20)
+		assert.Contains(t, result, "...")
+		assert.LessOrEqual(t, len(result), 20)
+	})
+}

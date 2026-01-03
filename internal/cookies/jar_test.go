@@ -460,3 +460,57 @@ func TestPersistentJar_Concurrency(t *testing.T) {
 		}
 	})
 }
+
+func TestPersistentJar_ClearExtended(t *testing.T) {
+	t.Run("Clear removes all cookies", func(t *testing.T) {
+		store := newMockStore()
+		jar, _ := NewPersistentJar(store)
+
+		// Add cookies for multiple domains
+		u1, _ := url.Parse("https://example1.com/")
+		u2, _ := url.Parse("https://example2.com/")
+		jar.SetCookies(u1, []*http.Cookie{{Name: "c1", Value: "v1"}})
+		jar.SetCookies(u2, []*http.Cookie{{Name: "c2", Value: "v2"}})
+
+		// Clear all
+		err := jar.Clear()
+		if err != nil {
+			t.Fatalf("Clear failed: %v", err)
+		}
+
+		// Verify all cleared
+		if len(jar.Cookies(u1)) != 0 {
+			t.Error("expected no cookies after clear")
+		}
+		if len(jar.Cookies(u2)) != 0 {
+			t.Error("expected no cookies after clear")
+		}
+	})
+}
+
+func TestPersistentJar_ClearDomainExtended(t *testing.T) {
+	t.Run("ClearDomain removes domain cookies", func(t *testing.T) {
+		store := newMockStore()
+		jar, _ := NewPersistentJar(store)
+
+		// Add cookies for multiple domains
+		u1, _ := url.Parse("https://example1.com/")
+		u2, _ := url.Parse("https://example2.com/")
+		jar.SetCookies(u1, []*http.Cookie{{Name: "c1", Value: "v1"}})
+		jar.SetCookies(u2, []*http.Cookie{{Name: "c2", Value: "v2"}})
+
+		// Clear only example1.com
+		err := jar.ClearDomain("example1.com")
+		if err != nil {
+			t.Fatalf("ClearDomain failed: %v", err)
+		}
+
+		// Verify example1 cleared but example2 retained
+		if len(jar.Cookies(u1)) != 0 {
+			t.Error("expected no cookies for example1 after clear")
+		}
+		if len(jar.Cookies(u2)) == 0 {
+			t.Error("expected cookies for example2 to be retained")
+		}
+	})
+}

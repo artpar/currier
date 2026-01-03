@@ -353,3 +353,92 @@ func TestHTMLFormatter_FormatLines_ListElements(t *testing.T) {
 	assert.Contains(t, fullOutput, "Item 1")
 	assert.Contains(t, fullOutput, "Item 2")
 }
+
+func TestHTMLFormatter_FormatLines_SelfClosingTags(t *testing.T) {
+	formatter := NewHTMLFormatter()
+	input := `<br/><img src="test.png"/><hr />`
+
+	lines := formatter.FormatLines(input)
+
+	require.NotEmpty(t, lines)
+	fullOutput := strings.Join(lines, "\n")
+	assert.Contains(t, fullOutput, "br")
+	assert.Contains(t, fullOutput, "img")
+}
+
+func TestHTMLFormatter_FormatLines_MalformedHTML(t *testing.T) {
+	formatter := NewHTMLFormatter()
+	input := `<div>unclosed`
+
+	lines := formatter.FormatLines(input)
+
+	// Should not panic and return some output
+	require.NotEmpty(t, lines)
+}
+
+func TestHTMLFormatter_FormatLines_Comments(t *testing.T) {
+	formatter := NewHTMLFormatter()
+	input := `<div><!-- This is a comment --><p>Content</p></div>`
+
+	lines := formatter.FormatLines(input)
+
+	require.NotEmpty(t, lines)
+	fullOutput := strings.Join(lines, "\n")
+	assert.Contains(t, fullOutput, "comment")
+}
+
+func TestHTMLFormatter_FormatLines_SpecialCharacters(t *testing.T) {
+	formatter := NewHTMLFormatter()
+	input := `<div>&lt;script&gt;alert('xss')&lt;/script&gt;</div>`
+
+	lines := formatter.FormatLines(input)
+
+	require.NotEmpty(t, lines)
+}
+
+func TestHTMLFormatter_FormatLines_NestedStructure(t *testing.T) {
+	formatter := NewHTMLFormatter()
+	input := `<div class="outer"><div class="inner"><span>Text</span></div></div>`
+
+	lines := formatter.FormatLines(input)
+
+	require.NotEmpty(t, lines)
+	fullOutput := strings.Join(lines, "\n")
+	assert.Contains(t, fullOutput, "outer")
+	assert.Contains(t, fullOutput, "inner")
+}
+
+func TestHTMLFormatter_FormatLines_TableElements(t *testing.T) {
+	formatter := NewHTMLFormatter()
+	input := `<table><tr><td>Cell 1</td><td>Cell 2</td></tr></table>`
+
+	lines := formatter.FormatLines(input)
+
+	require.NotEmpty(t, lines)
+	fullOutput := strings.Join(lines, "\n")
+	assert.Contains(t, fullOutput, "table")
+	assert.Contains(t, fullOutput, "tr")
+	assert.Contains(t, fullOutput, "td")
+}
+
+func TestHTMLFormatter_FormatLines_ScriptTags(t *testing.T) {
+	formatter := NewHTMLFormatter()
+	input := `<script>var x = 1;</script>`
+
+	lines := formatter.FormatLines(input)
+
+	require.NotEmpty(t, lines)
+	fullOutput := strings.Join(lines, "\n")
+	assert.Contains(t, fullOutput, "script")
+}
+
+func TestHTMLFormatter_FormatLines_StyleTags(t *testing.T) {
+	formatter := NewHTMLFormatter()
+	input := `<style>.class { color: red; }</style>`
+
+	lines := formatter.FormatLines(input)
+
+	require.NotEmpty(t, lines)
+	fullOutput := strings.Join(lines, "\n")
+	assert.Contains(t, fullOutput, "style")
+}

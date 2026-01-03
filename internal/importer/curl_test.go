@@ -548,3 +548,238 @@ func TestTokenize_EdgeCases(t *testing.T) {
 		assert.Empty(t, result)
 	})
 }
+
+// Additional tests for parseCurlCommand coverage
+func TestCurlImporter_Import_AdditionalCases(t *testing.T) {
+	imp := NewCurlImporter()
+	ctx := context.Background()
+
+	t.Run("data-urlencode option", func(t *testing.T) {
+		content := []byte(`curl --data-urlencode "name=John Doe" --data-urlencode "city=New York" https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "POST", req.Method())
+		assert.Contains(t, req.Body(), "name=John Doe")
+	})
+
+	t.Run("get flag after data", func(t *testing.T) {
+		// -G changes POST back to GET
+		content := []byte(`curl -d "q=search" -G https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		// Data with -G option
+		assert.NotEmpty(t, req.URL())
+	})
+
+	t.Run("json flag", func(t *testing.T) {
+		content := []byte(`curl --json '{"name":"John"}' https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "POST", req.Method())
+		headers := req.Headers()
+		assert.Equal(t, "application/json", headers["Content-Type"])
+	})
+
+	t.Run("form flag", func(t *testing.T) {
+		content := []byte(`curl -F "field=value" https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		// -F doesn't change method in current implementation
+		require.Len(t, coll.Requests(), 1)
+	})
+
+	t.Run("output file option", func(t *testing.T) {
+		content := []byte(`curl -o output.txt https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		require.Len(t, coll.Requests(), 1)
+	})
+
+	t.Run("remote-name option", func(t *testing.T) {
+		content := []byte(`curl -O https://api.example.com/file.txt`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		require.Len(t, coll.Requests(), 1)
+	})
+
+	t.Run("silent and verbose options", func(t *testing.T) {
+		content := []byte(`curl -s -S -v https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		require.Len(t, coll.Requests(), 1)
+	})
+
+	t.Run("show-error option", func(t *testing.T) {
+		content := []byte(`curl --show-error https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		require.Len(t, coll.Requests(), 1)
+	})
+
+	t.Run("not a curl command", func(t *testing.T) {
+		content := []byte(`wget https://example.com`)
+		_, err := imp.Import(ctx, content)
+		assert.Error(t, err)
+	})
+
+	t.Run("header without value follows format", func(t *testing.T) {
+		// Header with missing colon should not panic
+		content := []byte(`curl -H "InvalidHeader" https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		require.Len(t, coll.Requests(), 1)
+	})
+
+	t.Run("missing argument after flag", func(t *testing.T) {
+		// -X flag without proper argument, treated as URL
+		content := []byte(`curl -X GET https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		// URL should still be captured
+		assert.Contains(t, req.URL(), "example.com")
+	})
+
+	t.Run("basic auth without password", func(t *testing.T) {
+		content := []byte(`curl -u username https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		auth := req.Auth()
+		assert.Equal(t, "basic", auth.Type)
+		assert.Equal(t, "username", auth.Username)
+	})
+
+	t.Run("max-time option", func(t *testing.T) {
+		content := []byte(`curl --max-time 30 https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		require.Len(t, coll.Requests(), 1)
+	})
+
+	t.Run("connect-timeout option", func(t *testing.T) {
+		content := []byte(`curl --connect-timeout 10 https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		require.Len(t, coll.Requests(), 1)
+	})
+
+	t.Run("retry option", func(t *testing.T) {
+		content := []byte(`curl --retry 3 https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		require.Len(t, coll.Requests(), 1)
+	})
+
+	t.Run("URL in middle of command", func(t *testing.T) {
+		content := []byte(`curl -X POST https://api.example.com -H "Content-Type: application/json"`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "POST", req.Method())
+		assert.Contains(t, req.URL(), "example.com")
+	})
+
+	t.Run("referer header", func(t *testing.T) {
+		content := []byte(`curl -e "https://google.com" https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "https://google.com", req.GetHeader("Referer"))
+	})
+
+	t.Run("referer header with long option", func(t *testing.T) {
+		content := []byte(`curl --referer "https://google.com" https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "https://google.com", req.GetHeader("Referer"))
+	})
+
+	t.Run("cookie header", func(t *testing.T) {
+		content := []byte(`curl -b "session=abc123" https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "session=abc123", req.GetHeader("Cookie"))
+	})
+
+	t.Run("compressed flag", func(t *testing.T) {
+		content := []byte(`curl --compressed https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Contains(t, req.GetHeader("Accept-Encoding"), "gzip")
+	})
+
+	t.Run("head method", func(t *testing.T) {
+		content := []byte(`curl -I https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "HEAD", req.Method())
+	})
+
+	t.Run("head method with long option", func(t *testing.T) {
+		content := []byte(`curl --head https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "HEAD", req.Method())
+	})
+
+	t.Run("get flag", func(t *testing.T) {
+		content := []byte(`curl -G https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "GET", req.Method())
+	})
+
+	t.Run("json option", func(t *testing.T) {
+		content := []byte(`curl --json '{"key":"value"}' https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "POST", req.Method())
+		assert.Equal(t, "application/json", req.GetHeader("Content-Type"))
+		assert.Contains(t, req.Body(), "key")
+	})
+
+	t.Run("data urlencode multiple values", func(t *testing.T) {
+		content := []byte(`curl --data-urlencode "name=John" --data-urlencode "age=30" https://api.example.com`)
+		coll, err := imp.Import(ctx, content)
+		require.NoError(t, err)
+
+		req := coll.Requests()[0]
+		assert.Equal(t, "POST", req.Method())
+		assert.Contains(t, req.Body(), "name=John")
+		assert.Contains(t, req.Body(), "age=30")
+	})
+}

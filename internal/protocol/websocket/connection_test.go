@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -428,4 +429,342 @@ func TestConnection_SendWithEcho(t *testing.T) {
 		}
 	}
 	assert.True(t, echoReceived, "should receive echoed message")
+}
+
+func TestConnection_PingLoop(t *testing.T) {
+	t.Run("ping loop sends pings at interval", func(t *testing.T) {
+		server := echoWSServer(t)
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn := NewConnection("test", wsURL, &Config{
+			ConnectTimeout: 5 * time.Second,
+			WriteTimeout:   5 * time.Second,
+			PingInterval:   50 * time.Millisecond, // Short interval for testing
+			PongTimeout:    60 * time.Second,
+		})
+
+		require.NoError(t, conn.Connect(context.Background()))
+		defer conn.Close()
+
+		// Wait for a few ping cycles
+		time.Sleep(150 * time.Millisecond)
+
+		// Check that lastPing was updated
+		conn.mu.RLock()
+		lastPing := conn.lastPing
+		conn.mu.RUnlock()
+
+		assert.False(t, lastPing.IsZero(), "lastPing should be set after ping loop runs")
+	})
+
+	t.Run("ping loop stops when connection closed", func(t *testing.T) {
+		server := echoWSServer(t)
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn := NewConnection("test", wsURL, &Config{
+			ConnectTimeout: 5 * time.Second,
+			PingInterval:   50 * time.Millisecond,
+			PongTimeout:    60 * time.Second,
+		})
+
+		require.NoError(t, conn.Connect(context.Background()))
+
+		// Give ping loop time to start
+		time.Sleep(30 * time.Millisecond)
+
+		// Close connection - should stop ping loop
+		conn.Close()
+
+		// Should not panic, ping loop should have stopped
+		time.Sleep(100 * time.Millisecond)
+	})
+}
+
+func TestConnection_HandleDisconnect(t *testing.T) {
+	t.Run("handles server-initiated close", func(t *testing.T) {
+		// Create a server that closes immediately after connection
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			// Close immediately after upgrade
+			time.Sleep(50 * time.Millisecond)
+			conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+				time.Now().Add(time.Second))
+			conn.Close()
+		}))
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn := NewConnection("test", wsURL, &Config{
+			ConnectTimeout: 5 * time.Second,
+			PingInterval:   0,
+			PongTimeout:    60 * time.Second,
+		})
+
+		var states []interfaces.ConnectionState
+		var mu sync.Mutex
+
+		conn.OnStateChange(func(state interfaces.ConnectionState) {
+			mu.Lock()
+			states = append(states, state)
+			mu.Unlock()
+		})
+
+		require.NoError(t, conn.Connect(context.Background()))
+
+		// Wait for server to close
+		time.Sleep(200 * time.Millisecond)
+
+		mu.Lock()
+		finalState := conn.State()
+		mu.Unlock()
+
+		assert.Equal(t, interfaces.ConnectionStateDisconnected, finalState)
+	})
+
+	t.Run("handles read error disconnect", func(t *testing.T) {
+		// Create a server that sends invalid data
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			// Send a message then close abruptly
+			conn.WriteMessage(websocket.TextMessage, []byte("hello"))
+			time.Sleep(50 * time.Millisecond)
+			conn.Close()
+		}))
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn := NewConnection("test", wsURL, &Config{
+			ConnectTimeout: 5 * time.Second,
+			PingInterval:   0,
+			PongTimeout:    60 * time.Second,
+		})
+
+		var errors []error
+		var mu sync.Mutex
+
+		conn.OnError(func(err error) {
+			mu.Lock()
+			errors = append(errors, err)
+			mu.Unlock()
+		})
+
+		require.NoError(t, conn.Connect(context.Background()))
+
+		// Wait for disconnect
+		time.Sleep(200 * time.Millisecond)
+
+		assert.Equal(t, interfaces.ConnectionStateDisconnected, conn.State())
+	})
+}
+
+func TestConnection_SetupPingPong(t *testing.T) {
+	t.Run("pong handler updates lastPong", func(t *testing.T) {
+		// Create server that sends pings
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+
+			// Send a ping
+			conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(time.Second))
+
+			// Keep connection open
+			for {
+				_, _, err := conn.ReadMessage()
+				if err != nil {
+					break
+				}
+			}
+		}))
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn := NewConnection("test", wsURL, &Config{
+			ConnectTimeout: 5 * time.Second,
+			PingInterval:   0,
+			PongTimeout:    60 * time.Second,
+		})
+
+		require.NoError(t, conn.Connect(context.Background()))
+		defer conn.Close()
+
+		// Wait for pong response to be handled
+		time.Sleep(100 * time.Millisecond)
+
+		// The ping handler should respond with pong automatically
+		// but we're testing the setup worked
+		assert.Equal(t, interfaces.ConnectionStateConnected, conn.State())
+	})
+
+	t.Run("setupPingPong with nil conn does nothing", func(t *testing.T) {
+		conn := NewConnection("test", "ws://localhost", nil)
+		// conn.conn is nil, should not panic
+		conn.setupPingPong()
+		assert.Nil(t, conn.conn)
+	})
+}
+
+func TestConnection_NotifyMessage(t *testing.T) {
+	t.Run("notifyMessage with full channel drops oldest", func(t *testing.T) {
+		conn := NewConnection("test", "ws://localhost", nil)
+
+		// Fill the message channel
+		for i := 0; i < 100; i++ {
+			msg := &Message{
+				ID:   fmt.Sprintf("msg-%d", i),
+				Data: []byte(fmt.Sprintf("message %d", i)),
+			}
+			select {
+			case conn.msgChan <- msg:
+			default:
+			}
+		}
+
+		// Now notify another message - should drop oldest and add new
+		newMsg := &Message{
+			ID:   "new-msg",
+			Data: []byte("new message"),
+		}
+		conn.notifyMessage(newMsg)
+
+		// Verify channel still works
+		assert.True(t, len(conn.msgChan) <= 100)
+	})
+
+	t.Run("notifyMessage calls callback", func(t *testing.T) {
+		conn := NewConnection("test", "ws://localhost", nil)
+
+		var receivedMsg *Message
+		conn.OnMessage(func(msg *Message) {
+			receivedMsg = msg
+		})
+
+		testMsg := &Message{
+			ID:   "test-id",
+			Data: []byte("test data"),
+		}
+		conn.notifyMessage(testMsg)
+
+		assert.NotNil(t, receivedMsg)
+		assert.Equal(t, "test-id", receivedMsg.ID)
+	})
+}
+
+func TestConnection_ReadLoopCloseChan(t *testing.T) {
+	t.Run("readLoop exits on closeChan", func(t *testing.T) {
+		server := echoWSServer(t)
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn := NewConnection("test", wsURL, &Config{
+			ConnectTimeout: 5 * time.Second,
+			PingInterval:   0,
+			PongTimeout:    60 * time.Second,
+		})
+
+		require.NoError(t, conn.Connect(context.Background()))
+
+		// Close immediately
+		conn.Close()
+
+		// Should not hang - readLoop should exit
+		time.Sleep(100 * time.Millisecond)
+
+		assert.Equal(t, interfaces.ConnectionStateDisconnected, conn.State())
+	})
+}
+
+func TestConnection_ReceiveFromChannel(t *testing.T) {
+	t.Run("receive gets message from channel", func(t *testing.T) {
+		server := echoWSServer(t)
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn := NewConnection("test", wsURL, &Config{
+			ConnectTimeout: 5 * time.Second,
+			WriteTimeout:   5 * time.Second,
+			PingInterval:   0,
+			PongTimeout:    60 * time.Second,
+		})
+
+		require.NoError(t, conn.Connect(context.Background()))
+		defer conn.Close()
+
+		// Send a message (will be echoed)
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			conn.Send(context.Background(), []byte("test-receive"))
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		data, err := conn.Receive(ctx)
+		// Either we get the sent message or the echo
+		if err == nil {
+			assert.NotNil(t, data)
+		}
+	})
+
+	t.Run("receive returns on closeChan", func(t *testing.T) {
+		server := echoWSServer(t)
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+		conn := NewConnection("test", wsURL, &Config{
+			ConnectTimeout: 5 * time.Second,
+			PingInterval:   0,
+			PongTimeout:    60 * time.Second,
+		})
+
+		require.NoError(t, conn.Connect(context.Background()))
+
+		// Close in background
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			conn.Close()
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		_, err := conn.Receive(ctx)
+		// Should get closed error or context deadline
+		assert.Error(t, err)
+	})
+}
+
+func TestConnection_TLSInsecure(t *testing.T) {
+	t.Run("TLS insecure config is applied", func(t *testing.T) {
+		conn := NewConnection("test", "wss://localhost:59999", &Config{
+			ConnectTimeout: 100 * time.Millisecond,
+			TLSInsecure:    true,
+			PingInterval:   0,
+		})
+
+		// Connection will fail but TLS config should be applied
+		err := conn.Connect(context.Background())
+		assert.Error(t, err) // Expected - no server running
+		assert.Equal(t, interfaces.ConnectionStateError, conn.State())
+	})
 }

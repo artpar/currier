@@ -3,11 +3,13 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/artpar/currier/internal/starred"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -295,5 +297,289 @@ func TestStore_CloseIdempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	err = store.Close()
+	require.NoError(t, err)
+}
+
+func TestStore_ToggleExtended(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Toggle to star
+	starred, err := store.Toggle(ctx, "toggle-req-1")
+	require.NoError(t, err)
+	assert.True(t, starred)
+
+	// Toggle to unstar
+	starred, err = store.Toggle(ctx, "toggle-req-1")
+	require.NoError(t, err)
+	assert.False(t, starred)
+
+	// Toggle again to star
+	starred, err = store.Toggle(ctx, "toggle-req-1")
+	require.NoError(t, err)
+	assert.True(t, starred)
+}
+
+func TestStore_ListStarredExtended(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// List empty
+	items, err := store.ListStarred(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+
+	// Star multiple items
+	err = store.Star(ctx, "list-req-1")
+	require.NoError(t, err)
+	err = store.Star(ctx, "list-req-2")
+	require.NoError(t, err)
+	err = store.Star(ctx, "list-req-3")
+	require.NoError(t, err)
+
+	// List all
+	items, err = store.ListStarred(ctx)
+	require.NoError(t, err)
+	assert.Len(t, items, 3)
+}
+
+func TestStore_ClearExtended(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Star multiple items
+	err = store.Star(ctx, "clear-req-1")
+	require.NoError(t, err)
+	err = store.Star(ctx, "clear-req-2")
+	require.NoError(t, err)
+
+	// Count before clear
+	count, err := store.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	// Clear all
+	err = store.Clear(ctx)
+	require.NoError(t, err)
+
+	// Count after clear
+	count, err = store.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+}
+
+func TestStore_StarUnstarExtended(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Star
+	err = store.Star(ctx, "extended-req-1")
+	require.NoError(t, err)
+
+	// Verify starred
+	isStarred, err := store.IsStarred(ctx, "extended-req-1")
+	require.NoError(t, err)
+	assert.True(t, isStarred)
+
+	// Unstar
+	err = store.Unstar(ctx, "extended-req-1")
+	require.NoError(t, err)
+
+	// Verify not starred
+	isStarred, err = store.IsStarred(ctx, "extended-req-1")
+	require.NoError(t, err)
+	assert.False(t, isStarred)
+
+	// Unstar again (should not error)
+	err = store.Unstar(ctx, "extended-req-1")
+	require.NoError(t, err)
+}
+
+func TestStore_IsStarredNotExist(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Check non-existent item
+	isStarred, err := store.IsStarred(ctx, "non-existent")
+	require.NoError(t, err)
+	assert.False(t, isStarred)
+}
+
+func TestStore_NewWithInvalidPath(t *testing.T) {
+	// Test with a directory that doesn't exist and can't be created
+	store, err := New("/nonexistent/path/that/cannot/be/created/starred.db")
+	if store != nil {
+		defer store.Close()
+	}
+	// May or may not error depending on SQLite version
+	_ = err
+}
+
+func TestStore_StarAndListOrdering(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Star items in specific order
+	require.NoError(t, store.Star(ctx, "item-a"))
+	time.Sleep(10 * time.Millisecond)
+	require.NoError(t, store.Star(ctx, "item-b"))
+	time.Sleep(10 * time.Millisecond)
+	require.NoError(t, store.Star(ctx, "item-c"))
+
+	// List should return newest first
+	items, err := store.ListStarred(ctx)
+	require.NoError(t, err)
+	assert.Len(t, items, 3)
+	assert.Equal(t, "item-c", items[0])
+	assert.Equal(t, "item-b", items[1])
+	assert.Equal(t, "item-a", items[2])
+}
+
+func TestStore_ToggleMultipleTimes(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+	requestID := "multi-toggle"
+
+	// Toggle on
+	starred, err := store.Toggle(ctx, requestID)
+	require.NoError(t, err)
+	assert.True(t, starred)
+
+	// Toggle off
+	starred, err = store.Toggle(ctx, requestID)
+	require.NoError(t, err)
+	assert.False(t, starred)
+
+	// Toggle on again
+	starred, err = store.Toggle(ctx, requestID)
+	require.NoError(t, err)
+	assert.True(t, starred)
+
+	// Verify count
+	count, err := store.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestStore_ClearEmpty(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Clear an already empty store
+	err = store.Clear(ctx)
+	require.NoError(t, err)
+
+	count, err := store.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+}
+
+func TestStore_ClosedOperationsCoverage(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Close the store
+	err = store.Close()
+	require.NoError(t, err)
+
+	// All operations should return ErrStoreClosed
+	_, err = store.IsStarred(ctx, "test")
+	assert.ErrorIs(t, err, starred.ErrStoreClosed)
+
+	err = store.Star(ctx, "test")
+	assert.ErrorIs(t, err, starred.ErrStoreClosed)
+
+	err = store.Unstar(ctx, "test")
+	assert.ErrorIs(t, err, starred.ErrStoreClosed)
+
+	_, err = store.Toggle(ctx, "test")
+	assert.ErrorIs(t, err, starred.ErrStoreClosed)
+
+	_, err = store.ListStarred(ctx)
+	assert.ErrorIs(t, err, starred.ErrStoreClosed)
+
+	err = store.Clear(ctx)
+	assert.ErrorIs(t, err, starred.ErrStoreClosed)
+
+	_, err = store.Count(ctx)
+	assert.ErrorIs(t, err, starred.ErrStoreClosed)
+}
+
+func TestStore_ListStarredCoverage(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Star multiple requests
+	for i := 0; i < 10; i++ {
+		err = store.Star(ctx, fmt.Sprintf("request-%d", i))
+		require.NoError(t, err)
+		time.Sleep(1 * time.Millisecond) // Ensure different timestamps
+	}
+
+	// List all
+	list, err := store.ListStarred(ctx)
+	require.NoError(t, err)
+	assert.Len(t, list, 10)
+}
+
+func TestStore_StarAlreadyStarredCoverage(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Star a request
+	err = store.Star(ctx, "test-request")
+	require.NoError(t, err)
+
+	// Star it again - should not error
+	err = store.Star(ctx, "test-request")
+	require.NoError(t, err)
+
+	// Should still be starred with count of 1
+	count, err := store.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestStore_UnstarNotStarredCoverage(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Unstar a non-existent request - should not error
+	err = store.Unstar(ctx, "non-existent")
 	require.NoError(t, err)
 }

@@ -235,6 +235,58 @@ func TestCurlExporter_Export_WithFolders(t *testing.T) {
 	assert.Contains(t, content, "# Get Users")
 }
 
+func TestCurlExporter_Export_NilCollection(t *testing.T) {
+	exp := NewCurlExporter()
+	ctx := context.Background()
+
+	_, err := exp.Export(ctx, nil)
+	assert.ErrorIs(t, err, ErrInvalidCollection)
+}
+
+func TestCurlExporter_ExportRequest_NilRequest(t *testing.T) {
+	exp := NewCurlExporter()
+	ctx := context.Background()
+
+	_, err := exp.ExportRequest(ctx, nil)
+	assert.ErrorIs(t, err, ErrInvalidCollection)
+}
+
+func TestCurlExporter_Export_NestedFolders(t *testing.T) {
+	exp := NewCurlExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("API")
+	folder := coll.AddFolder("V1")
+	subfolder := folder.AddFolder("Users")
+	subfolder.SetDescription("User management")
+
+	req := core.NewRequestDefinition("Get User", "GET", "https://api.example.com/v1/users/1")
+	subfolder.AddRequest(req)
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	content := string(result)
+	assert.Contains(t, content, "=== V1 ===")
+	assert.Contains(t, content, "=== Users ===")
+	assert.Contains(t, content, "# Get User")
+}
+
+func TestCurlExporter_Export_CollectionWithDescription(t *testing.T) {
+	exp := NewCurlExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("My Detailed API")
+	coll.SetDescription("This is a comprehensive API for testing")
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	content := string(result)
+	assert.Contains(t, content, "# Collection: My Detailed API")
+	assert.Contains(t, content, "# This is a comprehensive API for testing")
+}
+
 // Test Postman Exporter
 
 func TestPostmanExporter_Name(t *testing.T) {
@@ -1157,4 +1209,674 @@ func TestOpenAPIExporter_Export_InferSchemaFromJSON(t *testing.T) {
 	assert.Contains(t, props, "price")
 	assert.Contains(t, props, "active")
 	assert.Contains(t, props, "tags")
+}
+
+func TestOpenAPIExporter_Export_RelativeURL(t *testing.T) {
+	exp := NewOpenAPIExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test API")
+	req := core.NewRequestDefinition("Get Items", "GET", "/api/items?page=1&limit=10")
+	coll.AddRequest(req)
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var spec map[string]interface{}
+	err = json.Unmarshal(result, &spec)
+	require.NoError(t, err)
+
+	paths := spec["paths"].(map[string]interface{})
+	assert.Contains(t, paths, "/api/items")
+}
+
+func TestOpenAPIExporter_Export_TemplatedPath(t *testing.T) {
+	exp := NewOpenAPIExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test API")
+	req := core.NewRequestDefinition("Get User", "GET", "/{userId}/profile")
+	coll.AddRequest(req)
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var spec map[string]interface{}
+	err = json.Unmarshal(result, &spec)
+	require.NoError(t, err)
+
+	paths := spec["paths"].(map[string]interface{})
+	assert.Contains(t, paths, "/{userId}/profile")
+}
+
+func TestOpenAPIExporter_Export_MultipleRequestsSamePathDifferentMethod(t *testing.T) {
+	exp := NewOpenAPIExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test API")
+	req1 := core.NewRequestDefinition("Get Users", "GET", "/users")
+	req2 := core.NewRequestDefinition("Create User", "POST", "/users")
+	req3 := core.NewRequestDefinition("Delete All Users", "DELETE", "/users")
+	coll.AddRequest(req1)
+	coll.AddRequest(req2)
+	coll.AddRequest(req3)
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var spec map[string]interface{}
+	err = json.Unmarshal(result, &spec)
+	require.NoError(t, err)
+
+	paths := spec["paths"].(map[string]interface{})
+	usersPath := paths["/users"].(map[string]interface{})
+	assert.Contains(t, usersPath, "get")
+	assert.Contains(t, usersPath, "post")
+	assert.Contains(t, usersPath, "delete")
+}
+
+func TestOpenAPIExporter_Export_InferSchemaFromArray(t *testing.T) {
+	exp := NewOpenAPIExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test API")
+	req := core.NewRequestDefinition("Create Items", "POST", "/items")
+	req.SetBody(`[{"name": "item1"}, {"name": "item2"}]`)
+	coll.AddRequest(req)
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var spec map[string]interface{}
+	err = json.Unmarshal(result, &spec)
+	require.NoError(t, err)
+
+	paths := spec["paths"].(map[string]interface{})
+	itemsPath := paths["/items"].(map[string]interface{})
+	postOp := itemsPath["post"].(map[string]interface{})
+	requestBody := postOp["requestBody"].(map[string]interface{})
+	content := requestBody["content"].(map[string]interface{})
+	jsonContent := content["application/json"].(map[string]interface{})
+	schema := jsonContent["schema"].(map[string]interface{})
+
+	assert.Equal(t, "array", schema["type"])
+}
+
+func TestOpenAPIExporter_Export_InferSchemaFromEmptyBody(t *testing.T) {
+	exp := NewOpenAPIExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test API")
+	req := core.NewRequestDefinition("Create Item", "POST", "/items")
+	req.SetBody("")
+	coll.AddRequest(req)
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var spec map[string]interface{}
+	err = json.Unmarshal(result, &spec)
+	require.NoError(t, err)
+
+	paths := spec["paths"].(map[string]interface{})
+	assert.Contains(t, paths, "/items")
+}
+
+func TestOpenAPIExporter_Export_InferSchemaFromNestedObject(t *testing.T) {
+	exp := NewOpenAPIExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test API")
+	req := core.NewRequestDefinition("Test", "POST", "/test")
+	req.SetBody(`{
+		"user": {
+			"name": "John",
+			"address": {
+				"city": "NYC",
+				"zip": 10001
+			}
+		}
+	}`)
+	coll.AddRequest(req)
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var spec map[string]interface{}
+	err = json.Unmarshal(result, &spec)
+	require.NoError(t, err)
+
+	paths := spec["paths"].(map[string]interface{})
+	testPath := paths["/test"].(map[string]interface{})
+	postOp := testPath["post"].(map[string]interface{})
+	requestBody := postOp["requestBody"].(map[string]interface{})
+	content := requestBody["content"].(map[string]interface{})
+	jsonContent := content["application/json"].(map[string]interface{})
+	schema := jsonContent["schema"].(map[string]interface{})
+
+	assert.Equal(t, "object", schema["type"])
+	props := schema["properties"].(map[string]interface{})
+	assert.Contains(t, props, "user")
+}
+
+func TestOpenAPIExporter_Export_GeneratesOperationID(t *testing.T) {
+	exp := NewOpenAPIExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test API")
+	req := core.NewRequestDefinition("Get User Profile", "GET", "/users/{id}/profile")
+	coll.AddRequest(req)
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var spec map[string]interface{}
+	err = json.Unmarshal(result, &spec)
+	require.NoError(t, err)
+
+	paths := spec["paths"].(map[string]interface{})
+	userPath := paths["/users/{id}/profile"].(map[string]interface{})
+	getOp := userPath["get"].(map[string]interface{})
+	assert.Contains(t, getOp, "operationId")
+}
+
+func TestOpenAPIExporter_Export_URLWithPort(t *testing.T) {
+	exp := NewOpenAPIExporter()
+	ctx := context.Background()
+
+	coll := core.NewCollection("Test API")
+	req := core.NewRequestDefinition("Test", "GET", "http://localhost:8080/api/users")
+	coll.AddRequest(req)
+
+	result, err := exp.Export(ctx, coll)
+	require.NoError(t, err)
+
+	var spec map[string]interface{}
+	err = json.Unmarshal(result, &spec)
+	require.NoError(t, err)
+
+	paths := spec["paths"].(map[string]interface{})
+	assert.Contains(t, paths, "/api/users")
+}
+
+// Test helper functions directly
+
+func TestGenerateOperationID(t *testing.T) {
+	tests := []struct {
+		name     string
+		method   string
+		path     string
+		reqName  string
+		expected string
+	}{
+		{
+			name:     "generates from request name",
+			method:   "GET",
+			path:     "/users",
+			reqName:  "Get All Users",
+			expected: "getAllUsers",
+		},
+		{
+			name:     "generates from path when no name",
+			method:   "POST",
+			path:     "/users/profile",
+			reqName:  "",
+			expected: "post_users_profile",
+		},
+		{
+			name:     "skips path parameters",
+			method:   "GET",
+			path:     "/users/{id}/posts",
+			reqName:  "",
+			expected: "get_users_posts",
+		},
+		{
+			name:     "handles single word name",
+			method:   "GET",
+			path:     "/users",
+			reqName:  "Users",
+			expected: "users",
+		},
+		{
+			name:     "handles root path",
+			method:   "GET",
+			path:     "/",
+			reqName:  "",
+			expected: "get",
+		},
+		{
+			name:     "handles empty path parts",
+			method:   "DELETE",
+			path:     "//users//",
+			reqName:  "",
+			expected: "delete_users",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := generateOperationID(tt.method, tt.path, tt.reqName)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExtractPathAndQuery(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		wantPath    string
+		wantParams  map[string]string
+	}{
+		{
+			name:       "simple path",
+			url:        "/users",
+			wantPath:   "/users",
+			wantParams: map[string]string{},
+		},
+		{
+			name:       "path with query",
+			url:        "/users?page=1&limit=10",
+			wantPath:   "/users",
+			wantParams: map[string]string{"page": "1", "limit": "10"},
+		},
+		{
+			name:       "full URL with path and query",
+			url:        "https://api.example.com/users?name=john",
+			wantPath:   "/users",
+			wantParams: map[string]string{"name": "john"},
+		},
+		{
+			name:       "relative path starting with brace",
+			url:        "{baseUrl}/users",
+			wantPath:   "{baseUrl}/users",
+			wantParams: map[string]string{},
+		},
+		{
+			name:       "URL without protocol gets prefixed",
+			url:        "api/users",
+			wantPath:   "/users",
+			wantParams: map[string]string{},
+		},
+		{
+			name:       "encoded query params",
+			url:        "/search?q=hello%20world&tag=a%2Bb",
+			wantPath:   "/search",
+			wantParams: map[string]string{"q": "hello world", "tag": "a+b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, params := extractPathAndQuery(tt.url)
+			assert.Equal(t, tt.wantPath, path)
+			for k, v := range tt.wantParams {
+				assert.Equal(t, v, params[k], "param %s mismatch", k)
+			}
+		})
+	}
+}
+
+func TestParseQueryString(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		want   map[string]string
+	}{
+		{
+			name:  "simple params",
+			query: "a=1&b=2",
+			want:  map[string]string{"a": "1", "b": "2"},
+		},
+		{
+			name:  "encoded values",
+			query: "name=John%20Doe&city=New%20York",
+			want:  map[string]string{"name": "John Doe", "city": "New York"},
+		},
+		{
+			name:  "param without value",
+			query: "flag&name=test",
+			want:  map[string]string{"flag": "", "name": "test"},
+		},
+		{
+			name:  "empty query",
+			query: "",
+			want:  map[string]string{"": ""},
+		},
+		{
+			name:  "value with equals sign",
+			query: "expr=a=b",
+			want:  map[string]string{"expr": "a=b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := make(map[string]string)
+			parseQueryString(tt.query, params)
+			for k, v := range tt.want {
+				assert.Equal(t, v, params[k], "param %s mismatch", k)
+			}
+		})
+	}
+}
+
+func TestExtractPathParams(t *testing.T) {
+	tests := []struct {
+		name   string
+		path   string
+		want   []string
+	}{
+		{
+			name: "single param",
+			path: "/users/{id}",
+			want: []string{"id"},
+		},
+		{
+			name: "multiple params",
+			path: "/users/{userId}/posts/{postId}",
+			want: []string{"userId", "postId"},
+		},
+		{
+			name: "no params",
+			path: "/users",
+			want: nil,
+		},
+		{
+			name: "param at start",
+			path: "{version}/users",
+			want: []string{"version"},
+		},
+		{
+			name: "malformed braces - missing end",
+			path: "/users/{id",
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractPathParams(tt.path)
+			assert.Equal(t, tt.want, result)
+		})
+	}
+}
+
+func TestConvertVariablesToPathParams(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "single variable",
+			url:  "/users/{{id}}",
+			want: "/users/{id}",
+		},
+		{
+			name: "multiple variables",
+			url:  "/{{version}}/users/{{userId}}",
+			want: "/{version}/users/{userId}",
+		},
+		{
+			name: "no variables",
+			url:  "/users/123",
+			want: "/users/123",
+		},
+		{
+			name: "malformed - missing end braces",
+			url:  "/users/{{id",
+			want: "/users/{{id",
+		},
+		{
+			name: "already converted",
+			url:  "/users/{id}",
+			want: "/users/{id}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertVariablesToPathParams(tt.url)
+			assert.Equal(t, tt.want, result)
+		})
+	}
+}
+
+func TestOpenAPIExporter_InferSchemaFromBody(t *testing.T) {
+	exp := NewOpenAPIExporter()
+
+	t.Run("JSON body with object", func(t *testing.T) {
+		schema := exp.inferSchemaFromBody(`{"name": "John"}`, "application/json")
+		assert.Equal(t, "object", schema.Type)
+		assert.Contains(t, schema.Properties, "name")
+	})
+
+	t.Run("JSON body with array", func(t *testing.T) {
+		schema := exp.inferSchemaFromBody(`[1, 2, 3]`, "application/json")
+		assert.Equal(t, "array", schema.Type)
+	})
+
+	t.Run("form urlencoded body", func(t *testing.T) {
+		schema := exp.inferSchemaFromBody("name=john", "application/x-www-form-urlencoded")
+		assert.Equal(t, "object", schema.Type)
+	})
+
+	t.Run("plain text body", func(t *testing.T) {
+		schema := exp.inferSchemaFromBody("hello world", "text/plain")
+		assert.Equal(t, "string", schema.Type)
+	})
+
+	t.Run("invalid JSON returns string schema", func(t *testing.T) {
+		schema := exp.inferSchemaFromBody("{invalid json", "application/json")
+		assert.Equal(t, "string", schema.Type)
+	})
+
+	t.Run("JSON with charset", func(t *testing.T) {
+		schema := exp.inferSchemaFromBody(`{"ok": true}`, "application/json; charset=utf-8")
+		assert.Equal(t, "object", schema.Type)
+	})
+}
+
+func TestOpenAPIExporter_InferSchemaFromValue(t *testing.T) {
+	exp := NewOpenAPIExporter()
+
+	t.Run("string value", func(t *testing.T) {
+		schema := exp.inferSchemaFromValue("hello")
+		assert.Equal(t, "string", schema.Type)
+	})
+
+	t.Run("integer value", func(t *testing.T) {
+		schema := exp.inferSchemaFromValue(float64(42))
+		assert.Equal(t, "integer", schema.Type)
+	})
+
+	t.Run("float value", func(t *testing.T) {
+		schema := exp.inferSchemaFromValue(float64(3.14))
+		assert.Equal(t, "number", schema.Type)
+	})
+
+	t.Run("boolean value", func(t *testing.T) {
+		schema := exp.inferSchemaFromValue(true)
+		assert.Equal(t, "boolean", schema.Type)
+	})
+
+	t.Run("null value", func(t *testing.T) {
+		schema := exp.inferSchemaFromValue(nil)
+		assert.Equal(t, "string", schema.Type)
+		assert.True(t, schema.Nullable)
+	})
+
+	t.Run("empty array", func(t *testing.T) {
+		schema := exp.inferSchemaFromValue([]interface{}{})
+		assert.Equal(t, "array", schema.Type)
+	})
+
+	t.Run("array with items", func(t *testing.T) {
+		schema := exp.inferSchemaFromValue([]interface{}{"a", "b"})
+		assert.Equal(t, "array", schema.Type)
+		assert.NotNil(t, schema.Items)
+		assert.Equal(t, "string", schema.Items.Type)
+	})
+
+	t.Run("nested object", func(t *testing.T) {
+		val := map[string]interface{}{
+			"user": map[string]interface{}{
+				"name": "John",
+			},
+		}
+		schema := exp.inferSchemaFromValue(val)
+		assert.Equal(t, "object", schema.Type)
+		userProp := schema.Properties["user"]
+		assert.Equal(t, "object", userProp.Type)
+	})
+}
+
+func TestOpenAPIExporter_ParseExample(t *testing.T) {
+	exp := NewOpenAPIExporter()
+
+	t.Run("JSON body", func(t *testing.T) {
+		result := exp.parseExample(`{"name": "John"}`, "application/json")
+		m, ok := result.(map[string]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, "John", m["name"])
+	})
+
+	t.Run("invalid JSON returns string", func(t *testing.T) {
+		result := exp.parseExample("{invalid", "application/json")
+		assert.Equal(t, "{invalid", result)
+	})
+
+	t.Run("non-JSON content type returns string", func(t *testing.T) {
+		result := exp.parseExample("hello world", "text/plain")
+		assert.Equal(t, "hello world", result)
+	})
+}
+
+func TestOpenAPIExporter_ConvertAuth(t *testing.T) {
+	exp := NewOpenAPIExporter()
+
+	t.Run("bearer auth", func(t *testing.T) {
+		auth := core.AuthConfig{Type: "bearer"}
+		name, scheme := exp.convertAuth(auth)
+		assert.Equal(t, "bearerAuth", name)
+		assert.Equal(t, "http", scheme.Type)
+		assert.Equal(t, "bearer", scheme.Scheme)
+	})
+
+	t.Run("basic auth", func(t *testing.T) {
+		auth := core.AuthConfig{Type: "basic"}
+		name, scheme := exp.convertAuth(auth)
+		assert.Equal(t, "basicAuth", name)
+		assert.Equal(t, "http", scheme.Type)
+		assert.Equal(t, "basic", scheme.Scheme)
+	})
+
+	t.Run("apikey auth with in specified", func(t *testing.T) {
+		auth := core.AuthConfig{Type: "apikey", Key: "X-API-Key", In: "query"}
+		name, scheme := exp.convertAuth(auth)
+		assert.Equal(t, "apiKey", name)
+		assert.Equal(t, "apiKey", scheme.Type)
+		assert.Equal(t, "X-API-Key", scheme.Name)
+		assert.Equal(t, "query", scheme.In)
+	})
+
+	t.Run("apikey auth defaults to header", func(t *testing.T) {
+		auth := core.AuthConfig{Type: "apikey", Key: "X-API-Key"}
+		name, scheme := exp.convertAuth(auth)
+		assert.Equal(t, "apiKey", name)
+		assert.Equal(t, "apiKey", scheme.Type)
+		assert.Equal(t, "X-API-Key", scheme.Name)
+		assert.Equal(t, "header", scheme.In)
+	})
+
+	t.Run("unknown auth type returns empty", func(t *testing.T) {
+		auth := core.AuthConfig{Type: "oauth2"}
+		name, scheme := exp.convertAuth(auth)
+		assert.Equal(t, "", name)
+		assert.Equal(t, "", scheme.Type)
+	})
+}
+
+func TestOpenAPIExporter_AddRequest(t *testing.T) {
+	exp := NewOpenAPIExporter()
+	ctx := context.Background()
+
+	t.Run("request with auth", func(t *testing.T) {
+		coll := core.NewCollection("Test")
+		req := core.NewRequestDefinition("Get Users", "GET", "https://api.example.com/users")
+		req.SetAuth(core.AuthConfig{Type: "bearer", Token: "test-token"})
+		coll.AddRequest(req)
+
+		result, err := exp.Export(ctx, coll)
+		require.NoError(t, err)
+
+		var spec map[string]interface{}
+		err = json.Unmarshal(result, &spec)
+		require.NoError(t, err)
+
+		// Check security schemes exist
+		components := spec["components"].(map[string]interface{})
+		secSchemes := components["securitySchemes"].(map[string]interface{})
+		assert.Contains(t, secSchemes, "bearerAuth")
+	})
+
+	t.Run("request with path params", func(t *testing.T) {
+		coll := core.NewCollection("Test")
+		req := core.NewRequestDefinition("Get User", "GET", "https://api.example.com/users/{id}")
+		coll.AddRequest(req)
+
+		result, err := exp.Export(ctx, coll)
+		require.NoError(t, err)
+
+		var spec map[string]interface{}
+		err = json.Unmarshal(result, &spec)
+		require.NoError(t, err)
+
+		paths := spec["paths"].(map[string]interface{})
+		assert.Contains(t, paths, "/users/{id}")
+	})
+
+	t.Run("request with query params in URL", func(t *testing.T) {
+		coll := core.NewCollection("Test")
+		req := core.NewRequestDefinition("Search", "GET", "https://api.example.com/search?q=test&limit=10")
+		coll.AddRequest(req)
+
+		result, err := exp.Export(ctx, coll)
+		require.NoError(t, err)
+
+		var spec map[string]interface{}
+		err = json.Unmarshal(result, &spec)
+		require.NoError(t, err)
+
+		paths := spec["paths"].(map[string]interface{})
+		searchPath := paths["/search"].(map[string]interface{})
+		getOp := searchPath["get"].(map[string]interface{})
+		params := getOp["parameters"].([]interface{})
+
+		// Check query params are included
+		assert.GreaterOrEqual(t, len(params), 2)
+	})
+
+	t.Run("POST request with JSON body", func(t *testing.T) {
+		coll := core.NewCollection("Test")
+		req := core.NewRequestDefinition("Create User", "POST", "https://api.example.com/users")
+		req.SetBody(`{"name": "John", "email": "john@example.com"}`)
+		req.SetHeader("Content-Type", "application/json")
+		coll.AddRequest(req)
+
+		result, err := exp.Export(ctx, coll)
+		require.NoError(t, err)
+
+		var spec map[string]interface{}
+		err = json.Unmarshal(result, &spec)
+		require.NoError(t, err)
+
+		paths := spec["paths"].(map[string]interface{})
+		usersPath := paths["/users"].(map[string]interface{})
+		postOp := usersPath["post"].(map[string]interface{})
+		reqBody := postOp["requestBody"].(map[string]interface{})
+		content := reqBody["content"].(map[string]interface{})
+		assert.Contains(t, content, "application/json")
+	})
 }

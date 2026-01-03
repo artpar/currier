@@ -385,3 +385,116 @@ func TestStore_NewWithFilePath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "abc123", got.Value)
 }
+
+func TestStore_DeleteExpiredCookies(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Add expired cookie
+	err = store.Set(ctx, &cookies.Cookie{
+		Domain:  "expired.com",
+		Path:    "/",
+		Name:    "old",
+		Value:   "expired",
+		Expires: time.Now().Add(-time.Hour),
+	})
+	require.NoError(t, err)
+
+	// Add valid cookie
+	err = store.Set(ctx, &cookies.Cookie{
+		Domain:  "valid.com",
+		Path:    "/",
+		Name:    "session",
+		Value:   "valid",
+		Expires: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+
+	// Delete expired
+	deleted, err := store.DeleteExpired(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), deleted)
+
+	// Valid cookie should remain
+	count, err := store.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestStore_ListByDomain(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Add cookies for different domains
+	err = store.Set(ctx, &cookies.Cookie{
+		Domain: "domain1.com",
+		Path:   "/",
+		Name:   "cookie1",
+		Value:  "value1",
+	})
+	require.NoError(t, err)
+
+	err = store.Set(ctx, &cookies.Cookie{
+		Domain: "domain2.com",
+		Path:   "/",
+		Name:   "cookie2",
+		Value:  "value2",
+	})
+	require.NoError(t, err)
+
+	err = store.Set(ctx, &cookies.Cookie{
+		Domain: "domain1.com",
+		Path:   "/api",
+		Name:   "cookie3",
+		Value:  "value3",
+	})
+	require.NoError(t, err)
+
+	// List for domain1
+	list, err := store.List(ctx, cookies.QueryOptions{Domain: "domain1.com"})
+	require.NoError(t, err)
+	assert.Len(t, list, 2)
+}
+
+func TestStore_DeleteByDomainMultiple(t *testing.T) {
+	store, err := NewInMemory()
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Add multiple cookies for same domain
+	for i := 0; i < 3; i++ {
+		err = store.Set(ctx, &cookies.Cookie{
+			Domain: "delete-me.com",
+			Path:   "/",
+			Name:   "cookie" + string(rune('a'+i)),
+			Value:  "value",
+		})
+		require.NoError(t, err)
+	}
+
+	// Add cookie for different domain
+	err = store.Set(ctx, &cookies.Cookie{
+		Domain: "keep-me.com",
+		Path:   "/",
+		Name:   "session",
+		Value:  "keep",
+	})
+	require.NoError(t, err)
+
+	// Delete by domain
+	err = store.DeleteByDomain(ctx, "delete-me.com")
+	require.NoError(t, err)
+
+	// Verify only one remains
+	count, err := store.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+}

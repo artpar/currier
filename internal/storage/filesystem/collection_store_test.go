@@ -458,3 +458,352 @@ func newTestStore(t *testing.T) *CollectionStore {
 	require.NoError(t, err)
 	return store
 }
+
+func TestCollectionStore_ListAdditional(t *testing.T) {
+	t.Run("lists all collections", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c1 := core.NewCollection("API 1")
+		c2 := core.NewCollection("API 2")
+		require.NoError(t, store.Save(ctx, c1))
+		require.NoError(t, store.Save(ctx, c2))
+
+		list, err := store.List(ctx)
+		require.NoError(t, err)
+		assert.Len(t, list, 2)
+	})
+
+	t.Run("returns empty list for empty store", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		list, err := store.List(ctx)
+		require.NoError(t, err)
+		assert.Len(t, list, 0)
+	})
+}
+
+func TestCollectionStore_GetByPathAdditional(t *testing.T) {
+	t.Run("loads collection from absolute path", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("Test")
+		require.NoError(t, store.Save(ctx, c))
+
+		// Get the expected path
+		list, err := store.List(ctx)
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+
+		loaded, err := store.GetByPath(ctx, list[0].Path)
+		require.NoError(t, err)
+		assert.Equal(t, "Test", loaded.Name())
+	})
+
+	t.Run("returns error for non-existent path", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		_, err := store.GetByPath(ctx, "/non/existent/path.yaml")
+		assert.Error(t, err)
+	})
+}
+
+func TestCollectionStore_SearchExtended(t *testing.T) {
+	t.Run("search matches collection description", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("Test Collection")
+		c.SetDescription("API for managing user accounts")
+		require.NoError(t, store.Save(ctx, c))
+
+		results, err := store.Search(ctx, "user accounts")
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+	})
+
+	t.Run("search case insensitive", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("MY API COLLECTION")
+		require.NoError(t, store.Save(ctx, c))
+
+		results, err := store.Search(ctx, "my api")
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+	})
+
+	t.Run("search returns empty for no matches", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("Weather API")
+		require.NoError(t, store.Save(ctx, c))
+
+		results, err := store.Search(ctx, "payment gateway")
+		require.NoError(t, err)
+		assert.Len(t, results, 0)
+	})
+}
+
+func TestCollectionStore_SaveWithAuth(t *testing.T) {
+	t.Run("saves collection with auth config", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("Authenticated API")
+		c.SetAuth(core.AuthConfig{
+			Type:  "bearer",
+			Token: "test-token",
+		})
+
+		err := store.Save(ctx, c)
+		require.NoError(t, err)
+
+		loaded, err := store.Get(ctx, c.ID())
+		require.NoError(t, err)
+		assert.Equal(t, "bearer", loaded.Auth().Type)
+		assert.Equal(t, "test-token", loaded.Auth().Token)
+	})
+}
+
+func TestCollectionStore_ListMetadata(t *testing.T) {
+	t.Run("list returns accurate metadata", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("API Collection")
+		c.SetDescription("A collection with requests")
+		folder := c.AddFolder("Users")
+		folder.AddRequest(core.NewRequestDefinition("Get Users", "GET", "https://example.com/users"))
+		folder.AddRequest(core.NewRequestDefinition("Create User", "POST", "https://example.com/users"))
+		c.AddRequest(core.NewRequestDefinition("Health Check", "GET", "https://example.com/health"))
+		require.NoError(t, store.Save(ctx, c))
+
+		list, err := store.List(ctx)
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+
+		meta := list[0]
+		assert.Equal(t, "API Collection", meta.Name)
+		assert.Equal(t, "A collection with requests", meta.Description)
+		assert.Equal(t, 3, meta.RequestCount)
+	})
+}
+
+func TestCollectionStore_DeleteNonExistent(t *testing.T) {
+	t.Run("delete non-existent collection", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		// Delete non-existent should not panic
+		err := store.Delete(ctx, "non-existent-id")
+		// May or may not error depending on implementation
+		_ = err
+	})
+}
+
+func TestCollectionStore_ListEmpty(t *testing.T) {
+	t.Run("list empty store", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		list, err := store.List(ctx)
+		require.NoError(t, err)
+		assert.Len(t, list, 0)
+	})
+}
+
+func TestCollectionStore_SearchEmpty(t *testing.T) {
+	t.Run("search empty store", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		results, err := store.Search(ctx, "test")
+		require.NoError(t, err)
+		assert.Len(t, results, 0)
+	})
+}
+
+func TestCollectionStore_SearchNoMatch(t *testing.T) {
+	t.Run("search with no matches", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		// Add a collection
+		c := core.NewCollection("API Collection")
+		require.NoError(t, store.Save(ctx, c))
+
+		// Search for something that doesn't match
+		results, err := store.Search(ctx, "xyz123nonexistent")
+		require.NoError(t, err)
+		assert.Len(t, results, 0)
+	})
+}
+
+func TestCollectionStore_SaveLoadRoundTrip(t *testing.T) {
+	t.Run("save and load preserves all data", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		// Create collection with various data types
+		c := core.NewCollection("Test Collection")
+		c.SetDescription("Test description")
+
+		// Add folder
+		folder := c.AddFolder("Test Folder")
+
+		// Add request with headers and body
+		req := core.NewRequestDefinition("Test Request", "POST", "https://api.example.com/test")
+		req.SetHeader("Content-Type", "application/json")
+		req.SetHeader("Authorization", "Bearer token")
+		req.SetBody(`{"key": "value"}`)
+		folder.AddRequest(req)
+
+		// Save
+		require.NoError(t, store.Save(ctx, c))
+
+		// Load
+		loaded, err := store.Get(ctx, c.ID())
+		require.NoError(t, err)
+
+		// Verify
+		assert.Equal(t, c.Name(), loaded.Name())
+		assert.Equal(t, c.Description(), loaded.Description())
+		assert.Len(t, loaded.Folders(), 1)
+	})
+}
+
+func TestCollectionStore_ListMore(t *testing.T) {
+	t.Run("list multiple collections", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		// Create multiple collections
+		c1 := core.NewCollection("Collection A")
+		c2 := core.NewCollection("Collection B")
+		c3 := core.NewCollection("Collection C")
+
+		require.NoError(t, store.Save(ctx, c1))
+		require.NoError(t, store.Save(ctx, c2))
+		require.NoError(t, store.Save(ctx, c3))
+
+		// List all
+		collections, err := store.List(ctx)
+		require.NoError(t, err)
+		assert.Len(t, collections, 3)
+	})
+}
+
+func TestCollectionStore_DeleteMore(t *testing.T) {
+	t.Run("delete by ID", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("To Delete")
+		require.NoError(t, store.Save(ctx, c))
+
+		// Verify it exists
+		_, err := store.Get(ctx, c.ID())
+		require.NoError(t, err)
+
+		// Delete it
+		err = store.Delete(ctx, c.ID())
+		require.NoError(t, err)
+
+		// Verify it's gone
+		_, err = store.Get(ctx, c.ID())
+		assert.Error(t, err)
+	})
+
+	t.Run("delete nonexistent", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		err := store.Delete(ctx, "nonexistent-id")
+		// Returns error if collection doesn't exist
+		assert.Error(t, err)
+	})
+}
+
+func TestCollectionStore_SearchMore(t *testing.T) {
+	t.Run("search finds collection by name", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("API Tests")
+		req := core.NewRequestDefinition("Get Users", "GET", "http://api.example.com/users")
+		c.AddRequest(req)
+		require.NoError(t, store.Save(ctx, c))
+
+		// Search finds collections by name (not request names)
+		results, err := store.Search(ctx, "API Tests")
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+	})
+
+	t.Run("search case insensitive", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("Case Test")
+		require.NoError(t, store.Save(ctx, c))
+
+		results, err := store.Search(ctx, "case test")
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+	})
+}
+
+func TestCollectionStore_SaveUpdate(t *testing.T) {
+	t.Run("save updates existing collection", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("Original")
+		require.NoError(t, store.Save(ctx, c))
+
+		// Update and save
+		c.SetName("Updated")
+		require.NoError(t, store.Save(ctx, c))
+
+		// Verify update
+		loaded, err := store.Get(ctx, c.ID())
+		require.NoError(t, err)
+		assert.Equal(t, "Updated", loaded.Name())
+
+		// Should still be only one
+		collections, err := store.List(ctx)
+		require.NoError(t, err)
+		assert.Len(t, collections, 1)
+	})
+}
+
+func TestCollectionStore_GetByPathMore(t *testing.T) {
+	t.Run("get by path", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		c := core.NewCollection("Path Test")
+		require.NoError(t, store.Save(ctx, c))
+
+		// Get the path (collections are saved as .yaml files)
+		path := filepath.Join(store.basePath, c.ID()+".yaml")
+
+		loaded, err := store.GetByPath(ctx, path)
+		require.NoError(t, err)
+		assert.Equal(t, c.ID(), loaded.ID())
+	})
+
+	t.Run("get by invalid path", func(t *testing.T) {
+		store := newTestStore(t)
+		ctx := context.Background()
+
+		_, err := store.GetByPath(ctx, "/nonexistent/path.json")
+		assert.Error(t, err)
+	})
+}

@@ -543,3 +543,33 @@ func TestEngine_Performance(t *testing.T) {
 		}
 	})
 }
+
+func TestEngine_ExecuteWithTimeout(t *testing.T) {
+	t.Run("executes script within timeout", func(t *testing.T) {
+		engine := NewEngine()
+		result, err := engine.ExecuteWithTimeout("1 + 2 + 3", 5*time.Second)
+		require.NoError(t, err)
+		assert.Equal(t, int64(6), result)
+	})
+
+	t.Run("handles complex script within timeout", func(t *testing.T) {
+		engine := NewEngine()
+		script := `
+			var sum = 0;
+			for (var i = 0; i < 100; i++) {
+				sum += i;
+			}
+			sum;
+		`
+		result, err := engine.ExecuteWithTimeout(script, 5*time.Second)
+		require.NoError(t, err)
+		assert.Equal(t, int64(4950), result)
+	})
+
+	t.Run("handles short timeout", func(t *testing.T) {
+		engine := NewEngine()
+		result, err := engine.ExecuteWithTimeout("42", 100*time.Millisecond)
+		require.NoError(t, err)
+		assert.Equal(t, int64(42), result)
+	})
+}
