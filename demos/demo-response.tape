@@ -12,86 +12,79 @@ Set TypingSpeed 30ms
 
 Type "currier"
 Enter
-Sleep 2500ms
+Sleep 1.5s
 
-# Create a request that returns rich response data
+# Create a request
 Type "n"
-Sleep 800ms
+Sleep 400ms
 Type "https://httpbin.org/response-headers?X-Custom=demo&Server=currier"
-Sleep 1000ms
+Sleep 500ms
 
 # Send request
 Enter
-Sleep 3000ms
+Sleep 2s
 
 # Focus on response pane
 Type "3"
-Sleep 1500ms
+Sleep 500ms
 
-# We're on Body tab - scroll through the JSON response
+# Scroll through the JSON response
 Type "j"
-Sleep 400ms
+Sleep 150ms
 Type "j"
-Sleep 400ms
+Sleep 150ms
 Type "j"
-Sleep 800ms
+Sleep 300ms
 
-# Jump to bottom
+# Jump to bottom/top
 Type "G"
-Sleep 1200ms
-
-# Jump to top
+Sleep 400ms
 Type "gg"
-Sleep 1200ms
+Sleep 400ms
 
-# Switch to Headers tab to see response headers
+# Switch to Headers tab
 Type "]"
-Sleep 1500ms
+Sleep 600ms
 
 # Scroll through headers
 Type "j"
-Sleep 400ms
+Sleep 150ms
+Type "j"
+Sleep 150ms
 Type "j"
 Sleep 400ms
-Type "j"
-Sleep 400ms
-Type "j"
-Sleep 1000ms
 
 # Switch to Cookies tab
 Type "]"
-Sleep 1500ms
+Sleep 600ms
 
 # Back to Body tab
 Type "["
-Sleep 500ms
+Sleep 200ms
 Type "["
-Sleep 1000ms
+Sleep 400ms
 
 # Copy the response body
 Type "y"
-Sleep 1500ms
+Sleep 600ms
 
-# Now make a request that sets cookies so we can see them
+# Make a request that sets cookies
 Type "n"
-Sleep 800ms
+Sleep 400ms
 Type "https://httpbin.org/cookies/set/session/demo123"
-Sleep 1000ms
+Sleep 500ms
 
 Enter
-Sleep 3000ms
+Sleep 2s
 
 # Go to response and check Cookies tab
 Type "3"
-Sleep 1000ms
+Sleep 400ms
+Type "]"
+Sleep 300ms
 Type "]"
 Sleep 800ms
-Type "]"
-Sleep 1500ms
-
-# Now we can see the cookie that was set
-Sleep 1500ms
 
 # Quit
 Type "q"
-Sleep 500ms
+Sleep 300ms

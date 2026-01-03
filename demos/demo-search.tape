@@ -12,72 +12,72 @@ Set TypingSpeed 30ms
 
 Type "currier"
 Enter
-Sleep 2500ms
+Sleep 1.5s
 
-# Switch to History (typically has more items to search)
+# Switch to History
 Type "H"
-Sleep 1500ms
+Sleep 600ms
 
-# Show current history items
+# Show history items
 Type "j"
-Sleep 400ms
+Sleep 200ms
 Type "j"
-Sleep 400ms
+Sleep 200ms
 Type "j"
-Sleep 800ms
+Sleep 300ms
 
 # Start search
 Type "/"
-Sleep 800ms
+Sleep 400ms
 
 # Type search query
 Type "post"
-Sleep 1200ms
+Sleep 500ms
 
-# Execute search - results are filtered
+# Execute search
 Enter
-Sleep 1500ms
+Sleep 600ms
 
 # Navigate through filtered results
 Type "j"
-Sleep 600ms
+Sleep 300ms
 Type "j"
-Sleep 800ms
+Sleep 400ms
 
-# Clear search with Escape to show all items again
+# Clear search with Escape
 Escape
-Sleep 1500ms
-
-# Search again with different term
-Type "/"
 Sleep 600ms
+
+# Search again
+Type "/"
+Sleep 300ms
 Type "get"
-Sleep 800ms
+Sleep 400ms
 Enter
-Sleep 1500ms
+Sleep 600ms
 
-# Navigate filtered results
+# Navigate results
 Type "j"
-Sleep 500ms
+Sleep 200ms
 Type "k"
+Sleep 200ms
+
+# Select to load
+Enter
+Sleep 600ms
+
+# Show loaded request
+Type "2"
 Sleep 500ms
 
-# Select a result to load it
+# Send to verify
 Enter
-Sleep 1500ms
-
-# Show the loaded request
-Type "2"
-Sleep 1500ms
-
-# Send to verify it works
-Enter
-Sleep 3000ms
+Sleep 2s
 
 # View response
 Type "3"
-Sleep 1500ms
+Sleep 600ms
 
 # Quit
 Type "q"
-Sleep 500ms
+Sleep 300ms

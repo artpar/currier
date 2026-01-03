@@ -12,84 +12,80 @@ Set TypingSpeed 30ms
 
 Type "currier"
 Enter
-Sleep 3s
-
-# Show the three-pane layout - Collections/History on left, Request in middle, Response on right
-# Start in Collections pane (pane 1)
-Sleep 1s
+Sleep 1.5s
 
 # Navigate within collections - expand a collection
 Type "j"
-Sleep 600ms
+Sleep 300ms
 Type "l"
-Sleep 1s
+Sleep 500ms
 
 # Show requests inside the collection
 Type "j"
-Sleep 500ms
+Sleep 250ms
 Type "j"
-Sleep 500ms
+Sleep 250ms
 
 # Select a request to load it
 Enter
-Sleep 1500ms
+Sleep 800ms
 
-# Move to Request pane (pane 2) - show the loaded request
+# Move to Request pane (pane 2)
 Type "2"
-Sleep 1500ms
+Sleep 600ms
 
 # Show the request tabs - URL, Headers, Query, Body
 Type "]"
-Sleep 1000ms
+Sleep 400ms
 Type "]"
-Sleep 1000ms
+Sleep 400ms
 Type "]"
-Sleep 1000ms
+Sleep 400ms
 Type "["
-Sleep 500ms
+Sleep 200ms
 Type "["
-Sleep 500ms
+Sleep 200ms
 Type "["
-Sleep 1000ms
+Sleep 400ms
 
 # Move to Response pane (pane 3)
 Type "3"
-Sleep 1500ms
+Sleep 600ms
 
 # Show response tabs - Body, Headers, Cookies
 Type "]"
-Sleep 1000ms
+Sleep 400ms
 Type "]"
-Sleep 1000ms
+Sleep 400ms
 Type "["
-Sleep 500ms
+Sleep 200ms
 Type "["
-Sleep 1000ms
+Sleep 400ms
 
 # Switch to History view
 Type "H"
-Sleep 1500ms
+Sleep 600ms
 
 # Navigate history
 Type "j"
-Sleep 500ms
+Sleep 200ms
 Type "j"
-Sleep 500ms
+Sleep 200ms
 Type "j"
-Sleep 800ms
+Sleep 300ms
 
 # Back to Collections
 Type "C"
-Sleep 1500ms
+Sleep 600ms
 
 # Show help overlay
 Type "?"
-Sleep 3000ms
+Sleep 1.5s
 
 # Close help
 Type "?"
-Sleep 1000ms
+Sleep 400ms
 
 # Quit
 Type "q"
-Sleep 500ms
+Sleep 300ms

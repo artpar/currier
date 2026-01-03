@@ -12,61 +12,54 @@ Set TypingSpeed 30ms
 
 Type "currier"
 Enter
-Sleep 2500ms
+Sleep 1.5s
 
-# Open proxy settings with P
+# Open proxy settings
 Type "P"
-Sleep 1500ms
+Sleep 700ms
 
-# The proxy dialog is now open
-# Type a proxy URL
+# Type proxy URL
 Type "http://localhost:8080"
-Sleep 1200ms
+Sleep 500ms
 
-# Save with Enter
+# Save
 Enter
-Sleep 1500ms
+Sleep 600ms
 
-# Proxy is now configured - visible in status bar
-Sleep 1000ms
-
-# Create a request to test
+# Create a request
 Type "n"
-Sleep 800ms
+Sleep 400ms
 Type "https://httpbin.org/get"
-Sleep 1000ms
+Sleep 500ms
 
-# Send request - it will go through the proxy
+# Send - goes through proxy
 Enter
-Sleep 3000ms
+Sleep 2s
 
 # View response
 Type "3"
-Sleep 1500ms
+Sleep 500ms
 
-# Scroll to see request details
+# Scroll
 Type "j"
-Sleep 400ms
+Sleep 150ms
 Type "j"
-Sleep 400ms
+Sleep 150ms
 Type "j"
-Sleep 1200ms
+Sleep 500ms
 
-# Open proxy settings again to clear
+# Open proxy settings to clear
 Type "P"
-Sleep 1500ms
+Sleep 700ms
 
 # Clear the proxy
 Ctrl+U
-Sleep 800ms
+Sleep 400ms
 
-# Save empty (disables proxy)
+# Save empty
 Enter
-Sleep 1500ms
-
-# Proxy is now disabled
-Sleep 1000ms
+Sleep 600ms
 
 # Quit
 Type "q"
-Sleep 500ms
+Sleep 300ms

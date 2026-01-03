@@ -1,5 +1,5 @@
 # Currier Editing Demo
-# Shows: Complete editing cycle - URL, headers, query params, body, then send and verify
+# Shows: Complete editing cycle - URL, headers, query params, body, send and verify
 
 Output demos/demo-editing.gif
 
@@ -12,115 +12,112 @@ Set TypingSpeed 30ms
 
 Type "currier"
 Enter
-Sleep 2500ms
+Sleep 1.5s
 
 # Create new request
 Type "n"
-Sleep 800ms
+Sleep 400ms
 Type "https://httpbin.org/anything"
-Sleep 800ms
+Sleep 400ms
 Escape
-Sleep 600ms
+Sleep 300ms
 
 # Switch to Headers tab
 Type "]"
-Sleep 1000ms
+Sleep 400ms
 
-# Add a custom header
+# Add headers
 Type "a"
-Sleep 600ms
+Sleep 300ms
 Type "X-Custom-Header"
 Tab
 Type "my-custom-value"
 Enter
-Sleep 1200ms
-
-# Add another header
-Type "a"
 Sleep 500ms
+
+Type "a"
+Sleep 200ms
 Type "X-Request-ID"
 Tab
 Type "demo-12345"
 Enter
-Sleep 1200ms
+Sleep 500ms
 
 # Switch to Query tab
 Type "]"
-Sleep 1000ms
+Sleep 400ms
 
 # Add query parameters
 Type "a"
-Sleep 600ms
+Sleep 300ms
 Type "search"
 Tab
 Type "currier"
 Enter
-Sleep 1000ms
+Sleep 400ms
 
 Type "a"
-Sleep 500ms
+Sleep 200ms
 Type "limit"
 Tab
 Type "10"
 Enter
-Sleep 1200ms
+Sleep 500ms
 
 # Switch to Body tab
 Type "]"
-Sleep 1000ms
+Sleep 400ms
 
 # Change body type to JSON
 Type "t"
-Sleep 800ms
+Sleep 400ms
 
-# Edit body content
+# Edit body
 Type "e"
-Sleep 500ms
-Type@100ms '{"message": "Hello from Currier!", "demo": true}'
-Sleep 1000ms
+Sleep 200ms
+Type@50ms '{"message": "Hello from Currier!", "demo": true}'
+Sleep 400ms
 Escape
-Sleep 600ms
+Sleep 300ms
 
-# Change method to POST (body requires POST/PUT/PATCH)
+# Change method to POST
 Type "m"
-Sleep 1000ms
+Sleep 400ms
 
-# Go back to URL tab to see the full request
+# Go back to URL tab
+Type "["
+Sleep 200ms
+Type "["
+Sleep 200ms
 Type "["
 Sleep 500ms
-Type "["
-Sleep 500ms
-Type "["
-Sleep 1200ms
 
 # Send the request
 Enter
-Sleep 3000ms
+Sleep 2s
 
-# View the response - httpbin.org/anything echoes everything back
+# View response - httpbin echoes everything back
 Type "3"
-Sleep 1500ms
+Sleep 500ms
 
-# Scroll to see our headers in the response
+# Scroll to see our data
 Type "j"
-Sleep 300ms
+Sleep 150ms
 Type "j"
-Sleep 300ms
+Sleep 150ms
 Type "j"
-Sleep 300ms
+Sleep 150ms
 Type "j"
-Sleep 300ms
-Type "j"
-Sleep 1500ms
+Sleep 500ms
 
-# Switch to Headers tab in response to see response headers
+# Switch to Headers tab in response
 Type "]"
-Sleep 1500ms
+Sleep 600ms
 
 # Back to body
 Type "["
-Sleep 1000ms
+Sleep 400ms
 
 # Quit
 Type "q"
-Sleep 500ms
+Sleep 300ms

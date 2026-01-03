@@ -12,78 +12,70 @@ Set TypingSpeed 30ms
 
 Type "currier"
 Enter
-Sleep 2500ms
+Sleep 1.5s
 
 # Create a request with environment variable
 Type "n"
-Sleep 800ms
+Sleep 400ms
 Type "https://{{host}}/get"
-Sleep 1200ms
+Sleep 600ms
 Escape
-Sleep 800ms
-
-# Show the variable syntax in the URL
-Sleep 1000ms
+Sleep 400ms
 
 # Open environment switcher
 Type "V"
-Sleep 1500ms
+Sleep 700ms
 
-# Navigate through available environments
+# Navigate through environments
 Type "j"
-Sleep 800ms
+Sleep 350ms
 Type "j"
-Sleep 800ms
+Sleep 350ms
 Type "k"
-Sleep 800ms
+Sleep 350ms
 
 # Select an environment
 Enter
-Sleep 1500ms
+Sleep 600ms
 
-# Show that the environment is now active (visible in status)
-Sleep 1000ms
-
-# The URL still shows {{host}} but will be interpolated on send
-# Let's send the request to see interpolation in action
+# Send request to see interpolation
 Enter
-Sleep 3000ms
+Sleep 2s
 
-# View the response - the actual URL used is shown
+# View the response
 Type "3"
-Sleep 1500ms
+Sleep 500ms
 
-# Scroll to see the resolved URL in response
+# Scroll to see the resolved URL
 Type "j"
-Sleep 400ms
+Sleep 150ms
 Type "j"
-Sleep 400ms
+Sleep 150ms
 Type "j"
-Sleep 1200ms
+Sleep 500ms
 
 # Switch to a different environment
 Type "V"
-Sleep 1500ms
-
+Sleep 700ms
 Type "j"
-Sleep 800ms
+Sleep 350ms
 Enter
-Sleep 1500ms
+Sleep 600ms
 
-# Send again - different environment, different host
+# Send again
 Enter
-Sleep 3000ms
+Sleep 2s
 
-# View response to confirm different endpoint was hit
+# View response
 Type "3"
-Sleep 1500ms
+Sleep 500ms
 Type "j"
-Sleep 400ms
+Sleep 150ms
 Type "j"
-Sleep 400ms
+Sleep 150ms
 Type "j"
-Sleep 1200ms
+Sleep 500ms
 
 # Quit
 Type "q"
-Sleep 500ms
+Sleep 300ms

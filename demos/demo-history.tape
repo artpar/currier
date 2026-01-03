@@ -12,79 +12,72 @@ Set TypingSpeed 30ms
 
 Type "currier"
 Enter
-Sleep 2500ms
+Sleep 1.5s
 
 # Switch to History panel
 Type "H"
-Sleep 1500ms
-
-# Show history items - navigate through them
-Type "j"
-Sleep 600ms
-Type "j"
-Sleep 600ms
-Type "j"
 Sleep 600ms
 
-# Jump to bottom of history
+# Navigate through history
+Type "j"
+Sleep 250ms
+Type "j"
+Sleep 250ms
+Type "j"
+Sleep 300ms
+
+# Jump to bottom/top
 Type "G"
-Sleep 1200ms
-
-# Jump to top
+Sleep 400ms
 Type "gg"
-Sleep 1200ms
+Sleep 400ms
 
-# Navigate to an interesting request
+# Navigate to a request
 Type "j"
-Sleep 500ms
+Sleep 200ms
 Type "j"
-Sleep 800ms
+Sleep 300ms
 
-# Select this history item to load it
+# Select to load it
 Enter
-Sleep 1500ms
+Sleep 600ms
 
-# Show the loaded request in the request pane
+# Show the loaded request
 Type "2"
-Sleep 1500ms
-
-# The request is now loaded - we can see URL, method, headers
-# Switch through request tabs to see full details
-Type "]"
-Sleep 1000ms
-Type "]"
-Sleep 1000ms
-Type "["
 Sleep 500ms
-Type "["
-Sleep 1000ms
 
-# Replay this request - send it again
+# Switch through request tabs
+Type "]"
+Sleep 400ms
+Type "]"
+Sleep 400ms
+Type "["
+Sleep 200ms
+Type "["
+Sleep 400ms
+
+# Replay - send it again
 Enter
-Sleep 3000ms
+Sleep 2s
 
 # View the fresh response
 Type "3"
-Sleep 1500ms
+Sleep 500ms
 
-# Scroll through the response
+# Scroll through response
+Type "j"
+Sleep 150ms
+Type "j"
+Sleep 150ms
 Type "j"
 Sleep 400ms
-Type "j"
-Sleep 400ms
-Type "j"
-Sleep 400ms
-Type "j"
-Sleep 1200ms
 
-# Go back to history to show it recorded the replay
+# Go back to history - new entry at top
 Type "H"
-Sleep 1500ms
-
-# New entry at top
+Sleep 500ms
 Type "gg"
-Sleep 1200ms
+Sleep 500ms
 
 # Quit
 Type "q"
-Sleep 500ms
+Sleep 300ms

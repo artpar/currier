@@ -12,74 +12,60 @@ Set TypingSpeed 30ms
 
 Type "currier"
 Enter
-Sleep 2500ms
+Sleep 1.5s
 
-# Open TLS settings with Ctrl+T
+# Open TLS settings
 Ctrl+T
-Sleep 1500ms
-
-# The TLS dialog is now open showing:
-# - Client Certificate path
-# - Client Key path
-# - CA Certificate path
-# - Skip TLS Verification checkbox
+Sleep 700ms
 
 # Tab to client certificate field
 Tab
-Sleep 800ms
+Sleep 400ms
 
-# Enter a certificate path
+# Enter certificate path
 Type "/path/to/client.pem"
-Sleep 1200ms
+Sleep 500ms
 
 # Tab to client key field
 Tab
-Sleep 800ms
-
+Sleep 400ms
 Type "/path/to/client-key.pem"
-Sleep 1200ms
+Sleep 500ms
 
 # Tab to CA certificate field
 Tab
-Sleep 800ms
-
+Sleep 400ms
 Type "/path/to/ca.pem"
-Sleep 1200ms
+Sleep 500ms
 
 # Tab to Skip TLS Verification
 Tab
-Sleep 800ms
+Sleep 400ms
 
-# Toggle skip verification (for self-signed certs)
+# Toggle skip verification
 Space
-Sleep 1200ms
+Sleep 500ms
 
-# Save settings with Enter
+# Save settings
 Enter
-Sleep 1500ms
-
-# Settings are saved
-Sleep 1000ms
+Sleep 600ms
 
 # Create a request to a secure endpoint
 Type "n"
-Sleep 800ms
+Sleep 400ms
 Type "https://secure-api.example.com/endpoint"
-Sleep 1000ms
+Sleep 500ms
 Escape
-Sleep 800ms
+Sleep 400ms
 
-# The request would use our TLS settings when sent
-Sleep 1500ms
-
-# Open TLS settings again to show they're saved
+# Open TLS settings again to show persistence
 Ctrl+T
-Sleep 2000ms
+Sleep 1s
 
 # Close dialog
 Escape
-Sleep 1000ms
+Sleep 400ms
 
 # Quit
 Type "q"
-Sleep 500ms
+Sleep 300ms

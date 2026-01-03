@@ -12,70 +12,60 @@ Set TypingSpeed 30ms
 
 Type "currier"
 Enter
-Sleep 2500ms
+Sleep 1.5s
 
 # Switch to Collections panel
 Type "C"
-Sleep 1500ms
+Sleep 600ms
 
 # Navigate to a collection
 Type "j"
-Sleep 600ms
+Sleep 300ms
 
-# Expand the collection to show requests
+# Expand to show requests
 Type "l"
-Sleep 1200ms
+Sleep 500ms
 
 # Show requests in collection
 Type "j"
-Sleep 500ms
+Sleep 200ms
 Type "j"
-Sleep 500ms
+Sleep 200ms
 Type "j"
-Sleep 800ms
+Sleep 300ms
 
 # Go back up to collection root
 Type "h"
+Sleep 400ms
+
+# Run the collection
+Ctrl+R
+Sleep 700ms
+
+# Watch the runner execute
+Sleep 1s
+Sleep 1s
+Sleep 1s
+
+# Results displayed
 Sleep 800ms
 
-# Run the collection with Ctrl+R
-Ctrl+R
-Sleep 1500ms
-
-# Watch the runner execute requests
-# Progress indicator shows current request
-Sleep 1500ms
-Sleep 1500ms
-Sleep 1500ms
-
-# Runner completes - results are displayed
-Sleep 2000ms
-
-# Results show:
-# - Each request with pass/fail status
-# - Response times
-# - Test assertion results
-# - Summary: X/Y passed, total time
-
-# Scroll through results if needed
+# Scroll through results
 Type "j"
-Sleep 600ms
+Sleep 250ms
 Type "j"
-Sleep 600ms
+Sleep 250ms
 Type "j"
-Sleep 1000ms
+Sleep 400ms
 
 # Back to top
 Type "gg"
-Sleep 1000ms
-
-# View detailed results
-Sleep 1500ms
+Sleep 500ms
 
 # Close the runner modal
 Escape
-Sleep 1500ms
+Sleep 600ms
 
 # Quit
 Type "q"
-Sleep 500ms
+Sleep 300ms
