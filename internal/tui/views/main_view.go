@@ -1501,10 +1501,14 @@ func (v *MainView) renderHelp() string {
 
 // renderEnvSwitcher renders the environment switcher popup.
 func (v *MainView) renderEnvSwitcher() string {
-	// Box dimensions
-	boxWidth := 50
+	// Box dimensions - wider to accommodate variable preview
+	leftWidth := 35
+	rightWidth := 35
+	boxWidth := leftWidth + rightWidth + 3 // +3 for separator
 	if boxWidth > v.width-4 {
 		boxWidth = v.width - 4
+		leftWidth = boxWidth / 2
+		rightWidth = boxWidth - leftWidth - 3
 	}
 
 	// Header style
@@ -1516,11 +1520,8 @@ func (v *MainView) renderEnvSwitcher() string {
 		Align(lipgloss.Center).
 		Padding(0, 1)
 
-	// Build content lines
-	var lines []string
-	lines = append(lines, headerStyle.Render("Select Environment"))
-	lines = append(lines, "") // Empty line
-
+	// Build left panel (environment list)
+	var leftLines []string
 	for i, env := range v.envList {
 		prefix := "  "
 		if i == v.envCursor {
@@ -1530,20 +1531,17 @@ func (v *MainView) renderEnvSwitcher() string {
 		// Active indicator
 		active := ""
 		if env.IsActive {
-			active = " (active)"
+			active = " ●"
 		}
-
-		// Variable count
-		varInfo := fmt.Sprintf(" [%d vars]", env.VarCount)
 
 		name := env.Name
 		// Truncate if needed
-		maxNameLen := boxWidth - len(prefix) - len(active) - len(varInfo) - 6
+		maxNameLen := leftWidth - len(prefix) - len(active) - 2
 		if maxNameLen > 3 && len(name) > maxNameLen {
 			name = name[:maxNameLen-3] + "..."
 		}
 
-		line := prefix + name + active + varInfo
+		line := prefix + name + active
 
 		// Style selected item
 		style := lipgloss.NewStyle()
@@ -1558,24 +1556,87 @@ func (v *MainView) renderEnvSwitcher() string {
 		}
 
 		// Pad line to width
-		padding := boxWidth - 4 - len(line)
+		padding := leftWidth - len(line)
 		if padding > 0 {
 			line += strings.Repeat(" ", padding)
 		}
 
-		lines = append(lines, style.Render(line))
+		leftLines = append(leftLines, style.Render(line))
 	}
 
-	lines = append(lines, "") // Empty line
+	// Build right panel (variable preview for selected env)
+	var rightLines []string
+	varHeaderStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("229")).
+		Underline(true)
+	rightLines = append(rightLines, varHeaderStyle.Render("Variables:"))
+
+	if v.envCursor >= 0 && v.envCursor < len(v.envList) {
+		selectedEnv := v.envList[v.envCursor]
+		varStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
+
+		if len(selectedEnv.VarNames) == 0 {
+			dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)
+			rightLines = append(rightLines, dimStyle.Render("(no variables)"))
+		} else {
+			// Show up to 8 variables
+			maxVars := 8
+			for i, varName := range selectedEnv.VarNames {
+				if i >= maxVars {
+					moreStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+					rightLines = append(rightLines, moreStyle.Render(fmt.Sprintf("  +%d more...", len(selectedEnv.VarNames)-maxVars)))
+					break
+				}
+				// Truncate long variable names
+				displayName := varName
+				if len(displayName) > rightWidth-4 {
+					displayName = displayName[:rightWidth-7] + "..."
+				}
+				rightLines = append(rightLines, varStyle.Render("  {{"+displayName+"}}"))
+			}
+		}
+	}
+
+	// Ensure both panels have same height
+	maxLines := len(leftLines)
+	if len(rightLines) > maxLines {
+		maxLines = len(rightLines)
+	}
+	for len(leftLines) < maxLines {
+		leftLines = append(leftLines, strings.Repeat(" ", leftWidth))
+	}
+	for len(rightLines) < maxLines {
+		rightLines = append(rightLines, "")
+	}
+
+	// Combine panels with separator
+	var contentLines []string
+	contentLines = append(contentLines, headerStyle.Render("Select Environment"))
+	contentLines = append(contentLines, "") // Empty line
+
+	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	for i := 0; i < maxLines; i++ {
+		left := leftLines[i]
+		right := rightLines[i]
+		// Pad right to width
+		rightPadding := rightWidth - len(right)
+		if rightPadding > 0 {
+			right += strings.Repeat(" ", rightPadding)
+		}
+		contentLines = append(contentLines, left+separatorStyle.Render(" │ ")+right)
+	}
+
+	contentLines = append(contentLines, "") // Empty line
 
 	// Footer
 	footerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("243")).
 		Width(boxWidth - 4).
 		Align(lipgloss.Center)
-	lines = append(lines, footerStyle.Render("j/k: navigate  Enter: select  e: edit  Esc: cancel"))
+	contentLines = append(contentLines, footerStyle.Render("j/k: navigate  Enter: select  e: edit  Esc: cancel"))
 
-	content := strings.Join(lines, "\n")
+	content := strings.Join(contentLines, "\n")
 
 	// Box style with border
 	boxStyle := lipgloss.NewStyle().
