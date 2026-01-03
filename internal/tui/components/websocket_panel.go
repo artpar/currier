@@ -383,13 +383,32 @@ func (p *WebSocketPanel) scrollToBottom() {
 }
 
 func (p *WebSocketPanel) maxScrollOffset() int {
-	// Estimate max scroll based on message count
+	// Get content lines for current tab
+	width := p.width - 4 // Account for borders and padding
+	if width < 1 {
+		width = 1
+	}
+
+	var lines []string
+	switch p.activeTab {
+	case WebSocketTabMessages:
+		lines = p.renderMessagesTab(width)
+	case WebSocketTabConnection:
+		lines = p.renderConnectionTab(width)
+	case WebSocketTabScripts:
+		lines = p.renderScriptsTab(width)
+	case WebSocketTabAutoResponse:
+		lines = p.renderAutoResponseTab(width)
+	default:
+		return 0
+	}
+
 	visibleLines := p.height - 12 // Account for header, tabs, input, borders
 	if visibleLines < 1 {
 		visibleLines = 1
 	}
-	if len(p.messages) > visibleLines {
-		return len(p.messages) - visibleLines
+	if len(lines) > visibleLines {
+		return len(lines) - visibleLines
 	}
 	return 0
 }
