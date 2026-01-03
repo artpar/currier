@@ -343,16 +343,27 @@ func (p *ResponsePanel) renderStatusLine() string {
 	status := p.response.Status()
 	timing := p.response.Timing()
 
-	// Status with color
-	statusStyle := p.statusStyle(status.Code())
-	statusStr := statusStyle.Render(fmt.Sprintf("%d %s", status.Code(), status.Text()))
+	// Postbear-style: "Response:  200   1539ms"
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")).
+		Bold(true)
+	responseLabel := labelStyle.Render("Response:")
 
-	// Timing
+	// Status code with color badge
+	statusStyle := p.statusStyle(status.Code())
+	statusStr := statusStyle.Render(fmt.Sprintf(" %d ", status.Code()))
+
+	// Timing badge
 	duration := timing.EndTime.Sub(timing.StartTime)
-	timeStr := fmt.Sprintf("%.0fms", float64(duration.Milliseconds()))
+	timeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("245")).
+		Background(lipgloss.Color("238")).
+		Padding(0, 1)
+	timeStr := timeStyle.Render(fmt.Sprintf("%.0fms", float64(duration.Milliseconds())))
 
 	// Size
-	sizeStr := p.formatSize(p.response.Body().Size())
+	sizeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	sizeStr := sizeStyle.Render(p.formatSize(p.response.Body().Size()))
 
 	// Format indicator and pretty print status
 	formatBadge := ""
@@ -382,7 +393,7 @@ func (p *ResponsePanel) renderStatusLine() string {
 		}
 	}
 
-	return fmt.Sprintf("%s  %s  %s%s%s", statusStr, timeStr, sizeStr, formatBadge, testBadge)
+	return fmt.Sprintf(" %s %s  %s  %s%s%s", responseLabel, statusStr, timeStr, sizeStr, formatBadge, testBadge)
 }
 
 func (p *ResponsePanel) statusStyle(code int) lipgloss.Style {
@@ -787,7 +798,8 @@ func (p *ResponsePanel) renderTestsTab() []string {
 
 func (p *ResponsePanel) wrapWithBorder(content string) string {
 	borderStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder())
+		BorderStyle(lipgloss.RoundedBorder()).
+		Padding(0, 1) // Horizontal padding for breathing room
 
 	if p.focused {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))

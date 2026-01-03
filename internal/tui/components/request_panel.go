@@ -2786,7 +2786,8 @@ func (p *RequestPanel) methodStyle(method string) lipgloss.Style {
 
 func (p *RequestPanel) wrapWithBorder(content string) string {
 	borderStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder())
+		BorderStyle(lipgloss.RoundedBorder()).
+		Padding(0, 1) // Horizontal padding for breathing room
 
 	if p.focused {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
