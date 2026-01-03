@@ -123,9 +123,9 @@ Sleep 400ms
 # Edit pre-request script
 Type "e"
 Sleep 200ms
-Type@30ms 'console.log("Pre-request!");'
+Type@30ms 'console.log("Running pre-request");'
 Enter
-Type@30ms 'pm.environment.set("timestamp", Date.now());'
+Type@30ms 'pm.setVariable("ts", Date.now());'
 Sleep 400ms
 Escape
 Sleep 400ms
@@ -141,9 +141,9 @@ Sleep 400ms
 # Edit test script
 Type "e"
 Sleep 200ms
-Type@30ms 'pm.test("Status is 200", function() {'
+Type@30ms 'pm.test("Status 200", function() {'
 Enter
-Type@30ms '  pm.response.to.have.status(200);'
+Type@30ms '  pm.expect(pm.response.status).toBe(200);'
 Enter
 Type@30ms '});'
 Sleep 400ms

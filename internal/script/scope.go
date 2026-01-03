@@ -70,9 +70,12 @@ func (s *Scope) Engine() *Engine {
 	return s.engine
 }
 
-// setupCurrierAPI sets up the currier.* global object.
+// setupCurrierAPI sets up the currier.* global object and pm.* alias for Postman compatibility.
 func (s *Scope) setupCurrierAPI() {
-	s.engine.RegisterObject("currier", s.buildCurrierObject())
+	apiObject := s.buildCurrierObject()
+	s.engine.RegisterObject("currier", apiObject)
+	// Register pm.* alias for Postman script compatibility
+	s.engine.RegisterObject("pm", apiObject)
 }
 
 // buildCurrierObject builds the currier.* API object.
