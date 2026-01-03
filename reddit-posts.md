@@ -281,21 +281,21 @@ Currier is a terminal API client with JavaScript scripting support:
 
 ```javascript
 // Pre-request
-const token = pm.environment.get("auth_token");
-pm.request.headers.add("Authorization", "Bearer " + token);
+var token = pm.environment.get("auth_token");
+pm.setVariable("auth", "Bearer " + token);
 
-// Post-request
+// Post-request tests
 pm.test("Status is 200", function() {
-    pm.response.to.have.status(200);
+    pm.expect(pm.response.status).toBe(200);
 });
 
 pm.test("Has user data", function() {
-    const json = pm.response.json();
-    pm.expect(json.user).to.exist;
+    var json = JSON.parse(pm.response.body);
+    pm.expect(json.user).toBeDefined();
 });
 ```
 
-Uses the pm.* API so existing Postman scripts mostly work. Has a collection runner that executes everything and shows test results.
+Uses pm.* API (also available as currier.*). Jest-style expect assertions. Has a collection runner that executes everything and shows test results.
 
 Also has: collections, environments, cookie persistence, import/export.
 
