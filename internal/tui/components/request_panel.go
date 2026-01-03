@@ -2786,14 +2786,12 @@ func (p *RequestPanel) methodStyle(method string) lipgloss.Style {
 
 func (p *RequestPanel) wrapWithBorder(content string) string {
 	borderStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		Padding(0, 1) // Horizontal padding for breathing room
+		BorderStyle(lipgloss.RoundedBorder())
 
 	if p.focused {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
 	} else {
-		// Use brighter color (244 instead of 240) for better visibility
-		borderStyle = borderStyle.BorderForeground(lipgloss.Color("244"))
+		borderStyle = borderStyle.BorderForeground(lipgloss.Color("240"))
 	}
 
 	return borderStyle.Render(content)

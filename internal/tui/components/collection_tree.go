@@ -2497,10 +2497,9 @@ func (c *CollectionTree) View() string {
 	collectionsContent := c.renderCollectionContent(innerWidth, collectionHeight)
 	parts = append(parts, collectionsContent)
 
-	// Border style with horizontal padding for breathing room
+	// Border style
 	borderStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		Padding(0, 1)
+		BorderStyle(lipgloss.RoundedBorder())
 
 	if c.focused {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
@@ -2761,10 +2760,9 @@ func (c *CollectionTree) renderMoveMode(innerWidth, innerHeight int) string {
 		lines = append(lines, strings.Repeat(" ", innerWidth))
 	}
 
-	// Border with horizontal padding for breathing room
+	// Border
 	borderStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		Padding(0, 1)
+		BorderStyle(lipgloss.RoundedBorder())
 	if c.focused {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
 	} else {
@@ -2807,10 +2805,9 @@ func (c *CollectionTree) renderImportMode(innerWidth, innerHeight int) string {
 		lines = append(lines, strings.Repeat(" ", innerWidth))
 	}
 
-	// Border with horizontal padding for breathing room
+	// Border
 	borderStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		Padding(0, 1)
+		BorderStyle(lipgloss.RoundedBorder())
 	if c.focused {
 		borderStyle = borderStyle.BorderForeground(lipgloss.Color("62"))
 	} else {

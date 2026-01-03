@@ -51,13 +51,6 @@ const (
 	NavRight
 )
 
-// Panel padding constants for comfortable spacing
-const (
-	PanelPaddingV = 0 // Vertical padding (lines) - kept minimal to preserve content
-	PanelPaddingH = 1 // Horizontal padding (chars)
-	ContentPadH   = 1 // Content area horizontal padding
-)
-
 // Messages
 
 // FocusMsg is sent when a component should gain focus.
