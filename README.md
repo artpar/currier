@@ -23,47 +23,47 @@ A vim-modal TUI API client for developers and AI agents.
 ## Demos
 
 ### Overview - Three-Pane Layout
-![Overview Demo](demos/demo-overview.gif?v=0.1.35)
+![Overview Demo](demos/demo-overview.gif?v=0.1.37)
 *Navigate the three-pane interface: Collections/History on left, Request editor in center, Response viewer on right. Use H/C to switch views, Tab or 1/2/3 to jump between panes, ? for help overlay.*
 
 ### Creating & Sending Requests
-![Request Demo](demos/demo-request.gif?v=0.1.35)
+![Request Demo](demos/demo-request.gif?v=0.1.37)
 *Complete workflow: Create a GET request, send it, view the JSON response. Then create a POST request with JSON body, send it, and save to a collection.*
 
 ### Request History
-![History Demo](demos/demo-history.gif?v=0.1.35)
+![History Demo](demos/demo-history.gif?v=0.1.37)
 *Browse your request history with vim-style navigation (j/k/G/gg). Select any past request to reload it, replay it to get a fresh response, and see the new entry added to history.*
 
 ### Editing Requests
-![Editing Demo](demos/demo-editing.gif?v=0.1.35)
+![Editing Demo](demos/demo-editing.gif?v=0.1.37)
 *Build a complete request: Add custom headers (X-Custom-Header), query parameters (?search=currier&limit=10), and a JSON body. Send to httpbin.org/anything which echoes everything back.*
 
 ### Viewing Responses
-![Response Demo](demos/demo-response.gif?v=0.1.35)
+![Response Demo](demos/demo-response.gif?v=0.1.37)
 *Explore response data across tabs: Body (scrollable JSON), Headers (server response headers), and Cookies. Copy response with 'y'. See cookies that were set by the server.*
 
 ### Search
-![Search Demo](demos/demo-search.gif?v=0.1.35)
+![Search Demo](demos/demo-search.gif?v=0.1.37)
 *Filter history or collections with '/'. Type a query to see matching results, navigate with j/k, press Enter to load the request. Escape clears the filter.*
 
 ### Environment Variables
-![Environment Demo](demos/demo-environment.gif?v=0.1.35)
+![Environment Demo](demos/demo-environment.gif?v=0.1.37)
 *Use {{variables}} in URLs. Press V to switch environments (dev/staging/prod). Send the same request to different hosts by changing environment. See the actual URL resolved in the response.*
 
 ### Cookie Management
-![Cookie Demo](demos/demo-cookies.gif?v=0.1.35)
+![Cookie Demo](demos/demo-cookies.gif?v=0.1.37)
 *Set a cookie via httpbin, then VIEW it in the Cookies tab. Make another request to verify cookies are automatically sent. Clear all cookies with Ctrl+K and confirm they're gone.*
 
 ### Proxy Settings
-![Proxy Demo](demos/demo-proxy.gif?v=0.1.35)
+![Proxy Demo](demos/demo-proxy.gif?v=0.1.37)
 *Configure an HTTP proxy with P. All requests route through the proxy. Clear the proxy URL to disable. Useful for debugging with mitmproxy, Charles, or Fiddler.*
 
 ### TLS/Certificate Settings
-![TLS Demo](demos/demo-tls.gif?v=0.1.35)
+![TLS Demo](demos/demo-tls.gif?v=0.1.37)
 *Configure mTLS: Set client certificate, private key, and CA certificate paths. Toggle "Skip TLS Verification" for self-signed certs. Settings persist across sessions.*
 
 ### Collection Runner
-![Runner Demo](demos/demo-runner.gif?v=0.1.35)
+![Runner Demo](demos/demo-runner.gif?v=0.1.37)
 *Run all requests in a collection with Ctrl+R. Watch progress as each request executes. View pass/fail results, response times, and test assertion outcomes.*
 
 ## Installation
