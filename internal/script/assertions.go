@@ -51,6 +51,7 @@ func (s *ScopeWithAssertions) initAssertions() {
 	}
 
 	// Add the test and expect functions via JavaScript
+	// Also add pm.* alias for Postman compatibility
 	script := `
 		currier.test = function(name, assertion) {
 			if (typeof assertion === 'function') {
@@ -72,6 +73,10 @@ func (s *ScopeWithAssertions) initAssertions() {
 		currier.expect = function(actual) {
 			return new CurrierExpect(actual, false);
 		};
+
+		// Add pm.* alias for Postman script compatibility
+		pm.test = currier.test;
+		pm.expect = currier.expect;
 
 		function CurrierExpect(actual, negated) {
 			this.actual = actual;
