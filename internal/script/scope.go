@@ -324,7 +324,10 @@ func (s *Scope) sendRequestFunc() func(map[string]interface{}) interface{} {
 
 // refreshCurrierObject updates the currier object in the runtime.
 func (s *Scope) refreshCurrierObject() {
-	s.engine.RegisterObject("currier", s.buildCurrierObject())
+	apiObject := s.buildCurrierObject()
+	s.engine.RegisterObject("currier", apiObject)
+	// Also update pm.* alias for Postman script compatibility
+	s.engine.RegisterObject("pm", apiObject)
 }
 
 // Execute runs a script in this scope.
