@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  capture-test:
+    build:
+      context: ../..
+      dockerfile: e2e/docker/Dockerfile
+    container_name: currier-capture-test
+    # Need to run in privileged mode for tmux
+    privileged: true
+    tty: true
+    stdin_open: true
+    # Network access for making HTTP requests
+    network_mode: bridge
+    environment:
+      - TERM=xterm-256color
