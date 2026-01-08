@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/history"
+	"github.com/artpar/currier/internal/proxy"
 	"github.com/artpar/currier/internal/starred"
 	"github.com/artpar/currier/internal/tui"
 )
@@ -20,6 +21,7 @@ type ViewMode int
 const (
 	ViewCollections ViewMode = iota
 	ViewHistory
+	ViewCapture
 )
 
 // TreeItem represents an item in the collection tree.
@@ -250,6 +252,17 @@ type CollectionTree struct {
 	historyMethodFilter string // Filter by method: "", "GET", "POST", etc.
 	historyStatusFilter string // Filter by status: "", "2xx", "3xx", "4xx", "5xx"
 
+	// Capture support
+	proxyServer         *proxy.Server
+	captures            []*proxy.CapturedRequest
+	captureCursor       int
+	captureOffset       int
+	captureSearch       string
+	captureMethodFilter string // Filter by method: "", "GET", "POST", etc.
+	captureStatusFilter string // Filter by status: "", "2xx", "3xx", "4xx", "5xx"
+	captureHostFilter   string // Filter by host pattern
+	proxyRunning        bool
+
 	// Multi-select state
 	selected     map[string]bool // IDs of selected items (requests/folders)
 	selectMode   bool            // True when in visual/bulk select mode
@@ -364,6 +377,11 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 		return c.handleHistoryKeyMsg(msg)
 	}
 
+	// Handle capture view mode
+	if c.viewMode == ViewCapture {
+		return c.handleCaptureKeyMsg(msg)
+	}
+
 	switch msg.Type {
 	case tea.KeyEsc:
 		// Clear selection if any selected
@@ -411,6 +429,12 @@ func (c *CollectionTree) handleKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 			// Switch to History section
 			c.viewMode = ViewHistory
 			c.loadHistory()
+			c.gPressed = false
+			return c, nil
+		case "C":
+			// Switch to Capture section
+			c.viewMode = ViewCapture
+			c.loadCaptures()
 			c.gPressed = false
 			return c, nil
 		case "v":
@@ -626,6 +650,161 @@ func (c *CollectionTree) moveHistoryCursor(delta int) {
 	c.historyOffset = AdjustOffset(c.historyCursor, c.historyOffset, c.historyContentHeight())
 }
 
+// handleCaptureKeyMsg handles key events in capture view mode.
+func (c *CollectionTree) handleCaptureKeyMsg(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		c.gPressed = false
+		// If searching, clear search filter first
+		if c.captureSearch != "" {
+			c.captureSearch = ""
+			c.loadCaptures()
+			return c, nil
+		}
+		// Otherwise, switch to Collections section
+		c.viewMode = ViewCollections
+		return c, nil
+
+	case tea.KeyRunes:
+		switch string(msg.Runes) {
+		case "/":
+			c.searching = true
+			c.captureSearch = ""
+			c.gPressed = false
+			return c, nil
+		case "j":
+			c.moveCaptureCursor(1)
+		case "k":
+			c.moveCaptureCursor(-1)
+		case "H":
+			// Switch to History section
+			c.viewMode = ViewHistory
+			c.loadHistory()
+			c.gPressed = false
+			return c, nil
+		case "C":
+			// Toggle - switch to Collections section
+			c.viewMode = ViewCollections
+			c.gPressed = false
+			return c, nil
+		case "h", "l":
+			// No-op in capture view (no expand/collapse) but handle gracefully
+			c.gPressed = false
+			return c, nil
+		case "G":
+			if len(c.captures) > 0 {
+				c.captureCursor = len(c.captures) - 1
+				// Adjust offset to ensure cursor is visible
+				visibleHeight := c.captureContentHeight()
+				if c.captureCursor >= c.captureOffset+visibleHeight {
+					c.captureOffset = c.captureCursor - visibleHeight + 1
+				}
+			}
+			c.gPressed = false
+		case "g":
+			if c.gPressed {
+				c.captureCursor = 0
+				c.captureOffset = 0
+				c.gPressed = false
+			} else {
+				c.gPressed = true
+			}
+			return c, nil
+		case "r":
+			// Refresh captures
+			c.loadCaptures()
+			c.gPressed = false
+			return c, nil
+		case "m":
+			// Cycle method filter
+			c.cycleCaptureMethodFilter()
+			c.loadCaptures()
+			c.gPressed = false
+			return c, nil
+		case "s":
+			// Cycle status filter
+			c.cycleCaptureStatusFilter()
+			c.loadCaptures()
+			c.gPressed = false
+			return c, nil
+		case "x":
+			// Clear all filters
+			c.captureMethodFilter = ""
+			c.captureStatusFilter = ""
+			c.captureHostFilter = ""
+			c.captureSearch = ""
+			c.loadCaptures()
+			c.gPressed = false
+			return c, nil
+		case "X":
+			// Clear all captures
+			c.ClearCaptures()
+			c.gPressed = false
+			return c, nil
+		case "p":
+			// Toggle proxy (start/stop)
+			c.gPressed = false
+			return c, func() tea.Msg { return ToggleProxyMsg{} }
+		case "e":
+			// Export selected capture to collection
+			if c.captureCursor >= 0 && c.captureCursor < len(c.captures) {
+				capture := c.captures[c.captureCursor]
+				c.gPressed = false
+				return c, func() tea.Msg { return ExportCaptureMsg{Capture: capture} }
+			}
+		default:
+			c.gPressed = false
+		}
+
+	case tea.KeyEnter:
+		c.gPressed = false
+		return c.handleCaptureEnter()
+	}
+
+	c.gPressed = false
+	return c, nil
+}
+
+func (c *CollectionTree) moveCaptureCursor(delta int) {
+	c.captureCursor = MoveCursor(c.captureCursor, delta, len(c.captures))
+	c.captureOffset = AdjustOffset(c.captureCursor, c.captureOffset, c.captureContentHeight())
+}
+
+func (c *CollectionTree) captureContentHeight() int {
+	// Similar to historyContentHeight, estimate visible rows for captures
+	return max(1, (c.height-8)/1) // Account for header and borders
+}
+
+func (c *CollectionTree) cycleCaptureMethodFilter() {
+	methods := []string{"", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+	for i, m := range methods {
+		if m == c.captureMethodFilter {
+			c.captureMethodFilter = methods[(i+1)%len(methods)]
+			return
+		}
+	}
+	c.captureMethodFilter = methods[0]
+}
+
+func (c *CollectionTree) cycleCaptureStatusFilter() {
+	statuses := []string{"", "2xx", "3xx", "4xx", "5xx"}
+	for i, s := range statuses {
+		if s == c.captureStatusFilter {
+			c.captureStatusFilter = statuses[(i+1)%len(statuses)]
+			return
+		}
+	}
+	c.captureStatusFilter = statuses[0]
+}
+
+func (c *CollectionTree) handleCaptureEnter() (tui.Component, tea.Cmd) {
+	if c.captureCursor >= 0 && c.captureCursor < len(c.captures) {
+		capture := c.captures[c.captureCursor]
+		return c, func() tea.Msg { return SelectCaptureItemMsg{Capture: capture} }
+	}
+	return c, nil
+}
+
 // cycleHistoryMethodFilter cycles through HTTP method filters.
 func (c *CollectionTree) cycleHistoryMethodFilter() {
 	methods := []string{"", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
@@ -718,16 +897,33 @@ func (c *CollectionTree) loadHistory() {
 func (c *CollectionTree) handleSearchInput(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
 	// Determine which search string to modify based on view mode
 	getSearch := func() string {
-		if c.viewMode == ViewHistory {
+		switch c.viewMode {
+		case ViewHistory:
 			return c.historySearch
+		case ViewCapture:
+			return c.captureSearch
+		default:
+			return c.search
 		}
-		return c.search
 	}
 	setSearch := func(s string) {
-		if c.viewMode == ViewHistory {
+		switch c.viewMode {
+		case ViewHistory:
 			c.historySearch = s
-		} else {
+		case ViewCapture:
+			c.captureSearch = s
+		default:
 			c.search = s
+		}
+	}
+	applySearch := func() {
+		switch c.viewMode {
+		case ViewHistory:
+			c.loadHistory()
+		case ViewCapture:
+			c.loadCaptures()
+		default:
+			c.applyFilter()
 		}
 	}
 
@@ -740,50 +936,32 @@ func (c *CollectionTree) handleSearchInput(msg tea.KeyMsg) (tui.Component, tea.C
 	case tea.KeyEnter:
 		// Exit search mode and apply filter
 		c.searching = false
-		if c.viewMode == ViewHistory {
-			c.loadHistory()
-		}
+		applySearch()
 		return c, nil
 
 	case tea.KeyBackspace:
 		s := getSearch()
 		if len(s) > 0 {
 			setSearch(s[:len(s)-1])
-			if c.viewMode == ViewHistory {
-				c.loadHistory()
-			} else {
-				c.applyFilter()
-			}
+			applySearch()
 		}
 		return c, nil
 
 	case tea.KeyCtrlU:
 		// Clear search
 		setSearch("")
-		if c.viewMode == ViewHistory {
-			c.loadHistory()
-		} else {
-			c.applyFilter()
-		}
+		applySearch()
 		return c, nil
 
 	case tea.KeySpace:
 		// Insert space character
 		setSearch(getSearch() + " ")
-		if c.viewMode == ViewHistory {
-			c.loadHistory()
-		} else {
-			c.applyFilter()
-		}
+		applySearch()
 		return c, nil
 
 	case tea.KeyRunes:
 		setSearch(getSearch() + string(msg.Runes))
-		if c.viewMode == ViewHistory {
-			c.loadHistory()
-		} else {
-			c.applyFilter()
-		}
+		applySearch()
 		return c, nil
 	}
 
@@ -2457,17 +2635,21 @@ func (c *CollectionTree) View() string {
 	// Always reserve 1 line for search bar (prevents layout jump)
 	searchBar := c.renderSearchBar()
 
-	// Calculate heights: 2 headers + search bar (always 1) + content
-	// History gets ~30%, Collections gets ~70%
-	availableHeight := innerHeight - 3 // subtract headers (2) and search bar (1)
-	if availableHeight < 2 {
-		availableHeight = 2
+	// Calculate heights: 3 headers + search bar (always 1) + content
+	// Capture gets ~20%, History gets ~25%, Collections gets ~55%
+	availableHeight := innerHeight - 4 // subtract headers (3) and search bar (1)
+	if availableHeight < 3 {
+		availableHeight = 3
 	}
-	historyHeight := availableHeight * 3 / 10
+	captureHeight := availableHeight * 2 / 10
+	if captureHeight < 1 {
+		captureHeight = 1
+	}
+	historyHeight := availableHeight * 25 / 100
 	if historyHeight < 1 {
 		historyHeight = 1
 	}
-	collectionHeight := availableHeight - historyHeight
+	collectionHeight := availableHeight - captureHeight - historyHeight
 	if collectionHeight < 1 {
 		collectionHeight = 1
 	}
@@ -2476,6 +2658,16 @@ func (c *CollectionTree) View() string {
 
 	// Search bar always at top (space always reserved)
 	parts = append(parts, searchBar)
+
+	// Capture section
+	captureHeader := c.renderCaptureHeader()
+	if c.viewMode == ViewCapture {
+		parts = append(parts, activeHeaderStyle.Render(captureHeader))
+	} else {
+		parts = append(parts, inactiveHeaderStyle.Render(captureHeader))
+	}
+	captureContent := c.renderCaptureContent(innerWidth, captureHeight)
+	parts = append(parts, captureContent)
 
 	// History section
 	historyHeader := c.renderHistoryHeader()
@@ -2673,6 +2865,159 @@ func (c *CollectionTree) renderHistoryItem(entry history.Entry, selected bool, w
 	return style.Render(line)
 }
 
+// renderCaptureHeader builds the capture header with active filters.
+func (c *CollectionTree) renderCaptureHeader() string {
+	header := "Capture"
+	if c.viewMode != ViewCapture {
+		header = "Capture (C)"
+	}
+
+	var filters []string
+	if c.captureMethodFilter != "" {
+		filters = append(filters, c.captureMethodFilter)
+	}
+	if c.captureStatusFilter != "" {
+		filters = append(filters, c.captureStatusFilter)
+	}
+	if c.captureHostFilter != "" {
+		filters = append(filters, c.captureHostFilter)
+	}
+
+	// Show proxy status
+	if c.proxyRunning {
+		header += " [ON]"
+	} else {
+		header += " [OFF]"
+	}
+
+	if len(filters) > 0 {
+		header += " [" + strings.Join(filters, ",") + "]"
+	}
+
+	if len(c.captures) > 0 {
+		header += fmt.Sprintf(" (%d)", len(c.captures))
+	}
+
+	return header
+}
+
+// renderCaptureContent renders the list of captured requests.
+func (c *CollectionTree) renderCaptureContent(innerWidth, contentHeight int) string {
+	var lines []string
+
+	if len(c.captures) == 0 {
+		emptyMsg := "No captures"
+		if c.proxyServer == nil {
+			emptyMsg = "Proxy not configured"
+		} else if !c.proxyRunning {
+			emptyMsg = "Proxy stopped (p:start)"
+		}
+		if c.captureMethodFilter != "" || c.captureStatusFilter != "" || c.captureHostFilter != "" {
+			emptyMsg = "No matching captures (m:method s:status x:clear)"
+		}
+		emptyStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243")).
+			Width(innerWidth).
+			Align(lipgloss.Center)
+		lines = append(lines, emptyStyle.Render(emptyMsg))
+	} else {
+		for i := c.captureOffset; i < len(c.captures) && len(lines) < contentHeight; i++ {
+			capture := c.captures[i]
+			line := c.renderCaptureItem(capture, i == c.captureCursor, innerWidth)
+			lines = append(lines, line)
+		}
+	}
+
+	// Pad with empty lines if needed
+	emptyLine := strings.Repeat(" ", innerWidth)
+	for len(lines) < contentHeight {
+		lines = append(lines, emptyLine)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (c *CollectionTree) renderCaptureItem(capture *proxy.CapturedRequest, selected bool, width int) string {
+	// Selection indicator prefix
+	prefix := "  "
+	if selected {
+		prefix = "▶ "
+	}
+
+	// Format: [PREFIX][METHOD] HOST/PATH - status - duration
+	methodBadge := c.methodBadge(capture.Method)
+
+	// Build display URL (host + path)
+	displayURL := capture.Host
+	if capture.Path != "" && capture.Path != "/" {
+		displayURL += capture.Path
+	}
+
+	// Status badge
+	statusStyle := lipgloss.NewStyle().Bold(true)
+	switch {
+	case capture.StatusCode == 0:
+		statusStyle = statusStyle.Foreground(lipgloss.Color("243")) // Error/no response
+	case capture.StatusCode >= 200 && capture.StatusCode < 300:
+		statusStyle = statusStyle.Foreground(lipgloss.Color("34")) // Green
+	case capture.StatusCode >= 300 && capture.StatusCode < 400:
+		statusStyle = statusStyle.Foreground(lipgloss.Color("214")) // Orange
+	case capture.StatusCode >= 400:
+		statusStyle = statusStyle.Foreground(lipgloss.Color("160")) // Red
+	}
+	statusStr := ""
+	if capture.StatusCode > 0 {
+		statusStr = statusStyle.Render(fmt.Sprintf("%d", capture.StatusCode))
+	} else if capture.Error != "" {
+		statusStr = statusStyle.Render("ERR")
+	}
+
+	// Duration
+	durationStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	durationStr := durationStyle.Render(fmt.Sprintf("%dms", capture.Duration.Milliseconds()))
+
+	// HTTPS indicator
+	httpsIndicator := ""
+	if capture.IsHTTPS {
+		httpsIndicator = lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Render("🔒")
+	}
+
+	// Calculate available width for URL
+	// prefix ~2 chars, methodBadge ~6 chars, status ~3 chars, duration ~8 chars, https ~2 chars, spaces ~5 chars
+	availableWidth := width - 28
+	if availableWidth < 10 {
+		availableWidth = 10
+	}
+	if len(displayURL) > availableWidth {
+		displayURL = displayURL[:availableWidth-3] + "..."
+	}
+
+	line := fmt.Sprintf("%s%s%s %s %s %s", prefix, httpsIndicator, methodBadge, displayURL, statusStr, durationStr)
+
+	// Pad to full width
+	if len(line) < width {
+		line += strings.Repeat(" ", width-lipgloss.Width(line))
+	}
+
+	// Apply selection styling
+	style := lipgloss.NewStyle()
+	if selected {
+		// Only show bright highlight if focused AND this section (capture) is active
+		if c.focused && c.viewMode == ViewCapture {
+			style = style.
+				Background(lipgloss.Color("62")).
+				Foreground(lipgloss.Color("229"))
+		} else {
+			// Dimmer highlight when unfocused or section is inactive
+			style = style.
+				Background(lipgloss.Color("238")).
+				Foreground(lipgloss.Color("252"))
+		}
+	}
+
+	return style.Render(line)
+}
+
 func (c *CollectionTree) formatTimeAgo(t time.Time) string {
 	diff := time.Since(t)
 	switch {
@@ -2823,9 +3168,14 @@ func (c *CollectionTree) renderSearchBar() string {
 
 	// Search icon and input
 	searchIcon := "/ "
-	query := c.search
-	if c.viewMode == ViewHistory {
+	var query string
+	switch c.viewMode {
+	case ViewHistory:
 		query = c.historySearch
+	case ViewCapture:
+		query = c.captureSearch
+	default:
+		query = c.search
 	}
 
 	// When not searching and no query, show placeholder hint
@@ -2842,9 +3192,12 @@ func (c *CollectionTree) renderSearchBar() string {
 
 	// Calculate result count for feedback
 	var resultCount int
-	if c.viewMode == ViewHistory {
+	switch c.viewMode {
+	case ViewHistory:
 		resultCount = len(c.historyEntries)
-	} else {
+	case ViewCapture:
+		resultCount = len(c.captures)
+	default:
 		if c.search != "" {
 			resultCount = len(c.filteredItems)
 		} else {
@@ -3258,6 +3611,22 @@ func (c *CollectionTree) GetSelectedCollection() *core.Collection {
 	return nil
 }
 
+// GetOrCreateCollection returns a collection by name, creating it if it doesn't exist.
+func (c *CollectionTree) GetOrCreateCollection(name string) *core.Collection {
+	// Check if collection already exists
+	for _, coll := range c.collections {
+		if coll.Name() == name {
+			return coll
+		}
+	}
+
+	// Create new collection
+	newColl := core.NewCollection(name)
+	c.collections = append(c.collections, newColl)
+	c.rebuildItems()
+	return newColl
+}
+
 // folderBelongsToCollection checks if a folder belongs to a collection.
 func (c *CollectionTree) folderBelongsToCollection(folder *core.Folder, coll *core.Collection) bool {
 	for _, f := range coll.Folders() {
@@ -3318,6 +3687,88 @@ func (c *CollectionTree) requestBelongsToFolder(req *core.RequestDefinition, fol
 func (c *CollectionTree) SetHistoryStore(store history.Store) {
 	c.historyStore = store
 	c.loadHistory() // Load history immediately when store is set
+}
+
+// SetProxyServer sets the proxy server for capture mode.
+func (c *CollectionTree) SetProxyServer(server *proxy.Server) {
+	c.proxyServer = server
+	if server != nil {
+		c.proxyRunning = server.IsRunning()
+		c.loadCaptures()
+	}
+}
+
+// AddCapture adds a new capture to the list.
+func (c *CollectionTree) AddCapture(capture *proxy.CapturedRequest) {
+	// Prepend to show newest first
+	c.captures = append([]*proxy.CapturedRequest{capture}, c.captures...)
+	// Limit to buffer size
+	if c.proxyServer != nil {
+		bufSize := c.proxyServer.Config().BufferSize
+		if len(c.captures) > bufSize {
+			c.captures = c.captures[:bufSize]
+		}
+	}
+}
+
+// loadCaptures loads captures from the proxy server.
+func (c *CollectionTree) loadCaptures() {
+	if c.proxyServer == nil {
+		c.captures = nil
+		return
+	}
+
+	// Build filter options
+	opts := proxy.FilterOptions{
+		Method:      c.captureMethodFilter,
+		Host:        c.captureHostFilter,
+		Search:      c.captureSearch,
+	}
+
+	// Apply status filter
+	switch c.captureStatusFilter {
+	case "2xx":
+		opts.StatusMin = 200
+		opts.StatusMax = 299
+	case "3xx":
+		opts.StatusMin = 300
+		opts.StatusMax = 399
+	case "4xx":
+		opts.StatusMin = 400
+		opts.StatusMax = 499
+	case "5xx":
+		opts.StatusMin = 500
+		opts.StatusMax = 599
+	}
+
+	c.captures = c.proxyServer.GetCaptures(opts)
+	c.captureCursor = 0
+	c.captureOffset = 0
+}
+
+// ClearCaptures clears all captured requests.
+func (c *CollectionTree) ClearCaptures() {
+	if c.proxyServer != nil {
+		c.proxyServer.ClearCaptures()
+	}
+	c.captures = nil
+	c.captureCursor = 0
+	c.captureOffset = 0
+}
+
+// SetProxyRunning updates the proxy running state.
+func (c *CollectionTree) SetProxyRunning(running bool) {
+	c.proxyRunning = running
+}
+
+// IsProxyRunning returns true if the proxy server is running.
+func (c *CollectionTree) IsProxyRunning() bool {
+	return c.proxyRunning
+}
+
+// ProxyServer returns the proxy server instance.
+func (c *CollectionTree) ProxyServer() *proxy.Server {
+	return c.proxyServer
 }
 
 // ViewMode returns the current view mode.
@@ -3480,10 +3931,14 @@ func (c *CollectionTree) addFolderItems(folder *core.Folder, level int) {
 
 // ViewModeName returns the view mode as a string.
 func (c *CollectionTree) ViewModeName() string {
-	if c.viewMode == ViewHistory {
+	switch c.viewMode {
+	case ViewHistory:
 		return "history"
+	case ViewCapture:
+		return "capture"
+	default:
+		return "collections"
 	}
-	return "collections"
 }
 
 // SearchQuery returns the current search query.
