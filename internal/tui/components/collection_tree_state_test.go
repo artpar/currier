@@ -294,15 +294,15 @@ func TestCollectionTree_CollectionsMode_ViewSwitch(t *testing.T) {
 		assert.Equal(t, ViewHistory, tree.ViewMode())
 	})
 
-	t.Run("C_does_nothing_in_collections_mode", func(t *testing.T) {
+	t.Run("C_cycles_from_collections_to_capture_mode", func(t *testing.T) {
 		tree := newTreeWithItems(t)
 		tree.Focus()
 		tree = sendKey(tree, 'C') // Switch to collections mode
 		assert.Equal(t, ViewCollections, tree.ViewMode())
 
-		tree = sendKey(tree, 'C')
+		tree = sendKey(tree, 'C') // Cycle to capture mode
 
-		assert.Equal(t, ViewCollections, tree.ViewMode())
+		assert.Equal(t, ViewCapture, tree.ViewMode())
 	})
 }
 

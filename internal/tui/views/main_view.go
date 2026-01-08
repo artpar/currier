@@ -20,8 +20,9 @@ import (
 	"github.com/artpar/currier/internal/interfaces"
 	"github.com/artpar/currier/internal/interpolate"
 	httpclient "github.com/artpar/currier/internal/protocol/http"
-	"github.com/artpar/currier/internal/runner"
 	"github.com/artpar/currier/internal/protocol/websocket"
+	"github.com/artpar/currier/internal/proxy"
+	"github.com/artpar/currier/internal/runner"
 	"github.com/artpar/currier/internal/script"
 	"github.com/artpar/currier/internal/starred"
 	"github.com/artpar/currier/internal/storage/filesystem"
@@ -113,6 +114,11 @@ type MainView struct {
 	runnerSummary     *runner.RunSummary
 	runnerCurrentReq  string
 	runnerCancelFunc  context.CancelFunc
+
+	// Capture proxy server
+	captureProxy       *proxy.Server
+	captureProxyCtx    context.Context
+	captureProxyCancel context.CancelFunc
 }
 
 // clearNotificationMsg is sent to clear the notification.
@@ -669,6 +675,60 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		v.notification = "Folder deleted"
 		v.notifyUntil = time.Now().Add(2 * time.Second)
 		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case components.ToggleProxyMsg:
+		return v.handleToggleProxy()
+
+	case components.CaptureReceivedMsg:
+		// Update the collection tree with new captures
+		v.tree.AddCapture(msg.Capture)
+		return v, nil
+
+	case components.RefreshCapturesMsg:
+		// Refresh captures from proxy server
+		if v.captureProxy != nil && v.captureProxy.IsRunning() {
+			v.tree.SetProxyServer(v.captureProxy)
+			// Continue ticking while proxy is running
+			return v, tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
+				return components.RefreshCapturesMsg{}
+			})
+		}
+		return v, nil
+
+	case components.SelectCaptureItemMsg:
+		// Display the captured request/response in the panels
+		if msg.Capture != nil {
+			v.displayCapture(msg.Capture)
+		}
+		return v, nil
+
+	case components.ExportCaptureMsg:
+		// Export captured request to a collection
+		if msg.Capture != nil {
+			return v.handleExportCapture(msg.Capture)
+		}
+		return v, nil
+
+	case components.ProxyStartedMsg:
+		v.notification = "Proxy started on " + msg.Address
+		v.notifyUntil = time.Now().Add(3 * time.Second)
+		return v, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case components.ProxyStoppedMsg:
+		v.notification = "Proxy stopped"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+
+	case components.ProxyErrorMsg:
+		v.notification = "Proxy error: " + msg.Error.Error()
+		v.notifyUntil = time.Now().Add(3 * time.Second)
+		return v, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 			return clearNotificationMsg{}
 		})
 
@@ -3188,4 +3248,151 @@ func sanitizeFilename(name string) string {
 // writeFile writes data to a file in the current directory.
 func writeFile(filename string, data []byte) error {
 	return os.WriteFile(filename, data, 0644)
+}
+
+// handleToggleProxy starts or stops the capture proxy server.
+func (v *MainView) handleToggleProxy() (tui.Component, tea.Cmd) {
+	if v.captureProxy != nil && v.captureProxy.IsRunning() {
+		// Stop the proxy
+		if v.captureProxyCancel != nil {
+			v.captureProxyCancel()
+		}
+		v.captureProxy.Stop()
+		v.tree.SetProxyRunning(false)
+		return v, func() tea.Msg { return components.ProxyStoppedMsg{} }
+	}
+
+	// Start the proxy (use :0 to let OS assign a free port)
+	var err error
+	v.captureProxy, err = proxy.NewServer(
+		proxy.WithListenAddr(":0"),
+		proxy.WithHTTPS(false), // Start without HTTPS by default for simplicity
+		proxy.WithBufferSize(1000),
+	)
+	if err != nil {
+		return v, func() tea.Msg { return components.ProxyErrorMsg{Error: err} }
+	}
+
+	// Set up capture listener to receive real-time updates
+	v.captureProxy.AddListener(proxy.CaptureListenerFunc(func(capture *proxy.CapturedRequest) {
+		// This will be called from a goroutine, but bubbletea handles this
+		// The capture will be added to the tree via the CaptureReceivedMsg
+	}))
+
+	// Create context for the proxy
+	v.captureProxyCtx, v.captureProxyCancel = context.WithCancel(context.Background())
+
+	if err := v.captureProxy.Start(v.captureProxyCtx); err != nil {
+		return v, func() tea.Msg { return components.ProxyErrorMsg{Error: err} }
+	}
+
+	// Set the proxy server on the tree so it can access captures
+	v.tree.SetProxyServer(v.captureProxy)
+	v.tree.SetProxyRunning(true)
+
+	addr := v.captureProxy.ListenAddr()
+	// Return both the started message and start the refresh tick
+	return v, tea.Batch(
+		func() tea.Msg { return components.ProxyStartedMsg{Address: addr} },
+		tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
+			return components.RefreshCapturesMsg{}
+		}),
+	)
+}
+
+// displayCapture shows a captured request/response in the panels.
+func (v *MainView) displayCapture(capture *proxy.CapturedRequest) {
+	// Convert capture to a request definition for display
+	reqDef := core.NewRequestDefinition(
+		fmt.Sprintf("%s %s", capture.Method, capture.Path),
+		capture.Method,
+		capture.URL,
+	)
+
+	// Set headers
+	for name, values := range capture.RequestHeaders {
+		for _, val := range values {
+			reqDef.SetHeader(name, val)
+		}
+	}
+
+	// Set body if present
+	if len(capture.RequestBody) > 0 {
+		reqDef.SetBody(string(capture.RequestBody))
+	}
+
+	// Display in request panel
+	v.request.SetRequest(reqDef)
+
+	// Create a response to display
+	headers := core.NewHeaders()
+	for name, values := range capture.ResponseHeaders {
+		for _, val := range values {
+			headers.Set(name, val)
+		}
+	}
+
+	body := core.NewRawBody(capture.ResponseBody, headers.Get("Content-Type"))
+
+	timing := interfaces.TimingInfo{
+		Total: capture.Duration,
+	}
+
+	resp := core.NewResponse(capture.ID, "http", core.NewStatus(capture.StatusCode, capture.StatusText)).
+		WithHeaders(headers).
+		WithBody(body).
+		WithTiming(timing)
+
+	// Display in response panel
+	v.response.SetResponse(resp)
+	v.focusPane(PaneResponse)
+}
+
+// handleExportCapture exports a captured request to a new collection.
+func (v *MainView) handleExportCapture(capture *proxy.CapturedRequest) (tui.Component, tea.Cmd) {
+	// Create a new request definition from the capture
+	reqDef := core.NewRequestDefinition(
+		fmt.Sprintf("%s %s", capture.Method, capture.Path),
+		capture.Method,
+		capture.URL,
+	)
+
+	// Set headers
+	for name, values := range capture.RequestHeaders {
+		for _, val := range values {
+			reqDef.SetHeader(name, val)
+		}
+	}
+
+	// Set body if present
+	if len(capture.RequestBody) > 0 {
+		reqDef.SetBody(string(capture.RequestBody))
+	}
+
+	// Add to "Captured Requests" collection (create if doesn't exist)
+	collection := v.tree.GetOrCreateCollection("Captured Requests")
+	if collection != nil {
+		collection.AddRequest(reqDef)
+
+		// Persist if collection store is available
+		if v.collectionStore != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = v.collectionStore.Save(ctx, collection)
+			}()
+		}
+
+		v.notification = "Request exported to 'Captured Requests'"
+		v.notifyUntil = time.Now().Add(2 * time.Second)
+		return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearNotificationMsg{}
+		})
+	}
+
+	v.notification = "Failed to export request"
+	v.notifyUntil = time.Now().Add(2 * time.Second)
+	return v, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return clearNotificationMsg{}
+	})
 }
