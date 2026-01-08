@@ -18,6 +18,7 @@ A vim-modal TUI API client for developers and AI agents.
 - **Form-data / File Upload** - Multipart form-data body type with file upload support
 - **Proxy Support** - HTTP, HTTPS, and SOCKS5 proxy configuration
 - **Client Certificates** - mTLS support with custom CA certificates
+- **Traffic Capture** - HTTP proxy to capture and inspect traffic from any application
 - **MCP Server** - AI assistant integration via Model Context Protocol (32 tools)
 
 ## Demos
@@ -65,6 +66,10 @@ A vim-modal TUI API client for developers and AI agents.
 ### Collection Runner
 ![Runner Demo](demos/demo-runner.gif?v=0.1.37)
 *Run all requests in a collection with Ctrl+R. Watch progress as each request executes. View pass/fail results, response times, and test assertion outcomes.*
+
+### Traffic Capture
+![Capture Demo](demos/demo-capture.gif?v=0.1.37)
+*Capture HTTP traffic from any application. Press C to switch to Capture mode, p to start/stop the proxy. Route traffic through the proxy to see all requests in real-time. Filter by method with m, clear captures with X.*
 
 ## Installation
 
@@ -284,6 +289,36 @@ Summary:
   Total time: 479ms
 ```
 
+### Traffic Capture
+
+Capture HTTP traffic from any application by routing it through Currier's built-in proxy:
+
+1. **Switch to Capture mode** - Press `C` twice (History → Collections → Capture)
+2. **Start the proxy** - Press `p` to toggle the proxy on/off
+3. **Configure your application** - Set HTTP proxy to the displayed address (e.g., `localhost:8080`)
+4. **View captured traffic** - Requests appear in real-time as they flow through the proxy
+
+```bash
+# Example: Route curl through Currier's proxy
+curl --proxy http://localhost:8080 https://api.example.com/users
+
+# Example: Set proxy for a Node.js application
+HTTP_PROXY=http://localhost:8080 node app.js
+
+# Example: macOS system proxy (affects most applications)
+networksetup -setwebproxy "Wi-Fi" localhost 8080
+```
+
+**Capture mode shortcuts:**
+| Key | Action |
+|-----|--------|
+| `p` | Start/Stop proxy |
+| `m` | Cycle method filter (ALL → GET → POST → ...) |
+| `x` | Clear method filter |
+| `X` | Clear all captures |
+| `Enter` | Load selected capture into request panel |
+| `H` | Switch to History mode |
+
 ### Import curl Commands
 
 Import any curl command directly into the TUI - perfect for testing API examples from documentation:
@@ -332,6 +367,7 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 |-----|--------|
 | `Tab` | Cycle between panes |
 | `1/2/3` | Jump to pane |
+| `H/C` | Switch to History/cycle Collections/Capture |
 | `n` | Create new request |
 | `s` | Save request to collection |
 | `w` | Toggle WebSocket mode |
@@ -362,6 +398,18 @@ currier curl -X POST 'https://api.example.com/endpoint' \
 | `K/J` | Move request up/down |
 | `R` | Rename request/folder |
 | `/` | Search |
+| `H` | Switch to History |
+
+### Capture Panel
+| Key | Action |
+|-----|--------|
+| `p` | Start/Stop proxy |
+| `j/k` | Navigate captures |
+| `Enter` | Load capture into request |
+| `m` | Cycle method filter |
+| `x` | Clear method filter |
+| `X` | Clear all captures |
+| `/` | Search captures |
 | `H` | Switch to History |
 
 ### Request Panel
@@ -403,10 +451,12 @@ currier/
 │   ├── interpolate/   # Variable interpolation engine
 │   ├── mcp/           # MCP server for AI assistant integration
 │   ├── protocol/      # HTTP client (proxy, TLS, cookies)
+│   ├── proxy/         # HTTP proxy server for traffic capture
 │   ├── runner/        # Collection runner for batch execution
 │   ├── script/        # JavaScript scripting engine
 │   ├── storage/       # Collection/environment persistence
 │   └── tui/           # Terminal UI components
+├── e2e/               # End-to-end tests (Docker-based)
 ├── tests/             # Integration tests
 └── testdata/          # Test fixtures
 ```
