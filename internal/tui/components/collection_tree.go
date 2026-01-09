@@ -262,6 +262,7 @@ type CollectionTree struct {
 	captureStatusFilter string // Filter by status: "", "2xx", "3xx", "4xx", "5xx"
 	captureHostFilter   string // Filter by host pattern
 	proxyRunning        bool
+	certPath            string // Path to CA cert for HTTPS
 
 	// Multi-select state
 	selected     map[string]bool // IDs of selected items (requests/folders)
@@ -2911,10 +2912,7 @@ func (c *CollectionTree) renderCaptureContent(innerWidth, contentHeight int) str
 			emptyLines = []string{
 				"Press 'p' to start capture proxy",
 				"",
-				"Then route HTTP traffic through proxy:",
-				"curl --proxy http://localhost:PORT http://example.com",
-				"",
-				"(Note: HTTPS requires --https flag)",
+				"Captures HTTP and HTTPS traffic",
 			}
 		} else if c.captureMethodFilter != "" || c.captureStatusFilter != "" || c.captureHostFilter != "" {
 			emptyLines = []string{"No matching captures", "(m:method x:clear filter)"}
@@ -2929,12 +2927,15 @@ func (c *CollectionTree) renderCaptureContent(innerWidth, contentHeight int) str
 					proxyAddr = "localhost" + proxyAddr
 				}
 			}
+			// Show curl commands for HTTP and HTTPS
 			emptyLines = []string{
-				"Waiting for HTTP traffic...",
+				"Waiting for traffic...",
 				"",
+				"HTTP:",
 				"curl --proxy http://" + proxyAddr + " http://URL",
 				"",
-				"(HTTPS traffic passes through encrypted)",
+				"HTTPS (use -k to skip cert verify):",
+				"curl --proxy http://" + proxyAddr + " -k https://URL",
 			}
 		}
 		emptyStyle := lipgloss.NewStyle().
@@ -3783,6 +3784,11 @@ func (c *CollectionTree) ClearCaptures() {
 // SetProxyRunning updates the proxy running state.
 func (c *CollectionTree) SetProxyRunning(running bool) {
 	c.proxyRunning = running
+}
+
+// SetCertPath sets the CA certificate path for HTTPS interception.
+func (c *CollectionTree) SetCertPath(path string) {
+	c.certPath = path
 }
 
 // SetViewMode sets the view mode (Collections, History, or Capture).

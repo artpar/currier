@@ -11,7 +11,8 @@ type SelectCaptureItemMsg struct {
 
 // ProxyStartedMsg is sent when the proxy server starts.
 type ProxyStartedMsg struct {
-	Address string
+	Address  string
+	CertPath string // Path to CA cert for HTTPS interception
 }
 
 // ProxyStoppedMsg is sent when the proxy server stops.
