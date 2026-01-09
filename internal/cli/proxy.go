@@ -31,15 +31,15 @@ func NewProxyCommand() *cobra.Command {
 		Short: "Start HTTP/HTTPS proxy server for traffic capture",
 		Long: `Start an HTTP/HTTPS proxy server that captures all traffic passing through it.
 
-Configure applications to use this proxy (e.g., http_proxy=localhost:8080) to capture
-their traffic. For HTTPS interception, export and install the CA certificate.
+Configure applications to use this proxy to capture their traffic.
+For HTTPS interception, export and install the CA certificate.
 
 Examples:
-  # Start proxy on default port (8080)
+  # Start proxy (auto-assigns available port)
   currier proxy
 
-  # Start proxy on custom port
-  currier proxy --port 9090
+  # Start proxy on specific port
+  currier proxy --port 8080
 
   # Export CA certificate for HTTPS interception
   currier proxy --export-ca ~/currier-ca.crt
@@ -55,7 +55,7 @@ Examples:
 		},
 	}
 
-	cmd.Flags().StringVarP(&opts.ListenAddr, "port", "p", ":8080", "Port or address to listen on (e.g., :8080, 127.0.0.1:8080)")
+	cmd.Flags().StringVarP(&opts.ListenAddr, "port", "p", ":0", "Port to listen on (:0 for auto, :8080 for specific port)")
 	cmd.Flags().BoolVar(&opts.EnableHTTPS, "https", true, "Enable HTTPS interception (requires CA cert)")
 	cmd.Flags().StringVar(&opts.ExportCA, "export-ca", "", "Export CA certificate to specified path and exit")
 	cmd.Flags().BoolVarP(&opts.Verbose, "verbose", "v", false, "Enable verbose logging")
@@ -119,8 +119,15 @@ func runProxy(cmd *cobra.Command, opts *ProxyOptions) error {
 		return fmt.Errorf("failed to start proxy server: %w", err)
 	}
 
-	// Print startup info
-	fmt.Fprintf(cmd.OutOrStdout(), "Proxy server started on %s\n", server.ListenAddr())
+	// Print startup info - format address for display
+	addr := server.ListenAddr()
+	// Handle IPv6 any address [::]:port -> localhost:port
+	if len(addr) > 4 && addr[:4] == "[::]" {
+		addr = "localhost" + addr[4:]
+	} else if len(addr) > 0 && addr[0] == ':' {
+		addr = "localhost" + addr
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Proxy server started on %s\n", addr)
 	if opts.EnableHTTPS {
 		fmt.Fprintf(cmd.OutOrStdout(), "HTTPS interception enabled\n")
 		fmt.Fprintf(cmd.OutOrStdout(), "  Export CA: currier proxy --export-ca ca.crt\n")
@@ -128,8 +135,10 @@ func runProxy(cmd *cobra.Command, opts *ProxyOptions) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "HTTPS interception disabled (--https=false)\n")
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "\nConfigure your applications to use this proxy:\n")
-	fmt.Fprintf(cmd.OutOrStdout(), "  export http_proxy=http://%s\n", server.ListenAddr())
-	fmt.Fprintf(cmd.OutOrStdout(), "  export https_proxy=http://%s\n", server.ListenAddr())
+	fmt.Fprintf(cmd.OutOrStdout(), "  export http_proxy=http://%s\n", addr)
+	fmt.Fprintf(cmd.OutOrStdout(), "  export https_proxy=http://%s\n", addr)
+	fmt.Fprintf(cmd.OutOrStdout(), "\nOr use directly with curl:\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "  curl --proxy http://%s URL\n", addr)
 	fmt.Fprintf(cmd.OutOrStdout(), "\nPress Ctrl+C to stop...\n")
 
 	// Add a simple capture listener for console output
