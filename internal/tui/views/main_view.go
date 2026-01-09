@@ -712,9 +712,13 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		return v, nil
 
 	case components.ProxyStartedMsg:
-		v.notification = "Proxy started on " + msg.Address
-		v.notifyUntil = time.Now().Add(3 * time.Second)
-		return v, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+		addr := msg.Address
+		if addr[0] == ':' {
+			addr = "localhost" + addr
+		}
+		v.notification = "Proxy started! Use: curl --proxy http://" + addr + " URL"
+		v.notifyUntil = time.Now().Add(5 * time.Second)
+		return v, tea.Tick(5*time.Second, func(time.Time) tea.Msg {
 			return clearNotificationMsg{}
 		})
 
@@ -1513,6 +1517,22 @@ func (v *MainView) renderHelp() string {
 		"│    r                  Refresh history                   │",
 		"│    C / H              Return to Collections view        │",
 		"│    Esc                Return to Collections view        │",
+		"│                                                          │",
+		"│  Capture Mode (Traffic Proxy)                           │",
+		"│    C                  Switch to Capture mode            │",
+		"│    p                  Start/Stop capture proxy          │",
+		"│    j / k              Navigate captured requests        │",
+		"│    Enter              Load capture into request panel   │",
+		"│    m                  Cycle method filter (GET/POST/..) │",
+		"│    x                  Clear method filter               │",
+		"│    X                  Clear all captures                │",
+		"│    H                  Return to History view            │",
+		"│                                                          │",
+		"│  How Capture Works:                                      │",
+		"│    1. Press C twice to enter Capture mode               │",
+		"│    2. Press p to start the proxy (shows port)           │",
+		"│    3. Route traffic: curl --proxy localhost:PORT url    │",
+		"│    4. Captured requests appear in real-time             │",
 		"│                                                          │",
 		"│  Request Pane                                            │",
 		"│    [ / ]              Switch tabs (URL/Headers/etc)     │",
