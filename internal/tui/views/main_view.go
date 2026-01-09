@@ -733,9 +733,11 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 		} else if len(addr) > 0 && addr[0] == ':' {
 			addr = "localhost" + addr
 		}
-		v.notification = "Proxy started! Use: curl --proxy http://" + addr + " URL"
-		v.notifyUntil = time.Now().Add(5 * time.Second)
-		return v, tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+		// Store cert path for display in capture view
+		v.tree.SetCertPath(msg.CertPath)
+		v.notification = "Proxy started on " + addr + " (HTTPS enabled)"
+		v.notifyUntil = time.Now().Add(3 * time.Second)
+		return v, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 			return clearNotificationMsg{}
 		})
 
@@ -1590,10 +1592,10 @@ func (v *MainView) getHelpContent() []string {
 			"   H          Toggle History view",
 			"   Enter      Load a past request",
 			"",
-			"5. CAPTURE HTTP TRAFFIC",
+			"5. CAPTURE TRAFFIC (HTTP/HTTPS)",
 			"   C          Switch to Capture mode (press twice)",
 			"   p          Start proxy server",
-			"            Then: curl --proxy http://localhost:PORT http://url",
+			"            curl --proxy http://localhost:PORT -k https://url",
 			"",
 			"Press Tab/Arrow keys to see more help sections.",
 		}
@@ -1722,24 +1724,23 @@ func (v *MainView) getHelpContent() []string {
 		}
 	case 5: // Capture
 		return []string{
-			"CAPTURE MODE - HTTP Traffic Proxy",
+			"CAPTURE MODE - HTTP/HTTPS Traffic Proxy",
 			"",
-			"Capture intercepts HTTP traffic from any app.",
-			"HTTPS traffic passes through encrypted (not captured).",
+			"Captures both HTTP and HTTPS traffic.",
 			"",
 			"HOW TO USE",
 			"   1. Press C (twice) to enter Capture mode",
 			"   2. Press p to start the proxy",
-			"   3. Note the port number shown",
-			"   4. Route HTTP traffic through the proxy:",
+			"   3. Route traffic through the proxy:",
 			"",
-			"      curl --proxy http://localhost:PORT http://example.com",
+			"      # HTTP",
+			"      curl --proxy http://localhost:PORT http://url",
 			"",
-			"      Or set environment variable:",
-			"      export http_proxy=http://localhost:PORT",
+			"      # HTTPS (use -k to skip cert verify)",
+			"      curl --proxy http://localhost:PORT -k https://url",
 			"",
-			"   5. Captured requests appear in real-time",
-			"   6. Press Enter on any capture to inspect it",
+			"   4. Captured requests appear with 🔒 for HTTPS",
+			"   5. Press Enter on any capture to inspect it",
 			"",
 			"KEYBOARD SHORTCUTS",
 			"   C          Enter Capture mode",
@@ -1751,7 +1752,7 @@ func (v *MainView) getHelpContent() []string {
 			"   X          Clear all captures",
 			"   H          Return to History view",
 			"",
-			"TIP: Use --capture flag to start in capture mode:",
+			"TIP: Start directly in capture mode:",
 			"     currier --capture",
 		}
 	}
@@ -3611,10 +3612,11 @@ func (v *MainView) handleToggleProxy() (tui.Component, tea.Cmd) {
 	}
 
 	// Start the proxy (use :0 to let OS assign a free port)
+	// Enable HTTPS by default - cert auto-generates to ~/.currier/proxy/ca.crt
 	var err error
 	v.captureProxy, err = proxy.NewServer(
 		proxy.WithListenAddr(":0"),
-		proxy.WithHTTPS(false), // Start without HTTPS by default for simplicity
+		proxy.WithHTTPS(true),
 		proxy.WithBufferSize(1000),
 	)
 	if err != nil {
@@ -3639,9 +3641,10 @@ func (v *MainView) handleToggleProxy() (tui.Component, tea.Cmd) {
 	v.tree.SetProxyRunning(true)
 
 	addr := v.captureProxy.ListenAddr()
+	certPath := proxy.CACertPath()
 	// Return both the started message and start the refresh tick
 	return v, tea.Batch(
-		func() tea.Msg { return components.ProxyStartedMsg{Address: addr} },
+		func() tea.Msg { return components.ProxyStartedMsg{Address: addr, CertPath: certPath} },
 		tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
 			return components.RefreshCapturesMsg{}
 		}),
