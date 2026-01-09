@@ -23,6 +23,7 @@ import (
 func NewRootCommand(version string) *cobra.Command {
 	var importFiles []string
 	var envFiles []string
+	var captureMode bool
 
 	cmd := &cobra.Command{
 		Use:     "currier",
@@ -51,7 +52,7 @@ func NewRootCommand(version string) *cobra.Command {
 				env = core.MergeCollectionVariables(env, collections)
 			}
 
-			return runTUI(collections, env)
+			return runTUI(collections, env, captureMode)
 		},
 	}
 
@@ -60,6 +61,8 @@ func NewRootCommand(version string) *cobra.Command {
 		"Import collection file(s). Supports Postman, OpenAPI, cURL, HAR formats")
 	cmd.Flags().StringArrayVarP(&envFiles, "env", "e", nil,
 		"Environment file(s) for variable substitution")
+	cmd.Flags().BoolVarP(&captureMode, "capture", "c", false,
+		"Start in capture mode with proxy auto-started")
 
 	// Add subcommands
 	cmd.AddCommand(NewSendCommand())
@@ -129,8 +132,13 @@ func (m tuiModel) View() string {
 }
 
 // runTUI starts the TUI application with optional collections and environment.
-func runTUI(collections []*core.Collection, env *core.Environment) error {
+func runTUI(collections []*core.Collection, env *core.Environment, captureMode bool) error {
 	view := views.NewMainView()
+
+	// Enable capture mode if requested
+	if captureMode {
+		view.EnableCaptureMode()
+	}
 
 	// Initialize history store
 	historyStore, err := initHistoryStore()

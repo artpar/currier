@@ -38,7 +38,7 @@ Examples:
 			}
 
 			// Start TUI with the collection
-			return runTUI([]*core.Collection{collection}, nil)
+			return runTUI([]*core.Collection{collection}, nil, false)
 		},
 	}
 	return cmd
