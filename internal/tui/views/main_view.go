@@ -728,7 +728,10 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 
 	case components.ProxyStartedMsg:
 		addr := msg.Address
-		if addr[0] == ':' {
+		// Handle IPv6 any address [::]:port -> localhost:port
+		if len(addr) > 4 && addr[:4] == "[::]" {
+			addr = "localhost" + addr[4:]
+		} else if len(addr) > 0 && addr[0] == ':' {
 			addr = "localhost" + addr
 		}
 		v.notification = "Proxy started! Use: curl --proxy http://" + addr + " URL"
