@@ -60,6 +60,8 @@ type MainView struct {
 	wsPanel      *components.WebSocketPanel
 	wsClient     *websocket.Client
 	showHelp     bool
+	helpTab      int // Current help tab (0=Quick, 1=Navigation, 2=Collections, 3=Request, 4=Response, 5=Capture)
+	helpScroll   int // Scroll position within help tab
 	environment  *core.Environment
 	interpolator *interpolate.Engine
 	notification string    // Temporary notification message
@@ -182,10 +184,7 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 	// Handle help overlay first
 	if v.showHelp {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			if keyMsg.Type == tea.KeyEsc || string(keyMsg.Runes) == "?" {
-				v.showHelp = false
-				return v, nil
-			}
+			return v.handleHelpKey(keyMsg)
 		}
 		return v, nil
 	}
@@ -1500,101 +1499,407 @@ func (v *MainView) renderStatusBar() string {
 	return barStyle.Render(leftContent + spacer + helpHint)
 }
 
-func (v *MainView) renderHelp() string {
-	helpContent := []string{
-		"╭────────────────────── Currier Help ──────────────────────╮",
-		"│                                                          │",
-		"│  Navigation                                              │",
-		"│    Tab / Shift+Tab    Cycle between panes               │",
-		"│    1 / 2 / 3          Jump to pane                      │",
-		"│    j / k              Navigate / Scroll                 │",
-		"│    gg / G             Go to top/bottom                  │",
-		"│                                                          │",
-		"│  Collections Pane                                        │",
-		"│    h / l              Collapse/Expand collection        │",
-		"│    Enter              Select request                    │",
-		"│    N                  Create new collection             │",
-		"│    F                  Create new folder                 │",
-		"│    r                  Rename selected collection        │",
-		"│    D                  Delete selected collection/folder │",
-		"│    d                  Delete selected request           │",
-		"│    m                  Move request/folder                │",
-		"│    y                  Duplicate request/folder           │",
-		"│    c                  Copy request as cURL              │",
-		"│    E                  Export collection to Postman      │",
-		"│    I                  Import (Postman/OpenAPI)          │",
-		"│    K/J                Move request/folder up/down       │",
-		"│    R                  Rename selected request/folder    │",
-		"│    /                  Start search                      │",
-		"│    H                  Switch to History view            │",
-		"│    Esc                Clear search (or exit History)    │",
-		"│                                                          │",
-		"│  History View (in Collections pane)                      │",
-		"│    j / k              Navigate history entries          │",
-		"│    Enter              Load history request              │",
-		"│    r                  Refresh history                   │",
-		"│    C / H              Return to Collections view        │",
-		"│    Esc                Return to Collections view        │",
-		"│                                                          │",
-		"│  Capture Mode (Traffic Proxy)                           │",
-		"│    C                  Switch to Capture mode            │",
-		"│    p                  Start/Stop capture proxy          │",
-		"│    j / k              Navigate captured requests        │",
-		"│    Enter              Load capture into request panel   │",
-		"│    m                  Cycle method filter (GET/POST/..) │",
-		"│    x                  Clear method filter               │",
-		"│    X                  Clear all captures                │",
-		"│    H                  Return to History view            │",
-		"│                                                          │",
-		"│  How Capture Works:                                      │",
-		"│    1. Press C twice to enter Capture mode               │",
-		"│    2. Press p to start the proxy (shows port)           │",
-		"│    3. Route traffic: curl --proxy localhost:PORT url    │",
-		"│    4. Captured requests appear in real-time             │",
-		"│                                                          │",
-		"│  Request Pane                                            │",
-		"│    [ / ]              Switch tabs (URL/Headers/etc)     │",
-		"│    m / M              Cycle HTTP method (next/prev)     │",
-		"│    e                  Edit URL/header/body              │",
-		"│    a                  Add header/query param            │",
-		"│    d                  Delete header/query param         │",
-		"│    Enter/Alt+Enter    Send request                      │",
-		"│                                                          │",
-		"│  Response Pane                                           │",
-		"│    [ / ]              Switch tabs (Body/Headers/etc)    │",
-		"│    j / k              Scroll response                   │",
-		"│    Ctrl+U / Ctrl+D    Page up / Page down               │",
-		"│    gg / G             Scroll to top/bottom              │",
-		"│    y                  Copy response body                │",
-		"│                                                          │",
-		"│  Edit Mode (vim-like)                                    │",
-		"│    Enter / Esc        Save and exit                     │",
-		"│    Alt+Enter          Send request (while editing)      │",
-		"│    Tab                Switch key/value (Headers/Query)  │",
-		"│    Ctrl+U             Clear current field               │",
-		"│    Ctrl+A / Ctrl+E    Jump to start/end                 │",
-		"│                                                          │",
-		"│  General                                                 │",
-		"│    n                  Create new request                │",
-		"│    s                  Save request to collection        │",
-		"│    V                  Switch environment                │",
-		"│    P                  Proxy settings                    │",
-		"│    Ctrl+T             TLS/certificate settings          │",
-		"│    Ctrl+R             Run collection                    │",
-		"│    Ctrl+K             Clear all cookies                 │",
-		"│    ?                  Toggle this help                  │",
-		"│    q / Ctrl+C         Quit                              │",
-		"│                                                          │",
-		"│              Press ? or Esc to close                     │",
-		"╰──────────────────────────────────────────────────────────╯",
+// handleHelpKey handles keyboard input in the help screen.
+func (v *MainView) handleHelpKey(msg tea.KeyMsg) (tui.Component, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		v.showHelp = false
+		v.helpTab = 0
+		v.helpScroll = 0
+		return v, nil
+	case tea.KeyTab, tea.KeyRight:
+		v.helpTab = (v.helpTab + 1) % 6
+		v.helpScroll = 0
+		return v, nil
+	case tea.KeyShiftTab, tea.KeyLeft:
+		v.helpTab = (v.helpTab + 5) % 6
+		v.helpScroll = 0
+		return v, nil
 	}
 
-	helpStyle := lipgloss.NewStyle().
+	switch string(msg.Runes) {
+	case "?", "q":
+		v.showHelp = false
+		v.helpTab = 0
+		v.helpScroll = 0
+		return v, nil
+	case "j":
+		v.helpScroll++
+		return v, nil
+	case "k":
+		if v.helpScroll > 0 {
+			v.helpScroll--
+		}
+		return v, nil
+	case "1":
+		v.helpTab = 0
+		v.helpScroll = 0
+	case "2":
+		v.helpTab = 1
+		v.helpScroll = 0
+	case "3":
+		v.helpTab = 2
+		v.helpScroll = 0
+	case "4":
+		v.helpTab = 3
+		v.helpScroll = 0
+	case "5":
+		v.helpTab = 4
+		v.helpScroll = 0
+	case "6":
+		v.helpTab = 5
+		v.helpScroll = 0
+	case "g":
+		v.helpScroll = 0
+	case "G":
+		v.helpScroll = 999 // Will be clamped in render
+	}
+	return v, nil
+}
+
+// getHelpTabs returns the help tab names.
+func (v *MainView) getHelpTabs() []string {
+	return []string{"Quick Start", "Navigation", "Collections", "Request", "Response", "Capture"}
+}
+
+// getHelpContent returns the content for the current help tab.
+func (v *MainView) getHelpContent() []string {
+	switch v.helpTab {
+	case 0: // Quick Start
+		return []string{
+			"QUICK START",
+			"",
+			"Currier is a vim-style API client. Here's how to get started:",
+			"",
+			"1. MAKE A REQUEST",
+			"   n          Create new request",
+			"   e          Edit URL (type your endpoint)",
+			"   m          Change HTTP method",
+			"   Enter      Send the request",
+			"",
+			"2. NAVIGATE",
+			"   1/2/3      Switch panes (Collections/Request/Response)",
+			"   j/k        Move up/down in any list",
+			"   Tab        Cycle between panes",
+			"",
+			"3. SAVE YOUR WORK",
+			"   s          Save request to collection",
+			"   N          Create new collection",
+			"",
+			"4. VIEW HISTORY",
+			"   H          Toggle History view",
+			"   Enter      Load a past request",
+			"",
+			"5. CAPTURE TRAFFIC",
+			"   C          Switch to Capture mode (press twice)",
+			"   p          Start proxy server",
+			"            Then: curl --proxy http://localhost:PORT url",
+			"",
+			"Press Tab/Arrow keys to see more help sections.",
+		}
+	case 1: // Navigation
+		return []string{
+			"NAVIGATION",
+			"",
+			"SWITCHING PANES",
+			"   1          Collections/History/Capture pane",
+			"   2          Request pane",
+			"   3          Response pane",
+			"   Tab        Cycle forward through panes",
+			"   Shift+Tab  Cycle backward",
+			"",
+			"MOVING WITHIN PANES",
+			"   j          Move down / Scroll down",
+			"   k          Move up / Scroll up",
+			"   gg         Jump to top",
+			"   G          Jump to bottom",
+			"   Ctrl+D     Page down",
+			"   Ctrl+U     Page up",
+			"",
+			"SWITCHING TABS (Request/Response)",
+			"   [          Previous tab",
+			"   ]          Next tab",
+			"",
+			"GLOBAL",
+			"   ?          Show/hide this help",
+			"   q          Quit Currier",
+			"   Ctrl+C     Quit Currier",
+		}
+	case 2: // Collections
+		return []string{
+			"COLLECTIONS PANE",
+			"",
+			"BROWSING",
+			"   j/k        Navigate items",
+			"   h          Collapse folder/collection",
+			"   l          Expand folder/collection",
+			"   Enter      Load selected request",
+			"   /          Search collections",
+			"   Esc        Clear search",
+			"",
+			"CREATING",
+			"   n          New request",
+			"   N          New collection",
+			"   F          New folder in collection",
+			"",
+			"ORGANIZING",
+			"   s          Save current request to collection",
+			"   m          Move request/folder",
+			"   K          Move item up",
+			"   J          Move item down",
+			"   y          Duplicate request/folder",
+			"",
+			"EDITING",
+			"   R          Rename item",
+			"   d          Delete request",
+			"   D          Delete collection/folder",
+			"",
+			"IMPORT/EXPORT",
+			"   I          Import (Postman/OpenAPI/cURL/HAR)",
+			"   E          Export collection",
+			"   c          Copy request as cURL command",
+			"",
+			"VIEW MODES",
+			"   H          Switch to History view",
+			"   C          Switch to Capture view",
+		}
+	case 3: // Request
+		return []string{
+			"REQUEST PANE",
+			"",
+			"TABS: URL | Query | Headers | Auth | Body",
+			"   [          Previous tab",
+			"   ]          Next tab",
+			"",
+			"EDITING",
+			"   e          Edit current field (URL/header/body)",
+			"   Enter      Confirm edit / Send request",
+			"   Esc        Cancel edit",
+			"   Alt+Enter  Send request (even while editing)",
+			"",
+			"HTTP METHOD",
+			"   m          Next method (GET→POST→PUT...)",
+			"   M          Previous method",
+			"",
+			"HEADERS & QUERY PARAMS",
+			"   a          Add new header/param",
+			"   d          Delete selected header/param",
+			"   j/k        Navigate headers/params",
+			"   Tab        Switch between key and value",
+			"",
+			"BODY",
+			"   e          Edit body content",
+			"   Body types: JSON, Form, Raw, File",
+			"",
+			"SENDING",
+			"   Enter      Send request",
+			"   Alt+Enter  Send request (works everywhere)",
+		}
+	case 4: // Response
+		return []string{
+			"RESPONSE PANE",
+			"",
+			"TABS: Body | Headers | Cookies | Timing | Console",
+			"   [          Previous tab",
+			"   ]          Next tab",
+			"",
+			"SCROLLING",
+			"   j          Scroll down",
+			"   k          Scroll up",
+			"   gg         Scroll to top",
+			"   G          Scroll to bottom",
+			"   Ctrl+D     Page down",
+			"   Ctrl+U     Page up",
+			"",
+			"COPY",
+			"   y          Copy response body to clipboard",
+			"",
+			"TIMING TAB",
+			"   Shows DNS, Connect, TLS, TTFB, Transfer times",
+			"",
+			"CONSOLE TAB",
+			"   Shows test results from pm.test() scripts",
+		}
+	case 5: // Capture
+		return []string{
+			"CAPTURE MODE - Traffic Proxy",
+			"",
+			"Capture intercepts HTTP traffic from any app.",
+			"",
+			"HOW TO USE",
+			"   1. Press C (twice) to enter Capture mode",
+			"   2. Press p to start the proxy",
+			"   3. Note the port number shown",
+			"   4. Route your traffic through the proxy:",
+			"",
+			"      curl --proxy http://localhost:PORT url",
+			"",
+			"      Or set environment variables:",
+			"      export http_proxy=http://localhost:PORT",
+			"      export https_proxy=http://localhost:PORT",
+			"",
+			"   5. Captured requests appear in real-time",
+			"   6. Press Enter on any capture to inspect it",
+			"",
+			"KEYBOARD SHORTCUTS",
+			"   C          Enter Capture mode",
+			"   p          Start/Stop proxy",
+			"   j/k        Navigate captures",
+			"   Enter      Load capture into request pane",
+			"   m          Filter by method (GET/POST/...)",
+			"   x          Clear filter",
+			"   X          Clear all captures",
+			"   H          Return to History view",
+			"",
+			"TIP: Use --capture flag to start in capture mode:",
+			"     currier --capture",
+		}
+	}
+	return []string{}
+}
+
+func (v *MainView) renderHelp() string {
+	// Calculate dimensions
+	boxWidth := v.width - 4
+	if boxWidth > 70 {
+		boxWidth = 70
+	}
+	boxHeight := v.height - 4
+	if boxHeight > 30 {
+		boxHeight = 30
+	}
+	contentHeight := boxHeight - 5 // Account for tabs and footer
+
+	// Styles
+	tabStyle := lipgloss.NewStyle().
+		Padding(0, 1)
+	activeTabStyle := tabStyle.
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("229")).
+		Bold(true)
+	inactiveTabStyle := tabStyle.
+		Foreground(lipgloss.Color("243"))
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("229"))
+	contentStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+	keyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("214")).
+		Bold(true)
+	footerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Align(lipgloss.Center)
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Width(boxWidth)
+
+	// Build tab bar
+	tabs := v.getHelpTabs()
+	var tabBar string
+	for i, tab := range tabs {
+		style := inactiveTabStyle
+		if i == v.helpTab {
+			style = activeTabStyle
+		}
+		// Shorten tab names for narrow screens
+		displayTab := tab
+		if boxWidth < 60 {
+			switch i {
+			case 0:
+				displayTab = "Quick"
+			case 1:
+				displayTab = "Nav"
+			case 2:
+				displayTab = "Coll"
+			case 3:
+				displayTab = "Req"
+			case 4:
+				displayTab = "Resp"
+			case 5:
+				displayTab = "Cap"
+			}
+		}
+		tabBar += style.Render(displayTab)
+	}
+
+	// Get content and handle scrolling
+	content := v.getHelpContent()
+	totalLines := len(content)
+
+	// Clamp scroll position
+	maxScroll := totalLines - contentHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if v.helpScroll > maxScroll {
+		v.helpScroll = maxScroll
+	}
+
+	// Get visible slice
+	startLine := v.helpScroll
+	endLine := startLine + contentHeight
+	if endLine > totalLines {
+		endLine = totalLines
+	}
+	visibleContent := content[startLine:endLine]
+
+	// Format content lines
+	var contentLines []string
+	for _, line := range visibleContent {
+		// Highlight keyboard shortcuts (lines with letters followed by spaces)
+		if len(line) > 3 && line[0] == ' ' && line[1] == ' ' && line[2] == ' ' {
+			// Find the key part (up to first double space or description)
+			parts := strings.SplitN(strings.TrimLeft(line, " "), "  ", 2)
+			if len(parts) == 2 {
+				key := strings.TrimLeft(line, " ")[:len(parts[0])]
+				desc := parts[1]
+				formattedLine := "   " + keyStyle.Render(key) + "  " + contentStyle.Render(desc)
+				contentLines = append(contentLines, formattedLine)
+				continue
+			}
+		}
+		// Check if it's a title (all caps or starts with number)
+		if len(line) > 0 && (line == strings.ToUpper(line) || (line[0] >= '1' && line[0] <= '9')) {
+			contentLines = append(contentLines, titleStyle.Render(line))
+		} else {
+			contentLines = append(contentLines, contentStyle.Render(line))
+		}
+	}
+
+	// Pad content to fill height
+	for len(contentLines) < contentHeight {
+		contentLines = append(contentLines, "")
+	}
+
+	// Scroll indicator
+	scrollIndicator := ""
+	if totalLines > contentHeight {
+		scrollIndicator = fmt.Sprintf(" (%d/%d)", v.helpScroll+1, maxScroll+1)
+	}
+
+	// Build footer
+	footer := footerStyle.Render("Tab/←→ sections │ j/k scroll │ 1-6 jump │ q close" + scrollIndicator)
+
+	// Assemble the help box
+	helpBox := lipgloss.JoinVertical(
+		lipgloss.Left,
+		tabBar,
+		"",
+		strings.Join(contentLines, "\n"),
+		"",
+		footer,
+	)
+
+	// Center the box on screen
+	centeredStyle := lipgloss.NewStyle().
 		Width(v.width).
 		Height(v.height).
 		Align(lipgloss.Center, lipgloss.Center)
 
-	return helpStyle.Render(strings.Join(helpContent, "\n"))
+	return centeredStyle.Render(boxStyle.Render(helpBox))
 }
 
 // renderEnvSwitcher renders the environment switcher popup.
