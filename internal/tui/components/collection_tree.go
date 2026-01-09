@@ -2906,20 +2906,38 @@ func (c *CollectionTree) renderCaptureContent(innerWidth, contentHeight int) str
 	var lines []string
 
 	if len(c.captures) == 0 {
-		emptyMsg := "No captures"
-		if c.proxyServer == nil {
-			emptyMsg = "Proxy not configured"
-		} else if !c.proxyRunning {
-			emptyMsg = "Proxy stopped (p:start)"
-		}
-		if c.captureMethodFilter != "" || c.captureStatusFilter != "" || c.captureHostFilter != "" {
-			emptyMsg = "No matching captures (m:method s:status x:clear)"
+		var emptyLines []string
+		if c.proxyServer == nil || !c.proxyRunning {
+			emptyLines = []string{
+				"Press 'p' to start capture proxy",
+				"",
+				"Then route traffic through proxy:",
+				"curl --proxy http://localhost:PORT url",
+			}
+		} else if c.captureMethodFilter != "" || c.captureStatusFilter != "" || c.captureHostFilter != "" {
+			emptyLines = []string{"No matching captures", "(m:method x:clear filter)"}
+		} else {
+			proxyAddr := "localhost:PORT"
+			if c.proxyServer != nil {
+				proxyAddr = c.proxyServer.ListenAddr()
+				if proxyAddr[0] == ':' {
+					proxyAddr = "localhost" + proxyAddr
+				}
+			}
+			emptyLines = []string{
+				"Waiting for traffic...",
+				"",
+				"Route requests through proxy:",
+				"curl --proxy http://" + proxyAddr + " URL",
+			}
 		}
 		emptyStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("243")).
 			Width(innerWidth).
 			Align(lipgloss.Center)
-		lines = append(lines, emptyStyle.Render(emptyMsg))
+		for _, msg := range emptyLines {
+			lines = append(lines, emptyStyle.Render(msg))
+		}
 	} else {
 		for i := c.captureOffset; i < len(c.captures) && len(lines) < contentHeight; i++ {
 			capture := c.captures[i]
