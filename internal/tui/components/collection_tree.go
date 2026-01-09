@@ -3779,6 +3779,16 @@ func (c *CollectionTree) SetProxyRunning(running bool) {
 	c.proxyRunning = running
 }
 
+// SetViewMode sets the view mode (Collections, History, or Capture).
+func (c *CollectionTree) SetViewMode(mode ViewMode) {
+	c.viewMode = mode
+	if mode == ViewCapture {
+		c.loadCaptures()
+	} else if mode == ViewHistory {
+		c.loadHistory()
+	}
+}
+
 // IsProxyRunning returns true if the proxy server is running.
 func (c *CollectionTree) IsProxyRunning() bool {
 	return c.proxyRunning

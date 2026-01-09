@@ -119,6 +119,9 @@ type MainView struct {
 	captureProxy       *proxy.Server
 	captureProxyCtx    context.Context
 	captureProxyCancel context.CancelFunc
+
+	// Startup options
+	startCaptureOnInit bool // Start in capture mode with proxy
 }
 
 // clearNotificationMsg is sent to clear the notification.
@@ -163,8 +166,14 @@ func NewMainView() *MainView {
 	return view
 }
 
+// startCaptureModeMsg is sent to start capture mode after init.
+type startCaptureModeMsg struct{}
+
 // Init initializes the view.
 func (v *MainView) Init() tea.Cmd {
+	if v.startCaptureOnInit {
+		return func() tea.Msg { return startCaptureModeMsg{} }
+	}
 	return nil
 }
 
@@ -710,6 +719,12 @@ func (v *MainView) Update(msg tea.Msg) (tui.Component, tea.Cmd) {
 			return v.handleExportCapture(msg.Capture)
 		}
 		return v, nil
+
+	case startCaptureModeMsg:
+		// Start capture mode with proxy auto-started
+		v.tree.SetViewMode(components.ViewCapture)
+		v.startCaptureOnInit = false // Don't run again
+		return v.handleToggleProxy() // Start the proxy
 
 	case components.ProxyStartedMsg:
 		addr := msg.Address
@@ -2029,6 +2044,11 @@ func (v *MainView) SetCookieJar(jar *cookies.PersistentJar) {
 func (v *MainView) SetStarredStore(store starred.Store) {
 	v.starredStore = store
 	v.tree.SetStarredStore(store)
+}
+
+// EnableCaptureMode enables capture mode and auto-starts the proxy on first update.
+func (v *MainView) EnableCaptureMode() {
+	v.startCaptureOnInit = true
 }
 
 // openEnvSwitcher opens the environment switcher popup.
