@@ -2911,8 +2911,10 @@ func (c *CollectionTree) renderCaptureContent(innerWidth, contentHeight int) str
 			emptyLines = []string{
 				"Press 'p' to start capture proxy",
 				"",
-				"Then route traffic through proxy:",
-				"curl --proxy http://localhost:PORT url",
+				"Then route HTTP traffic through proxy:",
+				"curl --proxy http://localhost:PORT http://example.com",
+				"",
+				"(Note: HTTPS requires --https flag)",
 			}
 		} else if c.captureMethodFilter != "" || c.captureStatusFilter != "" || c.captureHostFilter != "" {
 			emptyLines = []string{"No matching captures", "(m:method x:clear filter)"}
@@ -2928,10 +2930,11 @@ func (c *CollectionTree) renderCaptureContent(innerWidth, contentHeight int) str
 				}
 			}
 			emptyLines = []string{
-				"Waiting for traffic...",
+				"Waiting for HTTP traffic...",
 				"",
-				"Route requests through proxy:",
-				"curl --proxy http://" + proxyAddr + " URL",
+				"curl --proxy http://" + proxyAddr + " http://URL",
+				"",
+				"(HTTPS traffic passes through encrypted)",
 			}
 		}
 		emptyStyle := lipgloss.NewStyle().
