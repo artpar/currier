@@ -2920,7 +2920,10 @@ func (c *CollectionTree) renderCaptureContent(innerWidth, contentHeight int) str
 			proxyAddr := "localhost:PORT"
 			if c.proxyServer != nil {
 				proxyAddr = c.proxyServer.ListenAddr()
-				if proxyAddr[0] == ':' {
+				// Handle IPv6 any address [::]:port -> localhost:port
+				if len(proxyAddr) > 4 && proxyAddr[:4] == "[::]" {
+					proxyAddr = "localhost" + proxyAddr[4:]
+				} else if len(proxyAddr) > 0 && proxyAddr[0] == ':' {
 					proxyAddr = "localhost" + proxyAddr
 				}
 			}
