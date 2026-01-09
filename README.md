@@ -67,9 +67,9 @@ A vim-modal TUI API client for developers and AI agents.
 ![Runner Demo](demos/demo-runner.gif?v=0.1.37)
 *Run all requests in a collection with Ctrl+R. Watch progress as each request executes. View pass/fail results, response times, and test assertion outcomes.*
 
-### Traffic Capture
-![Capture Demo](demos/demo-capture.gif?v=0.1.37)
-*Capture HTTP traffic from any application. Press C to switch to Capture mode, p to start/stop the proxy. Route traffic through the proxy to see all requests in real-time. Filter by method with m, clear captures with X.*
+### Traffic Capture (HTTP & HTTPS)
+![Capture Demo](demos/demo-capture.gif?v=0.1.49)
+*Capture HTTP and HTTPS traffic from any application. Start with `currier --capture`, route traffic through the proxy with `-k` flag for HTTPS. Captured HTTPS requests show a 🔒 lock icon. Filter by method with m, inspect any request with Enter.*
 
 ## Installation
 
@@ -289,34 +289,44 @@ Summary:
   Total time: 479ms
 ```
 
-### Traffic Capture
+### Traffic Capture (HTTP & HTTPS)
 
-Capture HTTP traffic from any application by routing it through Currier's built-in proxy:
-
-1. **Switch to Capture mode** - Press `C` twice (History → Collections → Capture)
-2. **Start the proxy** - Press `p` to toggle the proxy on/off
-3. **Configure your application** - Set HTTP proxy to the displayed address (e.g., `localhost:8080`)
-4. **View captured traffic** - Requests appear in real-time as they flow through the proxy
+Capture HTTP and HTTPS traffic from any application:
 
 ```bash
-# Example: Route curl through Currier's proxy
-curl --proxy http://localhost:8080 https://api.example.com/users
-
-# Example: Set proxy for a Node.js application
-HTTP_PROXY=http://localhost:8080 node app.js
-
-# Example: macOS system proxy (affects most applications)
-networksetup -setwebproxy "Wi-Fi" localhost 8080
+# Start Currier directly in capture mode
+currier --capture
 ```
 
-**Capture mode shortcuts:**
+Or manually: Press `C` twice to enter Capture mode, then `p` to start the proxy.
+
+#### Capturing Traffic
+
+```bash
+# HTTP traffic - works directly
+curl --proxy http://localhost:PORT http://httpbin.org/get
+
+# HTTPS traffic - use -k to skip certificate verification
+curl --proxy http://localhost:PORT -k https://httpbin.org/get
+
+# Set as environment variable for all requests
+export http_proxy=http://localhost:PORT
+export https_proxy=http://localhost:PORT
+curl -k https://api.example.com/users
+```
+
+**Note:** HTTPS requests show a 🔒 lock icon in the capture list. The `-k` flag tells curl to accept Currier's auto-generated CA certificate.
+
+#### Capture Mode Shortcuts
+
 | Key | Action |
 |-----|--------|
 | `p` | Start/Stop proxy |
+| `j/k` | Navigate captures |
+| `Enter` | Load capture into request panel |
 | `m` | Cycle method filter (ALL → GET → POST → ...) |
 | `x` | Clear method filter |
 | `X` | Clear all captures |
-| `Enter` | Load selected capture into request panel |
 | `H` | Switch to History mode |
 
 ### Import curl Commands

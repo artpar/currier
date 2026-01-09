@@ -1,5 +1,5 @@
-# Currier Traffic Capture Demo
-# Shows: Switch to capture mode, start proxy, capture HTTP traffic, filter, clear
+# Currier Traffic Capture Demo (HTTP & HTTPS)
+# Shows: Start in capture mode, capture HTTP & HTTPS traffic, inspect captures
 
 Output demos/demo-capture.gif
 
@@ -8,71 +8,89 @@ Set FontSize 14
 Set Width 1200
 Set Height 700
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 30ms
+Set TypingSpeed 40ms
 
-# Start background processes that will make HTTP requests after delay
-Type "( sleep 6 && curl -s --proxy http://localhost:8080 http://httpbin.org/get > /dev/null && sleep 1 && curl -s --proxy http://localhost:8080 http://httpbin.org/headers > /dev/null && sleep 1 && curl -s --proxy http://localhost:8080 -X POST http://httpbin.org/post > /dev/null ) &"
+# Start currier in capture mode - this starts proxy automatically
+Type "currier --capture"
 Enter
-Sleep 300ms
+Sleep 2.5s
 
-Type "currier"
+# The proxy is now running - get the port from the display
+# We'll make requests in background after a delay
+
+# Make HTTP request in background
+Hide
+Type "PORT=$(tmux capture-pane -p | grep -oE 'localhost:[0-9]+' | head -1 | cut -d: -f2)"
 Enter
-Sleep 1.5s
+Sleep 200ms
+Type "( sleep 2 && curl -s --proxy http://localhost:$PORT http://httpbin.org/get > /dev/null ) &"
+Enter
+Sleep 200ms
+Show
 
-# Switch to Capture mode (C cycles: History -> Collections -> Capture)
-Type "C"
-Sleep 400ms
-Type "C"
-Sleep 600ms
+Sleep 2.5s
 
-# Start the proxy
-Type "p"
+# HTTP request should appear now
 Sleep 1s
 
-# Wait for requests to come through (background curl running)
-Sleep 3s
+# Make HTTPS request - shows lock icon
+Hide
+Type "( curl -s --proxy http://localhost:$PORT -k https://httpbin.org/headers > /dev/null ) &"
+Enter
+Sleep 200ms
+Show
 
-# First request should appear
 Sleep 2s
 
-# More requests coming in
+# HTTPS request appears with lock icon
+Sleep 1s
+
+# Make another HTTPS POST request
+Hide
+Type "( curl -s --proxy http://localhost:$PORT -k -X POST -d 'test=value' https://httpbin.org/post > /dev/null ) &"
+Enter
+Sleep 200ms
+Show
+
 Sleep 2s
 
-# Navigate through captures
+# Navigate to the HTTPS GET request (should have lock icon)
 Type "j"
-Sleep 300ms
-Type "j"
-Sleep 500ms
+Sleep 400ms
 
-# Go back up
-Type "k"
-Sleep 300ms
-Type "k"
-Sleep 500ms
+# Select and inspect this capture
+Type "Enter"
+Sleep 1s
 
-# Cycle method filter to show GET only
+# Show the request details loaded in the panel
+Sleep 1.5s
+
+# Go back to sidebar
+Type "1"
+Sleep 400ms
+
+# Filter by POST method
+Type "m"
+Sleep 600ms
 Type "m"
 Sleep 800ms
 
-# Cycle to POST
-Type "m"
-Sleep 800ms
+# Shows only POST requests
+Sleep 1s
 
 # Clear filter
 Type "x"
 Sleep 600ms
 
+# Show all captures again
+Sleep 1s
+
 # Clear all captures
 Type "X"
 Sleep 800ms
 
-# Stop the proxy
-Type "p"
-Sleep 600ms
-
-# Switch back to History mode
-Type "H"
-Sleep 600ms
+# Show empty capture view
+Sleep 1s
 
 # Quit
 Type "q"
