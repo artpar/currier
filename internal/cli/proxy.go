@@ -35,17 +35,17 @@ Configure applications to use this proxy to capture their traffic.
 For HTTPS interception, export and install the CA certificate.
 
 Examples:
-  # Start proxy (auto-assigns available port)
+  # Start proxy (auto-assigns available port, HTTP only)
   currier proxy
 
   # Start proxy on specific port
   currier proxy --port 8080
 
+  # Enable HTTPS interception (requires CA cert installation)
+  currier proxy --https
+
   # Export CA certificate for HTTPS interception
   currier proxy --export-ca ~/currier-ca.crt
-
-  # Start proxy with HTTPS disabled
-  currier proxy --no-https
 
   # Only capture traffic to specific hosts
   currier proxy --include api.example.com --include *.test.com
@@ -56,7 +56,7 @@ Examples:
 	}
 
 	cmd.Flags().StringVarP(&opts.ListenAddr, "port", "p", ":0", "Port to listen on (:0 for auto, :8080 for specific port)")
-	cmd.Flags().BoolVar(&opts.EnableHTTPS, "https", true, "Enable HTTPS interception (requires CA cert)")
+	cmd.Flags().BoolVar(&opts.EnableHTTPS, "https", false, "Enable HTTPS interception (requires CA cert installation)")
 	cmd.Flags().StringVar(&opts.ExportCA, "export-ca", "", "Export CA certificate to specified path and exit")
 	cmd.Flags().BoolVarP(&opts.Verbose, "verbose", "v", false, "Enable verbose logging")
 	cmd.Flags().IntVar(&opts.BufferSize, "buffer", 1000, "Maximum number of captures to keep in memory")
@@ -129,10 +129,9 @@ func runProxy(cmd *cobra.Command, opts *ProxyOptions) error {
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Proxy server started on %s\n", addr)
 	if opts.EnableHTTPS {
-		fmt.Fprintf(cmd.OutOrStdout(), "HTTPS interception enabled\n")
-		fmt.Fprintf(cmd.OutOrStdout(), "  Export CA: currier proxy --export-ca ca.crt\n")
+		fmt.Fprintf(cmd.OutOrStdout(), "HTTPS interception: enabled (requires CA cert installed)\n")
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "HTTPS interception disabled (--https=false)\n")
+		fmt.Fprintf(cmd.OutOrStdout(), "HTTPS interception: disabled (use --https to enable)\n")
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "\nConfigure your applications to use this proxy:\n")
 	fmt.Fprintf(cmd.OutOrStdout(), "  export http_proxy=http://%s\n", addr)
