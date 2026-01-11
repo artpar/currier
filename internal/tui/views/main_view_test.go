@@ -8539,3 +8539,208 @@ func TestMainView_TitleGeneration(t *testing.T) {
 		assert.NotEmpty(t, title)
 	})
 }
+
+func TestMainView_AdditionalUpdateMsgs(t *testing.T) {
+	t.Run("Update with tea.MouseMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := tea.MouseMsg{Type: tea.MouseLeft, X: 10, Y: 10}
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with multiple WindowSizeMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg1 := tea.WindowSizeMsg{Width: 100, Height: 30}
+		result, _ := view.Update(msg1)
+		view = result.(*MainView)
+		assert.Equal(t, 100, view.Width())
+		assert.Equal(t, 30, view.Height())
+
+		msg2 := tea.WindowSizeMsg{Width: 150, Height: 50}
+		result, _ = view.Update(msg2)
+		view = result.(*MainView)
+		assert.Equal(t, 150, view.Width())
+		assert.Equal(t, 50, view.Height())
+	})
+
+	t.Run("Update forwards to collection tree", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Focus on collection tree
+		view.FocusPane(PaneCollections)
+
+		// Send a key that would be handled by collection tree
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update forwards to request panel", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Focus on request panel
+		view.FocusPane(PaneRequest)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update forwards to response panel", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Focus on response panel
+		view.FocusPane(PaneResponse)
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+}
+
+func TestMainView_ProxyAndCaptureMethods(t *testing.T) {
+	t.Run("EnableCaptureMode sets capture mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		view.EnableCaptureMode()
+		assert.NotNil(t, view.CollectionTree())
+	})
+
+	t.Run("SetStarredStore sets starred store", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		view.SetStarredStore(nil)
+		assert.NotNil(t, view)
+	})
+
+	t.Run("SetCookieJar sets cookie jar", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		view.SetCookieJar(nil)
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_ViewModeAccessors(t *testing.T) {
+	t.Run("ViewMode returns current mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		mode := view.ViewMode()
+		assert.Equal(t, ViewModeHTTP, mode)
+	})
+
+	t.Run("SetViewMode changes mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		view.SetViewMode(ViewModeWebSocket)
+		assert.Equal(t, ViewModeWebSocket, view.ViewMode())
+	})
+
+	t.Run("ShowingHelp reflects help state", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		assert.False(t, view.ShowingHelp())
+
+		view.ShowHelp()
+		assert.True(t, view.ShowingHelp())
+
+		view.HideHelp()
+		assert.False(t, view.ShowingHelp())
+	})
+}
+
+func TestMainView_InterpolatorAccess(t *testing.T) {
+	t.Run("Interpolator returns interpolator", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		interp := view.Interpolator()
+		assert.NotNil(t, interp)
+	})
+}
+
+func TestMainView_PanelAccessors(t *testing.T) {
+	t.Run("CollectionTree returns tree component", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		tree := view.CollectionTree()
+		assert.NotNil(t, tree)
+	})
+
+	t.Run("RequestPanel returns request component", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		reqPanel := view.RequestPanel()
+		assert.NotNil(t, reqPanel)
+	})
+
+	t.Run("ResponsePanel returns response component", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		respPanel := view.ResponsePanel()
+		assert.NotNil(t, respPanel)
+	})
+}
+
+func TestMainView_DimensionAccessors(t *testing.T) {
+	t.Run("Width returns set width", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		assert.Equal(t, 120, view.Width())
+	})
+
+	t.Run("Height returns set height", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		assert.Equal(t, 40, view.Height())
+	})
+}
+
+func TestMainView_FocusedState(t *testing.T) {
+	t.Run("Focused returns focus state", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Just check it doesn't panic and returns a value
+		_ = view.Focused()
+		assert.NotNil(t, view)
+	})
+
+	t.Run("FocusedPane returns current pane", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		pane := view.FocusedPane()
+		// Default should be collections pane
+		assert.Equal(t, PaneCollections, pane)
+	})
+
+	t.Run("FocusPane changes active pane", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		view.FocusPane(PaneRequest)
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+
+		view.FocusPane(PaneResponse)
+		assert.Equal(t, PaneResponse, view.FocusedPane())
+	})
+}

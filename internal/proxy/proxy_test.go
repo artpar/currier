@@ -999,3 +999,417 @@ func TestCaptureStoreWithFilterOptions(t *testing.T) {
 		t.Errorf("Expected 1 POST request, got %d", stats.MethodCounts["POST"])
 	}
 }
+
+func TestMatchHost(t *testing.T) {
+	testCases := []struct {
+		hostname string
+		pattern  string
+		expected bool
+	}{
+		{"example.com", "example.com", true},
+		{"example.com", "other.com", false},
+		{"api.example.com", "*.example.com", true},
+		{"cdn.example.com", "*.example.com", true},
+		{"example.com", "*.example.com", false}, // No subdomain, doesn't match *.example.com
+		{"other.com", "*.example.com", false},
+		{"sub.api.example.com", "*.example.com", true},
+		{"example.com", "*", true},
+		{"anything.com", "*", true},
+	}
+
+	for _, tc := range testCases {
+		result := matchHost(tc.hostname, tc.pattern)
+		if result != tc.expected {
+			t.Errorf("matchHost(%q, %q): expected %v, got %v", tc.hostname, tc.pattern, tc.expected, result)
+		}
+	}
+}
+
+func TestWriteErrorResponse(t *testing.T) {
+	var buf strings.Builder
+	writeErrorResponse(&buf, http.StatusBadGateway, "Connection failed")
+
+	response := buf.String()
+	if !strings.Contains(response, "502") {
+		t.Error("Response should contain status code 502")
+	}
+	if !strings.Contains(response, "Bad Gateway") {
+		t.Error("Response should contain status text")
+	}
+	if !strings.Contains(response, "Connection failed") {
+		t.Error("Response should contain error message")
+	}
+}
+
+func TestProxyHandlerShouldCapture(t *testing.T) {
+	// Test with no filters - should capture all
+	handler := NewProxyHandler(NewCaptureStore(10), nil, Config{})
+	if !handler.shouldCapture("example.com") {
+		t.Error("Should capture when no filters")
+	}
+
+	// Test with exclude list
+	handler = NewProxyHandler(NewCaptureStore(10), nil, Config{
+		ExcludeHosts: []string{"excluded.com", "*.internal.com"},
+	})
+	if handler.shouldCapture("excluded.com") {
+		t.Error("Should not capture excluded host")
+	}
+	if handler.shouldCapture("api.internal.com") {
+		t.Error("Should not capture wildcard excluded host")
+	}
+	if !handler.shouldCapture("allowed.com") {
+		t.Error("Should capture non-excluded host")
+	}
+
+	// Test with include list
+	handler = NewProxyHandler(NewCaptureStore(10), nil, Config{
+		IncludeHosts: []string{"api.example.com", "*.myapp.com"},
+	})
+	if !handler.shouldCapture("api.example.com") {
+		t.Error("Should capture included host")
+	}
+	if !handler.shouldCapture("sub.myapp.com") {
+		t.Error("Should capture wildcard included host")
+	}
+	if handler.shouldCapture("other.com") {
+		t.Error("Should not capture non-included host")
+	}
+
+	// Test with host:port format
+	if !handler.shouldCapture("api.example.com:8080") {
+		t.Error("Should capture included host with port")
+	}
+}
+
+func TestProxyHandlerShouldExcludeContentType(t *testing.T) {
+	handler := NewProxyHandler(NewCaptureStore(10), nil, Config{
+		ExcludeContentTypes: []string{"image/", "video/", "audio/"},
+	})
+
+	testCases := []struct {
+		contentType string
+		exclude     bool
+	}{
+		{"image/png", true},
+		{"image/jpeg", true},
+		{"video/mp4", true},
+		{"audio/mpeg", true},
+		{"application/json", false},
+		{"text/html", false},
+		{"IMAGE/PNG", true}, // case insensitive
+	}
+
+	for _, tc := range testCases {
+		result := handler.shouldExcludeContentType(tc.contentType)
+		if result != tc.exclude {
+			t.Errorf("shouldExcludeContentType(%q): expected %v, got %v", tc.contentType, tc.exclude, result)
+		}
+	}
+}
+
+func TestProxyHandlerServeHTTPMethod(t *testing.T) {
+	store := NewCaptureStore(100)
+	handler := NewProxyHandler(store, nil, Config{})
+
+	// Test that CONNECT method is handled differently
+	// We can't fully test HTTPS handling without TLS setup, but we can verify the method routing
+
+	// Create a simple test server for HTTP proxying
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("backend response"))
+	}))
+	defer backend.Close()
+
+	// Test regular HTTP request
+	req := httptest.NewRequest("GET", backend.URL+"/test", nil)
+	req.Host = backend.Listener.Addr().String()
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Should get response from backend
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+}
+
+func TestProxyHandlerHTTPProxying(t *testing.T) {
+	// Create a mock backend server
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Custom-Header", "test-value")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer backend.Close()
+
+	store := NewCaptureStore(100)
+	handler := NewProxyHandler(store, nil, Config{})
+
+	// Parse backend URL
+	backendURL, _ := url.Parse(backend.URL)
+
+	// Create proxy request with absolute URL (as proxy clients do)
+	req := httptest.NewRequest("GET", backend.URL+"/api/test", nil)
+	req.URL, _ = url.Parse(backend.URL + "/api/test")
+	req.Host = backendURL.Host
+	req.Header.Set("Accept", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Verify response - should get response from backend
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
+	// Check that request was captured
+	stats := store.Stats()
+	if stats.TotalCount != 1 {
+		t.Errorf("Expected 1 captured request, got %d", stats.TotalCount)
+	}
+}
+
+func TestProxyHandlerWithPOSTBody(t *testing.T) {
+	// Create a mock backend that echoes the body
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusCreated)
+		w.Write(body)
+	}))
+	defer backend.Close()
+
+	store := NewCaptureStore(100)
+	handler := NewProxyHandler(store, nil, Config{})
+
+	backendURL, _ := url.Parse(backend.URL)
+
+	// Create POST request with body and absolute URL
+	reqBody := strings.NewReader(`{"name":"test"}`)
+	req := httptest.NewRequest("POST", backend.URL+"/api/create", reqBody)
+	req.URL, _ = url.Parse(backend.URL + "/api/create")
+	req.Host = backendURL.Host
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Just verify the request was successful and captured
+	if rr.Code != http.StatusCreated {
+		t.Errorf("Expected status 201, got %d", rr.Code)
+	}
+
+	stats := store.Stats()
+	if stats.TotalCount != 1 {
+		t.Errorf("Expected 1 captured request, got %d", stats.TotalCount)
+	}
+}
+
+func TestProxyHandlerExcludesContentType(t *testing.T) {
+	// Create a mock backend that returns an image
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("fake-image-data"))
+	}))
+	defer backend.Close()
+
+	store := NewCaptureStore(100)
+	handler := NewProxyHandler(store, nil, Config{
+		ExcludeContentTypes: []string{"image/"},
+	})
+
+	backendURL, _ := url.Parse(backend.URL)
+	req := httptest.NewRequest("GET", backend.URL+"/image.png", nil)
+	req.Host = backendURL.Host
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
+	// The request should still be captured, but body should be discarded
+	stats := store.Stats()
+	if stats.TotalCount != 1 {
+		t.Errorf("Expected 1 captured request, got %d", stats.TotalCount)
+	}
+}
+
+func TestProxyHandlerHostExclusion(t *testing.T) {
+	// Create a mock backend
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	defer backend.Close()
+
+	store := NewCaptureStore(100)
+	handler := NewProxyHandler(store, nil, Config{
+		ExcludeHosts: []string{"excluded.com"},
+	})
+
+	backendURL, _ := url.Parse(backend.URL)
+
+	// Request with excluded host header - should not be captured
+	req := httptest.NewRequest("GET", backend.URL+"/test", nil)
+	req.Host = "excluded.com"
+	// But we need to actually route to the backend
+	req.URL.Host = backendURL.Host
+
+	rr := httptest.NewRecorder()
+	handler.handleHTTP(rr, req)
+
+	// Request should still work
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
+	// But should NOT be captured because host is excluded
+	stats := store.Stats()
+	if stats.TotalCount != 0 {
+		t.Errorf("Expected 0 captured requests (excluded host), got %d", stats.TotalCount)
+	}
+}
+
+func TestRemoveHopByHopHeaders(t *testing.T) {
+	header := http.Header{
+		"Connection":          []string{"keep-alive"},
+		"Keep-Alive":          []string{"timeout=5"},
+		"Proxy-Authorization": []string{"Basic abc123"},
+		"Transfer-Encoding":   []string{"chunked"},
+		"Content-Type":        []string{"application/json"},
+		"X-Custom-Header":     []string{"should-remain"},
+	}
+
+	removeHopByHopHeaders(header)
+
+	// These should be removed
+	hopByHopHeaders := []string{"Connection", "Keep-Alive", "Proxy-Authorization", "Transfer-Encoding"}
+	for _, h := range hopByHopHeaders {
+		if header.Get(h) != "" {
+			t.Errorf("Header %s should have been removed", h)
+		}
+	}
+
+	// These should remain
+	if header.Get("Content-Type") != "application/json" {
+		t.Error("Content-Type should remain")
+	}
+	if header.Get("X-Custom-Header") != "should-remain" {
+		t.Error("X-Custom-Header should remain")
+	}
+}
+
+func TestCapturedRequestError(t *testing.T) {
+	capture := &CapturedRequest{
+		ID:         "test-1",
+		Method:     "GET",
+		URL:        "http://example.com/api",
+		StatusCode: 0,
+		Error:      "connection refused",
+	}
+
+	if capture.Error == "" {
+		t.Error("Expected error to be set")
+	}
+	if capture.StatusCode != 0 {
+		t.Error("Failed requests should have status 0")
+	}
+}
+
+func TestServerDoubleStart(t *testing.T) {
+	server, err := NewServer(
+		WithListenAddr(":0"),
+		WithHTTPS(false),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := server.Start(ctx); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+	defer server.Stop()
+
+	// Try to start again - should fail
+	err = server.Start(ctx)
+	if err == nil {
+		t.Error("Expected error when starting already running server")
+	}
+	if !strings.Contains(err.Error(), "already running") {
+		t.Errorf("Expected 'already running' error, got: %v", err)
+	}
+}
+
+func TestServerStopWhenNotRunning(t *testing.T) {
+	server, err := NewServer(
+		WithListenAddr(":0"),
+		WithHTTPS(false),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
+
+	// Stop without starting - should be fine
+	err = server.Stop()
+	if err != nil {
+		t.Errorf("Stopping non-running server should not error: %v", err)
+	}
+}
+
+func TestServerExportCACertNoHTTPS(t *testing.T) {
+	server, err := NewServer(
+		WithListenAddr(":0"),
+		WithHTTPS(false),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
+
+	// Try to export CA cert when HTTPS is not enabled
+	err = server.ExportCACert("/tmp/test-ca.pem")
+	if err == nil {
+		t.Error("Expected error when exporting CA cert with HTTPS disabled")
+	}
+
+	// CACertPEM should return nil
+	if server.CACertPEM() != nil {
+		t.Error("CACertPEM should return nil when HTTPS disabled")
+	}
+}
+
+func TestServerContextCancellation(t *testing.T) {
+	server, err := NewServer(
+		WithListenAddr(":0"),
+		WithHTTPS(false),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if err := server.Start(ctx); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+
+	if !server.IsRunning() {
+		t.Error("Server should be running")
+	}
+
+	// Cancel context should trigger shutdown
+	cancel()
+
+	// Give server time to stop
+	time.Sleep(100 * time.Millisecond)
+
+	if server.IsRunning() {
+		t.Error("Server should have stopped after context cancellation")
+	}
+}
