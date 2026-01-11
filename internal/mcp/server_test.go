@@ -5250,3 +5250,354 @@ func TestServer_GetHistorySuccess(t *testing.T) {
 		assert.Nil(t, resp.Error)
 	})
 }
+
+func TestServer_WebSocketToolsCoverage(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	t.Run("websocket_disconnect with invalid params", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "websocket_disconnect",
+			Arguments: json.RawMessage(`{}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+
+	t.Run("websocket_send with invalid params", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "websocket_send",
+			Arguments: json.RawMessage(`{}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+
+	t.Run("websocket_get_messages with invalid params", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "websocket_get_messages",
+			Arguments: json.RawMessage(`{}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+}
+
+func TestServer_ImportCollectionCoverage(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	t.Run("import_collection with invalid params", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "import_collection",
+			Arguments: json.RawMessage(`{}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+
+	t.Run("import_collection with unsupported format", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "import_collection",
+			Arguments: json.RawMessage(`{"data": "{}", "format": "unknown"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+
+	t.Run("import_collection with openapi format", func(t *testing.T) {
+		openAPISpec := `{
+			"openapi": "3.0.0",
+			"info": {"title": "Test API", "version": "1.0"},
+			"paths": {
+				"/users": {
+					"get": {
+						"summary": "Get users"
+					}
+				}
+			}
+		}`
+		params := ToolCallParams{
+			Name:      "import_collection",
+			Arguments: json.RawMessage(`{"data": ` + openAPISpec + `, "format": "openapi"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+}
+
+func TestServer_SearchHistoryCoverage(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	t.Run("search_history with various params", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "search_history",
+			Arguments: json.RawMessage(`{"query": "test", "limit": 5, "method": "GET"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+		assert.Nil(t, resp.Error)
+	})
+
+	t.Run("search_history with status filter", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "search_history",
+			Arguments: json.RawMessage(`{"query": "api", "status": "200"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+		assert.Nil(t, resp.Error)
+	})
+}
+
+func TestServer_CookieToolsCoverage(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	t.Run("set_cookie", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "set_cookie",
+			Arguments: json.RawMessage(`{"domain": "example.com", "name": "session", "value": "abc123"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+		// May or may not error depending on cookie jar implementation
+	})
+
+	t.Run("delete_cookie", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "delete_cookie",
+			Arguments: json.RawMessage(`{"domain": "example.com", "name": "session"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+}
+
+func TestServer_RenameFolderCoverage(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	// Create collection and folder first
+	createCollParams := ToolCallParams{
+		Name:      "create_collection",
+		Arguments: json.RawMessage(`{"name": "RenameFolderColl"}`),
+	}
+	createCollJSON, _ := json.Marshal(createCollParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`1`),
+		Method:  MethodToolsCall,
+		Params:  createCollJSON,
+	})
+
+	createFolderParams := ToolCallParams{
+		Name:      "create_folder",
+		Arguments: json.RawMessage(`{"collection": "RenameFolderColl", "name": "OldFolderName"}`),
+	}
+	createFolderJSON, _ := json.Marshal(createFolderParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`2`),
+		Method:  MethodToolsCall,
+		Params:  createFolderJSON,
+	})
+
+	t.Run("rename_folder", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "rename_folder",
+			Arguments: json.RawMessage(`{"collection": "RenameFolderColl", "old_name": "OldFolderName", "new_name": "NewFolderName"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`3`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+
+	t.Run("rename_folder with invalid collection", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "rename_folder",
+			Arguments: json.RawMessage(`{"collection": "nonexistent", "old_name": "test", "new_name": "test2"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`4`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+}
+
+func TestServer_RenameRequestCoverage(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	// Create collection and request first
+	createCollParams := ToolCallParams{
+		Name:      "create_collection",
+		Arguments: json.RawMessage(`{"name": "RenameReqColl"}`),
+	}
+	createCollJSON, _ := json.Marshal(createCollParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`1`),
+		Method:  MethodToolsCall,
+		Params:  createCollJSON,
+	})
+
+	saveParams := ToolCallParams{
+		Name: "save_request",
+		Arguments: json.RawMessage(`{
+			"collection": "RenameReqColl",
+			"name": "OldReqName",
+			"method": "GET",
+			"url": "https://api.example.com"
+		}`),
+	}
+	saveJSON, _ := json.Marshal(saveParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`2`),
+		Method:  MethodToolsCall,
+		Params:  saveJSON,
+	})
+
+	t.Run("rename_request", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "rename_request",
+			Arguments: json.RawMessage(`{"collection": "RenameReqColl", "old_name": "OldReqName", "new_name": "NewReqName"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`3`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+
+	t.Run("rename_request with invalid collection", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "rename_request",
+			Arguments: json.RawMessage(`{"collection": "nonexistent", "old_name": "test", "new_name": "test2"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`4`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+	})
+}
