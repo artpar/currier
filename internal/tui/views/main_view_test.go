@@ -275,6 +275,128 @@ func TestMainView_Help(t *testing.T) {
 		view.HideHelp()
 		assert.False(t, view.ShowingHelp())
 	})
+
+	t.Run("Tab key cycles help tabs", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+
+		// Press Tab to go to next tab
+		msg := tea.KeyMsg{Type: tea.KeyTab}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		output := view.View()
+		assert.Contains(t, output, "Navigation")
+	})
+
+	t.Run("Arrow keys navigate help tabs", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+
+		// Press Right to go to next tab
+		msg := tea.KeyMsg{Type: tea.KeyRight}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		output := view.View()
+		assert.Contains(t, output, "Navigation")
+
+		// Press Left to go back
+		msg = tea.KeyMsg{Type: tea.KeyLeft}
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+
+		output = view.View()
+		assert.Contains(t, output, "Quick Start")
+	})
+
+	t.Run("Number keys jump to help tabs", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+
+		// Press 2 to jump to Navigation tab
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+		output := view.View()
+		assert.Contains(t, output, "NAVIGATION")
+
+		// Press 3 to jump to Collections tab
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+		output = view.View()
+		assert.Contains(t, output, "COLLECTIONS")
+
+		// Press 4 to jump to Request tab
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}}
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+		output = view.View()
+		assert.Contains(t, output, "REQUEST")
+
+		// Press 5 to jump to Response tab
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}}
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+		output = view.View()
+		assert.Contains(t, output, "RESPONSE")
+
+		// Press 6 to jump to Capture tab
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'6'}}
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+		output = view.View()
+		assert.Contains(t, output, "CAPTURE")
+
+		// Press 1 to go back to Quick Start
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}
+		updated, _ = view.Update(msg)
+		view = updated.(*MainView)
+		output = view.View()
+		assert.Contains(t, output, "QUICK START")
+	})
+
+	t.Run("g key goes to top of help content", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+
+		// Press g to go to top
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.True(t, view.ShowingHelp())
+	})
+
+	t.Run("G key goes to bottom of help content", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+
+		// Press G to go to bottom
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.True(t, view.ShowingHelp())
+	})
+
+	t.Run("q key closes help", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.ShowHelp()
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.False(t, view.ShowingHelp())
+	})
 }
 
 func TestMainView_Init(t *testing.T) {
