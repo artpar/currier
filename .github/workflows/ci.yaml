@@ -34,8 +34,8 @@ jobs:
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Total coverage: ${COVERAGE}%"
 
-          # Fail if coverage is below 75% (TUI rendering code is hard to unit test)
-          THRESHOLD=75
+          # Fail if coverage is below 80%
+          THRESHOLD=80
           if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
             echo "Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
             exit 1
