@@ -8744,3 +8744,4 @@ func TestMainView_FocusedState(t *testing.T) {
 		assert.Equal(t, PaneResponse, view.FocusedPane())
 	})
 }
+

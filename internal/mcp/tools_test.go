@@ -2419,4 +2419,205 @@ func TestWebSocketArgsJSONNew(t *testing.T) {
 			t.Errorf("expected limit 100, got %d", args.Limit)
 		}
 	})
+
+	t.Run("websocket disconnect args", func(t *testing.T) {
+		args := wsDisconnectArgs{
+			ConnectionID: "conn-123",
+		}
+		if args.ConnectionID == "" {
+			t.Error("ConnectionID should not be empty")
+		}
+	})
+
+	// Note: websocket_list_connections takes no arguments
 }
+
+func TestSearchHistoryArgsJSON(t *testing.T) {
+	t.Run("search history args with all fields", func(t *testing.T) {
+		args := searchHistoryArgs{
+			Query:  "api/users",
+			Method: "GET",
+			Status: 200,
+			Limit:  50,
+			Offset: 0,
+		}
+		if args.Query != "api/users" {
+			t.Errorf("expected query 'api/users', got %s", args.Query)
+		}
+		if args.Limit != 50 {
+			t.Errorf("expected limit 50, got %d", args.Limit)
+		}
+	})
+
+	t.Run("search history args with minimal fields", func(t *testing.T) {
+		args := searchHistoryArgs{
+			Query: "test",
+		}
+		if args.Query != "test" {
+			t.Errorf("expected query 'test', got %s", args.Query)
+		}
+		if args.Limit != 0 {
+			t.Errorf("expected default limit 0, got %d", args.Limit)
+		}
+	})
+}
+
+func TestImportExportArgsJSON(t *testing.T) {
+	t.Run("import collection args", func(t *testing.T) {
+		args := importCollectionArgs{
+			Format:  "postman",
+			Content: `{"info": {"name": "Test"}}`,
+		}
+		if args.Format != "postman" {
+			t.Errorf("expected format 'postman', got %s", args.Format)
+		}
+		if args.Content == "" {
+			t.Error("content should not be empty")
+		}
+	})
+
+	t.Run("export collection args", func(t *testing.T) {
+		args := exportCollectionArgs{
+			Name:   "MyAPI",
+			Format: "postman",
+		}
+		if args.Name != "MyAPI" {
+			t.Errorf("expected name 'MyAPI', got %s", args.Name)
+		}
+	})
+}
+
+func TestFolderOperationArgsJSON(t *testing.T) {
+	t.Run("create folder args", func(t *testing.T) {
+		args := createFolderArgs{
+			Collection: "MyCollection",
+			Name:       "NewFolder",
+			Parent:     "/",
+		}
+		if args.Collection != "MyCollection" {
+			t.Errorf("expected collection 'MyCollection', got %s", args.Collection)
+		}
+	})
+
+	t.Run("delete folder args", func(t *testing.T) {
+		args := deleteFolderArgs{
+			Collection: "MyCollection",
+			Folder:     "/OldFolder",
+		}
+		if args.Folder != "/OldFolder" {
+			t.Errorf("expected folder '/OldFolder', got %s", args.Folder)
+		}
+	})
+}
+
+func TestEnvironmentOperationArgsJSON(t *testing.T) {
+	t.Run("create environment args", func(t *testing.T) {
+		args := createEnvironmentArgs{
+			Name: "Development",
+		}
+		if args.Name != "Development" {
+			t.Errorf("expected name 'Development', got %s", args.Name)
+		}
+	})
+
+	t.Run("delete environment args", func(t *testing.T) {
+		args := deleteEnvironmentArgs{
+			Name: "OldEnv",
+		}
+		if args.Name != "OldEnv" {
+			t.Errorf("expected name 'OldEnv', got %s", args.Name)
+		}
+	})
+
+	t.Run("delete environment variable args", func(t *testing.T) {
+		args := deleteEnvironmentVariableArgs{
+			Environment: "Development",
+			Key:         "API_URL",
+		}
+		if args.Key != "API_URL" {
+			t.Errorf("expected key 'API_URL', got %s", args.Key)
+		}
+	})
+}
+
+func TestCookieOperationArgsJSON(t *testing.T) {
+	t.Run("list cookies args", func(t *testing.T) {
+		args := listCookiesArgs{
+			Domain: "example.com",
+		}
+		if args.Domain != "example.com" {
+			t.Errorf("expected domain 'example.com', got %s", args.Domain)
+		}
+	})
+
+	t.Run("clear cookies args", func(t *testing.T) {
+		args := clearCookiesArgs{
+			Domain: "example.com",
+		}
+		if args.Domain != "example.com" {
+			t.Errorf("expected domain 'example.com', got %s", args.Domain)
+		}
+	})
+}
+
+func TestCollectionOperationArgsJSON(t *testing.T) {
+	t.Run("create collection args", func(t *testing.T) {
+		args := createCollectionArgs{
+			Name:        "New API",
+			Description: "API collection",
+		}
+		if args.Name != "New API" {
+			t.Errorf("expected name 'New API', got %s", args.Name)
+		}
+	})
+
+	t.Run("delete collection args", func(t *testing.T) {
+		args := deleteCollectionArgs{
+			Name: "OldAPI",
+		}
+		if args.Name != "OldAPI" {
+			t.Errorf("expected name 'OldAPI', got %s", args.Name)
+		}
+	})
+
+	t.Run("rename collection args", func(t *testing.T) {
+		args := renameCollectionArgs{
+			Name:    "OldAPI",
+			NewName: "NewAPI",
+		}
+		if args.Name != "OldAPI" {
+			t.Errorf("expected name 'OldAPI', got %s", args.Name)
+		}
+		if args.NewName != "NewAPI" {
+			t.Errorf("expected new name 'NewAPI', got %s", args.NewName)
+		}
+	})
+}
+
+func TestRequestOperationArgsJSON(t *testing.T) {
+	t.Run("delete request args", func(t *testing.T) {
+		args := deleteRequestArgs{
+			Collection: "MyAPI",
+			Request:    "/users/get",
+		}
+		if args.Request != "/users/get" {
+			t.Errorf("expected request '/users/get', got %s", args.Request)
+		}
+	})
+
+	t.Run("update request args", func(t *testing.T) {
+		args := updateRequestArgs{
+			Collection: "MyAPI",
+			Request:    "/users/get",
+			NewName:    "Get User",
+			Method:     "GET",
+			URL:        "https://api.example.com/users",
+			Body:       "",
+			Headers:    map[string]string{"Content-Type": "application/json"},
+		}
+		if args.URL != "https://api.example.com/users" {
+			t.Errorf("expected URL 'https://api.example.com/users', got %s", args.URL)
+		}
+	})
+}
+

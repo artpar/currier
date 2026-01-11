@@ -1413,3 +1413,414 @@ func TestServerContextCancellation(t *testing.T) {
 		t.Error("Server should have stopped after context cancellation")
 	}
 }
+
+func TestCaptureStoreAdd(t *testing.T) {
+	t.Run("assigns ID when empty", func(t *testing.T) {
+		store := NewCaptureStore(10)
+		capture := &CapturedRequest{
+			Method: "GET",
+			URL:    "https://example.com",
+		}
+		store.Add(capture)
+
+		if capture.ID == "" {
+			t.Error("Expected ID to be assigned")
+		}
+	})
+
+	t.Run("assigns timestamp when zero", func(t *testing.T) {
+		store := NewCaptureStore(10)
+		capture := &CapturedRequest{
+			ID:     "test-id",
+			Method: "GET",
+			URL:    "https://example.com",
+		}
+		store.Add(capture)
+
+		if capture.Timestamp.IsZero() {
+			t.Error("Expected timestamp to be assigned")
+		}
+	})
+
+	t.Run("preserves existing ID", func(t *testing.T) {
+		store := NewCaptureStore(10)
+		capture := &CapturedRequest{
+			ID:     "custom-id",
+			Method: "GET",
+			URL:    "https://example.com",
+		}
+		store.Add(capture)
+
+		if capture.ID != "custom-id" {
+			t.Errorf("Expected ID 'custom-id', got '%s'", capture.ID)
+		}
+	})
+
+	t.Run("wraps around in ring buffer", func(t *testing.T) {
+		store := NewCaptureStore(3)
+
+		for i := 0; i < 5; i++ {
+			store.Add(&CapturedRequest{
+				ID:     string(rune('a' + i)),
+				Method: "GET",
+				URL:    "https://example.com",
+			})
+		}
+
+		captures := store.List(FilterOptions{})
+		if len(captures) != 3 {
+			t.Errorf("Expected 3 captures, got %d", len(captures))
+		}
+	})
+
+	t.Run("notifies listeners", func(t *testing.T) {
+		store := NewCaptureStore(10)
+		var mu sync.Mutex
+		notified := false
+
+		store.AddListener(CaptureListenerFunc(func(cr *CapturedRequest) {
+			mu.Lock()
+			notified = true
+			mu.Unlock()
+		}))
+
+		store.Add(&CapturedRequest{
+			Method: "GET",
+			URL:    "https://example.com",
+		})
+
+		// Give listener time to be called
+		time.Sleep(10 * time.Millisecond)
+
+		mu.Lock()
+		wasNotified := notified
+		mu.Unlock()
+		if !wasNotified {
+			t.Error("Expected listener to be notified")
+		}
+	})
+}
+
+func TestCaptureStoreGetByID(t *testing.T) {
+	store := NewCaptureStore(10)
+	capture := &CapturedRequest{
+		ID:     "test-id-123",
+		Method: "GET",
+		URL:    "https://example.com",
+	}
+	store.Add(capture)
+
+	t.Run("finds capture by ID", func(t *testing.T) {
+		found := store.Get("test-id-123")
+		if found == nil {
+			t.Error("Expected to find capture")
+		}
+		if found.ID != "test-id-123" {
+			t.Errorf("Expected ID 'test-id-123', got '%s'", found.ID)
+		}
+	})
+
+	t.Run("returns nil for non-existent ID", func(t *testing.T) {
+		found := store.Get("non-existent")
+		if found != nil {
+			t.Error("Expected not to find capture")
+		}
+	})
+}
+
+func TestCaptureStoreClearAll(t *testing.T) {
+	store := NewCaptureStore(10)
+	store.Add(&CapturedRequest{Method: "GET", URL: "https://example.com"})
+	store.Add(&CapturedRequest{Method: "POST", URL: "https://example.com"})
+
+	captures := store.List(FilterOptions{})
+	if len(captures) != 2 {
+		t.Errorf("Expected 2 captures, got %d", len(captures))
+	}
+
+	store.Clear()
+	captures = store.List(FilterOptions{})
+	if len(captures) != 0 {
+		t.Errorf("Expected 0 captures after clear, got %d", len(captures))
+	}
+}
+
+func TestNewCaptureStoreMinSize(t *testing.T) {
+	store := NewCaptureStore(0)
+	// Should use default size of 1000, not panic
+	if store == nil {
+		t.Error("Expected store to be created")
+	}
+}
+
+func TestMatchesFilterComprehensive(t *testing.T) {
+	store := NewCaptureStore(100)
+
+	// Create test captures with various properties
+	capture1 := &CapturedRequest{
+		ID:         "1",
+		Method:     "GET",
+		URL:        "https://api.example.com/users",
+		Host:       "api.example.com",
+		Path:       "/users",
+		StatusCode: 200,
+		IsHTTPS:    true,
+		Timestamp:  time.Now(),
+		RequestHeaders: http.Header{
+			"Authorization": []string{"Bearer token123"},
+			"Content-Type":  []string{"application/json"},
+		},
+		ResponseHeaders: http.Header{
+			"Content-Type": []string{"application/json; charset=utf-8"},
+		},
+		RequestBody:  []byte(`{"name":"test"}`),
+		ResponseBody: []byte(`{"id":1,"name":"test"}`),
+		ResponseSize: 500,
+	}
+	store.Add(capture1)
+
+	capture2 := &CapturedRequest{
+		ID:           "2",
+		Method:       "POST",
+		URL:          "http://other.com/api/data",
+		Host:         "other.com",
+		Path:         "/api/data",
+		StatusCode:   404,
+		IsHTTPS:      false,
+		Timestamp:    time.Now().Add(-time.Hour),
+		ResponseSize: 100,
+	}
+	store.Add(capture2)
+
+	t.Run("filter by path prefix", func(t *testing.T) {
+		captures := store.List(FilterOptions{Path: "/users"})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with path /users, got %d", len(captures))
+		}
+	})
+
+	t.Run("filter by content type", func(t *testing.T) {
+		captures := store.List(FilterOptions{ContentType: "application/json"})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with content type application/json, got %d", len(captures))
+		}
+	})
+
+	t.Run("search in request headers key", func(t *testing.T) {
+		captures := store.List(FilterOptions{Search: "authorization"})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with Authorization header, got %d", len(captures))
+		}
+	})
+
+	t.Run("search in request headers value", func(t *testing.T) {
+		captures := store.List(FilterOptions{Search: "token123"})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with token123 in header, got %d", len(captures))
+		}
+	})
+
+	t.Run("search in response headers key", func(t *testing.T) {
+		captures := store.List(FilterOptions{Search: "content-type"})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with Content-Type response header, got %d", len(captures))
+		}
+	})
+
+	t.Run("search in response headers value", func(t *testing.T) {
+		captures := store.List(FilterOptions{Search: "charset=utf-8"})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with charset in response header, got %d", len(captures))
+		}
+	})
+
+	t.Run("search in request body", func(t *testing.T) {
+		captures := store.List(FilterOptions{Search: "name"})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with 'name' in request body, got %d", len(captures))
+		}
+	})
+
+	t.Run("search in response body", func(t *testing.T) {
+		captures := store.List(FilterOptions{Search: "id\":1"})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with id:1 in response body, got %d", len(captures))
+		}
+	})
+
+	t.Run("filter by min size", func(t *testing.T) {
+		captures := store.List(FilterOptions{MinSize: 200})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with size >= 200, got %d", len(captures))
+		}
+	})
+
+	t.Run("filter by max size", func(t *testing.T) {
+		captures := store.List(FilterOptions{MaxSize: 150})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with size <= 150, got %d", len(captures))
+		}
+	})
+
+	t.Run("filter by time range - after", func(t *testing.T) {
+		captures := store.List(FilterOptions{After: time.Now().Add(-30 * time.Minute)})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture after 30 minutes ago, got %d", len(captures))
+		}
+	})
+
+	t.Run("filter by time range - before", func(t *testing.T) {
+		captures := store.List(FilterOptions{Before: time.Now().Add(-30 * time.Minute)})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture before 30 minutes ago, got %d", len(captures))
+		}
+	})
+
+	t.Run("filter HTTPSOnly", func(t *testing.T) {
+		captures := store.List(FilterOptions{HTTPSOnly: true})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 HTTPS capture, got %d", len(captures))
+		}
+	})
+
+	t.Run("filter HTTPOnly", func(t *testing.T) {
+		captures := store.List(FilterOptions{HTTPOnly: true})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 HTTP capture, got %d", len(captures))
+		}
+	})
+
+	t.Run("filter with wildcard host suffix", func(t *testing.T) {
+		captures := store.List(FilterOptions{Host: "*.example.com"})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture matching *.example.com, got %d", len(captures))
+		}
+	})
+
+	t.Run("combined filters", func(t *testing.T) {
+		captures := store.List(FilterOptions{
+			Method:    "GET",
+			HTTPSOnly: true,
+			MinSize:   100,
+		})
+		if len(captures) != 1 {
+			t.Errorf("Expected 1 capture with combined filters, got %d", len(captures))
+		}
+	})
+}
+
+func TestCaptureStoreStats(t *testing.T) {
+	store := NewCaptureStore(100)
+
+	// Add captures with various properties
+	store.Add(&CapturedRequest{
+		ID:           "1",
+		Method:       "GET",
+		Host:         "api.example.com",
+		StatusCode:   200,
+		RequestSize:  100,
+		ResponseSize: 500,
+		Duration:     100 * time.Millisecond,
+		Timestamp:    time.Now().Add(-time.Hour),
+	})
+	store.Add(&CapturedRequest{
+		ID:           "2",
+		Method:       "POST",
+		Host:         "api.example.com",
+		StatusCode:   201,
+		RequestSize:  200,
+		ResponseSize: 100,
+		Duration:     50 * time.Millisecond,
+		Timestamp:    time.Now(),
+	})
+	store.Add(&CapturedRequest{
+		ID:           "3",
+		Method:       "GET",
+		Host:         "other.com",
+		StatusCode:   404,
+		RequestSize:  50,
+		ResponseSize: 50,
+		Duration:     150 * time.Millisecond,
+		Timestamp:    time.Now().Add(-30 * time.Minute),
+	})
+
+	stats := store.Stats()
+
+	t.Run("counts captures", func(t *testing.T) {
+		if stats.TotalCount != 3 {
+			t.Errorf("Expected 3 captures, got %d", stats.TotalCount)
+		}
+	})
+
+	t.Run("sums request size", func(t *testing.T) {
+		if stats.TotalRequestSize != 350 {
+			t.Errorf("Expected request size 350, got %d", stats.TotalRequestSize)
+		}
+	})
+
+	t.Run("sums response size", func(t *testing.T) {
+		if stats.TotalResponseSize != 650 {
+			t.Errorf("Expected response size 650, got %d", stats.TotalResponseSize)
+		}
+	})
+
+	t.Run("counts methods", func(t *testing.T) {
+		if stats.MethodCounts["GET"] != 2 {
+			t.Errorf("Expected 2 GET, got %d", stats.MethodCounts["GET"])
+		}
+		if stats.MethodCounts["POST"] != 1 {
+			t.Errorf("Expected 1 POST, got %d", stats.MethodCounts["POST"])
+		}
+	})
+
+	t.Run("counts statuses", func(t *testing.T) {
+		if stats.StatusCounts[200] != 1 {
+			t.Errorf("Expected 1 status 200, got %d", stats.StatusCounts[200])
+		}
+		if stats.StatusCounts[201] != 1 {
+			t.Errorf("Expected 1 status 201, got %d", stats.StatusCounts[201])
+		}
+		if stats.StatusCounts[404] != 1 {
+			t.Errorf("Expected 1 status 404, got %d", stats.StatusCounts[404])
+		}
+	})
+
+	t.Run("counts hosts", func(t *testing.T) {
+		if stats.HostCounts["api.example.com"] != 2 {
+			t.Errorf("Expected 2 api.example.com, got %d", stats.HostCounts["api.example.com"])
+		}
+		if stats.HostCounts["other.com"] != 1 {
+			t.Errorf("Expected 1 other.com, got %d", stats.HostCounts["other.com"])
+		}
+	})
+
+	t.Run("calculates average duration", func(t *testing.T) {
+		if stats.AvgDuration != 100*time.Millisecond {
+			t.Errorf("Expected avg duration 100ms, got %v", stats.AvgDuration)
+		}
+	})
+
+	t.Run("tracks oldest capture", func(t *testing.T) {
+		if stats.OldestCapture.IsZero() {
+			t.Error("OldestCapture should not be zero")
+		}
+	})
+
+	t.Run("tracks newest capture", func(t *testing.T) {
+		if stats.NewestCapture.IsZero() {
+			t.Error("NewestCapture should not be zero")
+		}
+	})
+}
+
+func TestCaptureStoreStatsEmpty(t *testing.T) {
+	store := NewCaptureStore(100)
+	stats := store.Stats()
+
+	if stats.TotalCount != 0 {
+		t.Errorf("Expected 0 captures, got %d", stats.TotalCount)
+	}
+	if stats.AvgDuration != 0 {
+		t.Errorf("Expected 0 avg duration, got %v", stats.AvgDuration)
+	}
+}

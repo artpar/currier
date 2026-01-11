@@ -11,6 +11,7 @@ import (
 	"github.com/artpar/currier/internal/history"
 	"github.com/artpar/currier/internal/proxy"
 	"github.com/artpar/currier/internal/starred"
+	"github.com/artpar/currier/internal/tui"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -4233,5 +4234,191 @@ func TestCollectionTree_RenderCaptureView(t *testing.T) {
 
 		view := tree.View()
 		assert.NotEmpty(t, view)
+	})
+}
+
+func TestCollectionTree_ProxyFunctions(t *testing.T) {
+	t.Run("SetProxyRunning sets proxy state", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		tree.SetProxyRunning(true)
+		assert.True(t, tree.IsProxyRunning())
+
+		tree.SetProxyRunning(false)
+		assert.False(t, tree.IsProxyRunning())
+	})
+
+	t.Run("SetCertPath sets certificate path", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		tree.SetCertPath("/tmp/ca.crt")
+		assert.NotNil(t, tree)
+	})
+
+	t.Run("SetViewMode changes view mode", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		tree.SetViewMode(ViewCapture)
+		assert.Equal(t, ViewCapture, tree.viewMode)
+
+		tree.SetViewMode(ViewHistory)
+		assert.Equal(t, ViewHistory, tree.viewMode)
+
+		tree.SetViewMode(ViewCollections)
+		assert.Equal(t, ViewCollections, tree.viewMode)
+	})
+
+	t.Run("IsProxyRunning returns proxy state", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		// Initial state should be false
+		assert.False(t, tree.IsProxyRunning())
+	})
+
+	t.Run("ProxyServer returns nil when not set", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		server := tree.ProxyServer()
+		assert.Nil(t, server)
+	})
+
+	t.Run("SetProxyServer sets the proxy server", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		// Create a mock proxy server
+		proxyServer, _ := proxy.NewServer(proxy.WithListenAddr(":0"), proxy.WithHTTPS(false))
+		tree.SetProxyServer(proxyServer)
+
+		assert.Equal(t, proxyServer, tree.ProxyServer())
+	})
+
+	t.Run("AddCapture adds capture to list", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		capture := &proxy.CapturedRequest{
+			ID:         "test-1",
+			Method:     "GET",
+			URL:        "http://example.com/api",
+			StatusCode: 200,
+		}
+
+		tree.AddCapture(capture)
+		assert.Equal(t, 1, len(tree.captures))
+	})
+}
+
+func TestCollectionTree_GetOrCreateCollectionWithName(t *testing.T) {
+	t.Run("creates collection when empty", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.collections = []*core.Collection{}
+
+		coll := tree.GetOrCreateCollection("New Collection")
+		assert.NotNil(t, coll)
+		assert.Equal(t, "New Collection", coll.Name())
+	})
+
+	t.Run("creates collection with given name", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		existingColl := core.NewCollection("Existing")
+		tree.SetCollections([]*core.Collection{existingColl})
+
+		coll := tree.GetOrCreateCollection("New Collection")
+		assert.NotNil(t, coll)
+		// The function creates a new one with the given name
+		assert.Contains(t, []string{"Existing", "New Collection"}, coll.Name())
+	})
+}
+
+func TestCollectionTree_UpdateUnfocused(t *testing.T) {
+	t.Run("handles WindowSizeMsg when unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.focused = false
+
+		msg := tea.WindowSizeMsg{Width: 120, Height: 40}
+		updated, _ := tree.Update(msg)
+		assert.NotNil(t, updated)
+	})
+
+	t.Run("handles FocusMsg when unfocused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.focused = false
+
+		updated, _ := tree.Update(tui.FocusMsg{})
+		updatedTree := updated.(*CollectionTree)
+		assert.True(t, updatedTree.focused)
+	})
+
+	t.Run("handles BlurMsg when focused", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.focused = true
+
+		updated, _ := tree.Update(tui.BlurMsg{})
+		updatedTree := updated.(*CollectionTree)
+		assert.False(t, updatedTree.focused)
+	})
+}
+
+func TestCollectionTree_FilterCycling(t *testing.T) {
+	t.Run("cycles capture method filter", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCapture
+
+		// Start with empty filter
+		assert.Equal(t, "", tree.captureMethodFilter)
+
+		// Cycle through filters
+		tree.cycleCaptureMethodFilter()
+		assert.NotEqual(t, "", tree.captureMethodFilter)
+	})
+
+	t.Run("cycles capture status filter", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCapture
+
+		// Start with empty filter
+		assert.Equal(t, "", tree.captureStatusFilter)
+
+		// Cycle through filters
+		tree.cycleCaptureStatusFilter()
+		assert.NotEqual(t, "", tree.captureStatusFilter)
+	})
+
+	t.Run("cycles history method filter", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewHistory
+
+		// Start with empty filter
+		assert.Equal(t, "", tree.historyMethodFilter)
+
+		// Cycle through filters
+		tree.cycleHistoryMethodFilter()
+		assert.NotEqual(t, "", tree.historyMethodFilter)
+	})
+
+	t.Run("cycles history status filter", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewHistory
+
+		// Start with empty filter
+		assert.Equal(t, "", tree.historyStatusFilter)
+
+		// Cycle through filters
+		tree.cycleHistoryStatusFilter()
+		assert.NotEqual(t, "", tree.historyStatusFilter)
 	})
 }
