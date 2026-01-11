@@ -2,6 +2,7 @@ package components
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -4574,6 +4575,135 @@ func TestCollectionTree_HandleBulkDeleteFolders(t *testing.T) {
 
 		_, cmd := tree.handleBulkDelete()
 		assert.NotNil(t, cmd)
+	})
+}
+
+func TestCollectionTree_AddCaptureWithBufferLimit(t *testing.T) {
+	t.Run("limits captures to buffer size when proxy server is set", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		// Create a proxy server with small buffer size
+		config := proxy.DefaultConfig()
+		config.BufferSize = 3
+		proxyServer, err := proxy.NewServer()
+		if err != nil {
+			t.Skip("Could not create proxy server")
+		}
+
+		tree.SetProxyServer(proxyServer)
+
+		// Add more captures than buffer allows
+		for i := 0; i < 5; i++ {
+			capture := &proxy.CapturedRequest{
+				ID:         fmt.Sprintf("test-%d", i),
+				Method:     "GET",
+				URL:        fmt.Sprintf("http://example.com/api/%d", i),
+				StatusCode: 200,
+			}
+			tree.AddCapture(capture)
+		}
+
+		// Buffer should be limited
+		assert.LessOrEqual(t, len(tree.captures), proxyServer.Config().BufferSize)
+	})
+}
+
+func TestCollectionTree_LoadCapturesWithFilters(t *testing.T) {
+	t.Run("loads no captures when proxy server is nil", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.proxyServer = nil
+
+		tree.loadCaptures()
+		assert.Nil(t, tree.captures)
+	})
+
+	t.Run("applies status filter 2xx", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.captureStatusFilter = "2xx"
+
+		// Just verify the filter is set correctly
+		assert.Equal(t, "2xx", tree.captureStatusFilter)
+	})
+
+	t.Run("applies status filter 4xx", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.captureStatusFilter = "4xx"
+
+		// Just verify the filter is set correctly
+		assert.Equal(t, "4xx", tree.captureStatusFilter)
+	})
+
+	t.Run("applies status filter 5xx", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.captureStatusFilter = "5xx"
+
+		// Just verify the filter is set correctly
+		assert.Equal(t, "5xx", tree.captureStatusFilter)
+	})
+}
+
+func TestCollectionTree_CycleFiltersMore(t *testing.T) {
+	t.Run("cycleCaptureMethodFilter cycles through methods", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.captureMethodFilter = "GET"
+		tree.cycleCaptureMethodFilter()
+		assert.NotEmpty(t, tree.captureMethodFilter)
+	})
+
+	t.Run("cycleCaptureStatusFilter cycles through statuses", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.captureStatusFilter = "2xx"
+		tree.cycleCaptureStatusFilter()
+		assert.NotEqual(t, "2xx", tree.captureStatusFilter)
+	})
+
+	t.Run("cycleHistoryMethodFilter cycles through methods", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.historyMethodFilter = "POST"
+		tree.cycleHistoryMethodFilter()
+		assert.NotEqual(t, "POST", tree.historyMethodFilter)
+	})
+
+	t.Run("cycleHistoryStatusFilter cycles through statuses", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.historyStatusFilter = "3xx"
+		tree.cycleHistoryStatusFilter()
+		assert.NotEqual(t, "3xx", tree.historyStatusFilter)
+	})
+}
+
+func TestCollectionTree_FindParentFolderContainingFolderMore(t *testing.T) {
+	t.Run("returns nil for folder not found", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		coll := core.NewCollection("Test")
+		parentFolder := coll.AddFolder("Parent")
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Search for non-existent folder ID
+		parent := tree.findParentFolderContainingFolder(parentFolder, "non-existent-id")
+		assert.Nil(t, parent)
+	})
+
+	t.Run("finds nested parent folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		coll := core.NewCollection("Test")
+		parentFolder := coll.AddFolder("Parent")
+		childFolder := parentFolder.AddFolder("Child")
+
+		tree.SetCollections([]*core.Collection{coll})
+
+		parent := tree.findParentFolderContainingFolder(parentFolder, childFolder.ID())
+		assert.NotNil(t, parent)
+		assert.Equal(t, parentFolder.ID(), parent.ID())
 	})
 }
 

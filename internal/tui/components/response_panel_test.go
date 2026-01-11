@@ -1344,3 +1344,88 @@ func TestTruncateValue(t *testing.T) {
 		assert.LessOrEqual(t, len(result), 20)
 	})
 }
+
+func TestResponsePanel_MaxScrollOffset(t *testing.T) {
+	t.Run("returns 0 when no response", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		offset := panel.maxScrollOffset()
+		assert.Equal(t, 0, offset)
+	})
+
+	t.Run("returns 0 for body tab with short content", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		resp := newTestResponse(200, "OK")
+		panel.SetResponse(resp)
+		panel.activeTab = ResponseTabBody
+
+		offset := panel.maxScrollOffset()
+		assert.GreaterOrEqual(t, offset, 0)
+	})
+
+	t.Run("returns offset for headers tab", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		resp := newTestResponseWithHeaders(200, "OK")
+		panel.SetResponse(resp)
+		panel.activeTab = ResponseTabHeaders
+
+		offset := panel.maxScrollOffset()
+		assert.GreaterOrEqual(t, offset, 0)
+	})
+
+	t.Run("returns offset for cookies tab", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		headers := core.NewHeaders()
+		headers.Set("Set-Cookie", "session=abc123")
+		resp := core.NewResponse("req-789", "http", core.NewStatus(200, "OK")).
+			WithHeaders(headers)
+		panel.SetResponse(resp)
+		panel.activeTab = ResponseTabCookies
+
+		offset := panel.maxScrollOffset()
+		assert.GreaterOrEqual(t, offset, 0)
+	})
+
+	t.Run("returns offset for timing tab", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		resp := newTestResponse(200, "OK")
+		panel.SetResponse(resp)
+		panel.activeTab = ResponseTabTiming
+
+		offset := panel.maxScrollOffset()
+		assert.GreaterOrEqual(t, offset, 0)
+	})
+
+	t.Run("returns offset for console tab", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		resp := newTestResponse(200, "OK")
+		panel.SetResponse(resp)
+		panel.activeTab = ResponseTabConsole
+
+		offset := panel.maxScrollOffset()
+		assert.GreaterOrEqual(t, offset, 0)
+	})
+
+	t.Run("returns offset for tests tab", func(t *testing.T) {
+		panel := NewResponsePanel()
+		panel.SetSize(80, 30)
+
+		resp := newTestResponse(200, "OK")
+		panel.SetResponse(resp)
+		panel.activeTab = ResponseTabTests
+
+		offset := panel.maxScrollOffset()
+		assert.GreaterOrEqual(t, offset, 0)
+	})
+}

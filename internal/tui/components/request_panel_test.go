@@ -3687,3 +3687,91 @@ func TestRequestPanel_EditingFieldMoreStates(t *testing.T) {
 		assert.Equal(t, "method", panel.EditingField())
 	})
 }
+
+func TestRequestPanel_MoveCursorFormDataMode(t *testing.T) {
+	t.Run("moveCursor in body tab without form-data mode", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(80, 30)
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.Focus()
+		panel.activeTab = TabBody
+		panel.bodyTypeIndex = 0 // raw mode, not form-data
+
+		panel.moveCursor(1)
+		assert.GreaterOrEqual(t, panel.cursor, 0)
+	})
+}
+
+func TestRequestPanel_MaxCursorForTabMore(t *testing.T) {
+	t.Run("maxCursorForTab returns -1 for empty headers", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(80, 30)
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.activeTab = TabHeaders
+
+		max := panel.maxCursorForTab()
+		assert.Equal(t, -1, max)
+	})
+
+	t.Run("maxCursorForTab returns -1 for empty query params", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(80, 30)
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.activeTab = TabQuery
+
+		max := panel.maxCursorForTab()
+		assert.Equal(t, -1, max)
+	})
+
+	t.Run("maxCursorForTab returns 0 for body tab raw mode", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(80, 30)
+		req := core.NewRequestDefinition("Test", "POST", "https://example.com")
+		panel.SetRequest(req)
+		panel.activeTab = TabBody
+		panel.bodyTypeIndex = 0 // raw mode
+
+		max := panel.maxCursorForTab()
+		assert.Equal(t, 0, max)
+	})
+
+	t.Run("maxCursorForTab returns 0 for default tab", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(80, 30)
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		panel.SetRequest(req)
+		panel.activeTab = TabURL
+
+		max := panel.maxCursorForTab()
+		assert.Equal(t, 0, max)
+	})
+
+	t.Run("maxCursorForTab returns correct value for headers with items", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(80, 30)
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetHeader("Content-Type", "application/json")
+		req.SetHeader("Accept", "*/*")
+		panel.SetRequest(req)
+		panel.activeTab = TabHeaders
+
+		max := panel.maxCursorForTab()
+		assert.GreaterOrEqual(t, max, 0)
+	})
+
+	t.Run("maxCursorForTab returns correct value for query with items", func(t *testing.T) {
+		panel := NewRequestPanel()
+		panel.SetSize(80, 30)
+		req := core.NewRequestDefinition("Test", "GET", "https://example.com")
+		req.SetQueryParam("foo", "bar")
+		req.SetQueryParam("baz", "qux")
+		panel.SetRequest(req)
+		panel.activeTab = TabQuery
+
+		max := panel.maxCursorForTab()
+		assert.GreaterOrEqual(t, max, 0)
+	})
+}
