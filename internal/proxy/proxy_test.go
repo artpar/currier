@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -2094,6 +2095,322 @@ func TestConfig_HostFiltering(t *testing.T) {
 		}
 		if config.BufferSize != 512 {
 			t.Errorf("Expected BufferSize 512, got %d", config.BufferSize)
+		}
+	})
+}
+
+// TLS Tests
+
+func TestNewTLSConfig_AutoGenerate(t *testing.T) {
+	// Create temp directory for CA files
+	tempDir := t.TempDir()
+	certPath := tempDir + "/ca.crt"
+	keyPath := tempDir + "/ca.key"
+
+	t.Run("auto generates CA when files don't exist", func(t *testing.T) {
+		tlsConfig, err := NewTLSConfig(certPath, keyPath, true)
+		if err != nil {
+			t.Fatalf("Failed to create TLS config: %v", err)
+		}
+		if tlsConfig == nil {
+			t.Fatal("Expected non-nil TLS config")
+		}
+		if tlsConfig.caCert == nil {
+			t.Error("Expected CA certificate to be generated")
+		}
+		if tlsConfig.caKey == nil {
+			t.Error("Expected CA key to be generated")
+		}
+	})
+
+	t.Run("loads existing CA files", func(t *testing.T) {
+		// Should load the files created in previous test
+		tlsConfig, err := NewTLSConfig(certPath, keyPath, false)
+		if err != nil {
+			t.Fatalf("Failed to load TLS config: %v", err)
+		}
+		if tlsConfig == nil {
+			t.Fatal("Expected non-nil TLS config")
+		}
+	})
+
+	t.Run("fails when auto generate is false and files don't exist", func(t *testing.T) {
+		nonExistentDir := tempDir + "/nonexistent"
+		_, err := NewTLSConfig(nonExistentDir+"/ca.crt", nonExistentDir+"/ca.key", false)
+		if err == nil {
+			t.Error("Expected error when files don't exist and autoGenerate is false")
+		}
+	})
+}
+
+func TestTLSConfig_GetCertForHost(t *testing.T) {
+	tempDir := t.TempDir()
+	certPath := tempDir + "/ca.crt"
+	keyPath := tempDir + "/ca.key"
+
+	tlsConfig, err := NewTLSConfig(certPath, keyPath, true)
+	if err != nil {
+		t.Fatalf("Failed to create TLS config: %v", err)
+	}
+
+	t.Run("generates certificate for hostname", func(t *testing.T) {
+		cert, err := tlsConfig.GetCertForHost("example.com")
+		if err != nil {
+			t.Fatalf("Failed to get cert for host: %v", err)
+		}
+		if cert == nil {
+			t.Fatal("Expected non-nil certificate")
+		}
+		if len(cert.Certificate) == 0 {
+			t.Error("Expected certificate chain")
+		}
+	})
+
+	t.Run("generates certificate for hostname with port", func(t *testing.T) {
+		cert, err := tlsConfig.GetCertForHost("api.example.com:443")
+		if err != nil {
+			t.Fatalf("Failed to get cert for host with port: %v", err)
+		}
+		if cert == nil {
+			t.Fatal("Expected non-nil certificate")
+		}
+	})
+
+	t.Run("generates certificate for IP address", func(t *testing.T) {
+		cert, err := tlsConfig.GetCertForHost("192.168.1.1")
+		if err != nil {
+			t.Fatalf("Failed to get cert for IP: %v", err)
+		}
+		if cert == nil {
+			t.Fatal("Expected non-nil certificate")
+		}
+	})
+
+	t.Run("caches certificates", func(t *testing.T) {
+		cert1, _ := tlsConfig.GetCertForHost("cached.example.com")
+		cert2, _ := tlsConfig.GetCertForHost("cached.example.com")
+		if cert1 != cert2 {
+			t.Error("Expected cached certificate to be returned")
+		}
+	})
+}
+
+func TestTLSConfig_GetTLSConfig(t *testing.T) {
+	tempDir := t.TempDir()
+	certPath := tempDir + "/ca.crt"
+	keyPath := tempDir + "/ca.key"
+
+	tlsConfig, err := NewTLSConfig(certPath, keyPath, true)
+	if err != nil {
+		t.Fatalf("Failed to create TLS config: %v", err)
+	}
+
+	t.Run("returns tls.Config with GetCertificate", func(t *testing.T) {
+		config := tlsConfig.GetTLSConfig()
+		if config == nil {
+			t.Fatal("Expected non-nil tls.Config")
+		}
+		if config.GetCertificate == nil {
+			t.Error("Expected GetCertificate function to be set")
+		}
+	})
+}
+
+func TestTLSConfig_ExportCACert(t *testing.T) {
+	tempDir := t.TempDir()
+	certPath := tempDir + "/ca.crt"
+	keyPath := tempDir + "/ca.key"
+
+	tlsConfig, err := NewTLSConfig(certPath, keyPath, true)
+	if err != nil {
+		t.Fatalf("Failed to create TLS config: %v", err)
+	}
+
+	t.Run("exports CA certificate to file", func(t *testing.T) {
+		exportPath := tempDir + "/exported-ca.crt"
+		err := tlsConfig.ExportCACert(exportPath)
+		if err != nil {
+			t.Fatalf("Failed to export CA cert: %v", err)
+		}
+
+		// Verify file was created
+		data, err := os.ReadFile(exportPath)
+		if err != nil {
+			t.Fatalf("Failed to read exported file: %v", err)
+		}
+		if len(data) == 0 {
+			t.Error("Expected non-empty exported certificate")
+		}
+		if !strings.Contains(string(data), "BEGIN CERTIFICATE") {
+			t.Error("Expected PEM-encoded certificate")
+		}
+	})
+
+	t.Run("fails with invalid path", func(t *testing.T) {
+		err := tlsConfig.ExportCACert("/nonexistent/path/ca.crt")
+		if err == nil {
+			t.Error("Expected error for invalid path")
+		}
+	})
+}
+
+func TestTLSConfig_ExportCACertNoCert(t *testing.T) {
+	tlsConfig := &TLSConfig{}
+
+	err := tlsConfig.ExportCACert("/tmp/test-export.crt")
+	if err == nil {
+		t.Error("Expected error when no CA certificate loaded")
+	}
+}
+
+func TestTLSConfig_CACertPEM(t *testing.T) {
+	tempDir := t.TempDir()
+	certPath := tempDir + "/ca.crt"
+	keyPath := tempDir + "/ca.key"
+
+	tlsConfig, err := NewTLSConfig(certPath, keyPath, true)
+	if err != nil {
+		t.Fatalf("Failed to create TLS config: %v", err)
+	}
+
+	t.Run("returns PEM-encoded CA certificate", func(t *testing.T) {
+		pem := tlsConfig.CACertPEM()
+		if len(pem) == 0 {
+			t.Error("Expected non-empty PEM data")
+		}
+		if !strings.Contains(string(pem), "BEGIN CERTIFICATE") {
+			t.Error("Expected PEM-encoded certificate")
+		}
+	})
+
+	t.Run("returns nil when no certificate", func(t *testing.T) {
+		emptyConfig := &TLSConfig{}
+		pem := emptyConfig.CACertPEM()
+		if pem != nil {
+			t.Error("Expected nil for empty config")
+		}
+	})
+}
+
+func TestCACertPath(t *testing.T) {
+	path := CACertPath()
+	if path == "" {
+		t.Error("Expected non-empty path")
+	}
+	if !strings.Contains(path, "currier") {
+		t.Error("Expected path to contain 'currier'")
+	}
+	if !strings.HasSuffix(path, "ca.crt") {
+		t.Error("Expected path to end with ca.crt")
+	}
+}
+
+func TestCAKeyPath(t *testing.T) {
+	path := CAKeyPath()
+	if path == "" {
+		t.Error("Expected non-empty path")
+	}
+	if !strings.Contains(path, "currier") {
+		t.Error("Expected path to contain 'currier'")
+	}
+	if !strings.HasSuffix(path, "ca.key") {
+		t.Error("Expected path to end with ca.key")
+	}
+}
+
+func TestTLSConfig_LoadCA_InvalidCert(t *testing.T) {
+	tempDir := t.TempDir()
+
+	t.Run("fails with invalid certificate PEM", func(t *testing.T) {
+		certPath := tempDir + "/invalid-cert.crt"
+		keyPath := tempDir + "/valid-key.key"
+
+		os.WriteFile(certPath, []byte("not a valid PEM"), 0644)
+		os.WriteFile(keyPath, []byte("not a valid PEM"), 0600)
+
+		_, err := NewTLSConfig(certPath, keyPath, false)
+		if err == nil {
+			t.Error("Expected error for invalid certificate")
+		}
+	})
+
+	t.Run("fails with invalid key PEM", func(t *testing.T) {
+		// First generate a valid cert/key pair
+		validDir := t.TempDir()
+		validCertPath := validDir + "/valid.crt"
+		validKeyPath := validDir + "/valid.key"
+
+		tc, err := NewTLSConfig(validCertPath, validKeyPath, true)
+		if err != nil {
+			t.Fatalf("Failed to generate valid cert/key: %v", err)
+		}
+		_ = tc
+
+		// Create a file with valid cert but invalid key
+		invalidKeyPath := tempDir + "/invalid.key"
+		os.WriteFile(invalidKeyPath, []byte("not a valid PEM"), 0600)
+
+		_, err = NewTLSConfig(validCertPath, invalidKeyPath, false)
+		if err == nil {
+			t.Error("Expected error for invalid key")
+		}
+	})
+}
+
+func TestServerWithHTTPS(t *testing.T) {
+	tempDir := t.TempDir()
+
+	t.Run("creates server with auto-generated CA", func(t *testing.T) {
+		server, err := NewServer(
+			WithListenAddr(":0"),
+			WithHTTPS(true),
+			WithCACert(tempDir+"/ca.crt", tempDir+"/ca.key"),
+			WithAutoGenerateCA(true),
+		)
+		if err != nil {
+			t.Fatalf("Failed to create HTTPS server: %v", err)
+		}
+		if server == nil {
+			t.Fatal("Expected non-nil server")
+		}
+
+		// Verify TLS config is set
+		tlsConfig := server.TLSConfig()
+		if tlsConfig == nil {
+			t.Error("Expected TLS config to be set")
+		}
+
+		// Verify CA cert PEM is available
+		certPEM := server.CACertPEM()
+		if len(certPEM) == 0 {
+			t.Error("Expected CA cert PEM to be available")
+		}
+	})
+
+	t.Run("can export CA cert", func(t *testing.T) {
+		server, err := NewServer(
+			WithListenAddr(":0"),
+			WithHTTPS(true),
+			WithCACert(tempDir+"/ca2.crt", tempDir+"/ca2.key"),
+			WithAutoGenerateCA(true),
+		)
+		if err != nil {
+			t.Fatalf("Failed to create HTTPS server: %v", err)
+		}
+
+		exportPath := tempDir + "/exported-ca.pem"
+		err = server.ExportCACert(exportPath)
+		if err != nil {
+			t.Fatalf("Failed to export CA cert: %v", err)
+		}
+
+		// Verify exported file exists
+		data, err := os.ReadFile(exportPath)
+		if err != nil {
+			t.Fatalf("Failed to read exported cert: %v", err)
+		}
+		if len(data) == 0 {
+			t.Error("Expected non-empty exported certificate")
 		}
 	})
 }
