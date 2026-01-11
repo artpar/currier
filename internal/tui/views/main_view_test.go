@@ -265,7 +265,7 @@ func TestMainView_Help(t *testing.T) {
 		view.ShowHelp()
 
 		output := view.View()
-		assert.Contains(t, output, "Help")
+		assert.Contains(t, output, "Quick Start")
 		assert.Contains(t, output, "Navigation")
 	})
 
@@ -2595,8 +2595,8 @@ func TestMainView_ViewRendering(t *testing.T) {
 		view.ShowHelp()
 
 		output := view.View()
-		// Help content should be in the output
-		assert.Contains(t, output, "Help")
+		// Help content should be in the output (Quick Start is the first tab)
+		assert.Contains(t, output, "Quick Start")
 	})
 }
 
@@ -4962,7 +4962,7 @@ func TestMainView_UpdateModeTransitionsExpanded(t *testing.T) {
 		view = updated.(*MainView)
 
 		output := view.View()
-		assert.Contains(t, output, "Help")
+		assert.Contains(t, output, "Quick Start")
 	})
 }
 
@@ -5176,7 +5176,7 @@ func TestMainView_HelpKeyToggleDirect(t *testing.T) {
 
 		// Verify help is shown via View output
 		output := view.View()
-		assert.Contains(t, output, "Help")
+		assert.Contains(t, output, "Quick Start")
 	})
 
 	t.Run("? key closes help when already open", func(t *testing.T) {
@@ -5190,7 +5190,7 @@ func TestMainView_HelpKeyToggleDirect(t *testing.T) {
 
 		// Verify it's shown
 		output := view.View()
-		assert.Contains(t, output, "Help")
+		assert.Contains(t, output, "Quick Start")
 
 		// Toggle again to close
 		updated, _ = view.Update(msg)
