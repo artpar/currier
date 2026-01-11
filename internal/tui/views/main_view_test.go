@@ -8813,3 +8813,73 @@ func TestMainView_EnvSwitcherToggle(t *testing.T) {
 	})
 }
 
+func TestMainView_HelpTabs(t *testing.T) {
+	t.Run("gets help tabs", func(t *testing.T) {
+		view := NewMainView()
+		tabs := view.getHelpTabs()
+		assert.NotEmpty(t, tabs)
+		// Verify we have some expected tabs
+		assert.Contains(t, tabs, "Quick Start")
+		assert.Contains(t, tabs, "Navigation")
+	})
+
+	t.Run("gets help content", func(t *testing.T) {
+		view := NewMainView()
+		content := view.getHelpContent()
+		assert.NotEmpty(t, content)
+	})
+}
+
+func TestMainView_RenderHelp(t *testing.T) {
+	t.Run("renders help when showing", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showHelp = true
+		view.helpTab = 0
+
+		output := view.View()
+		assert.NotEmpty(t, output)
+	})
+
+	t.Run("renders help with different tabs", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showHelp = true
+
+		tabs := view.getHelpTabs()
+		for i := range tabs {
+			view.helpTab = i
+			output := view.View()
+			assert.NotEmpty(t, output)
+		}
+	})
+}
+
+func TestMainView_EnvSwitcherRender(t *testing.T) {
+	t.Run("renders env switcher with environments", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvSwitcher = true
+		view.envList = []filesystem.EnvironmentMeta{
+			{Name: "dev"},
+			{Name: "staging"},
+			{Name: "prod"},
+		}
+		view.envCursor = 1
+
+		output := view.renderEnvSwitcher()
+		assert.NotEmpty(t, output)
+		assert.Contains(t, output, "staging")
+	})
+
+	t.Run("renders env switcher when empty", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.showEnvSwitcher = true
+		view.envList = []filesystem.EnvironmentMeta{}
+
+		output := view.renderEnvSwitcher()
+		assert.NotEmpty(t, output)
+	})
+}
+

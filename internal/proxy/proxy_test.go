@@ -1927,3 +1927,173 @@ func TestServer_ExportCACert(t *testing.T) {
 		}
 	})
 }
+
+func TestProxyHandler_ServeHTTPConnect(t *testing.T) {
+	store := NewCaptureStore(100)
+	config := NewConfig()
+	handler := NewProxyHandler(store, nil, config)
+
+	t.Run("handles CONNECT method", func(t *testing.T) {
+		req := httptest.NewRequest("CONNECT", "example.com:443", nil)
+		req.Host = "example.com:443"
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		// CONNECT requires hijacking which doesn't work with httptest.ResponseRecorder
+		// so we just verify it doesn't panic
+	})
+}
+
+func TestProxyHandler_ProxyRequestWithHeaders(t *testing.T) {
+	// Create a test server
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Echo back headers
+		if r.Header.Get("X-Custom-Header") == "custom-value" {
+			w.Header().Set("X-Response-Header", "success")
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}))
+	defer testServer.Close()
+
+	store := NewCaptureStore(100)
+	config := NewConfig()
+	handler := NewProxyHandler(store, nil, config)
+
+	t.Run("proxies request with custom headers", func(t *testing.T) {
+		req := httptest.NewRequest("GET", testServer.URL+"/test", nil)
+		req.Header.Set("X-Custom-Header", "custom-value")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+	})
+}
+
+func TestProxyHandler_ProxyRequestWithBody(t *testing.T) {
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if string(body) == "test body" {
+			w.WriteHeader(http.StatusCreated)
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer testServer.Close()
+
+	store := NewCaptureStore(100)
+	config := NewConfig()
+	handler := NewProxyHandler(store, nil, config)
+
+	t.Run("proxies POST request with body", func(t *testing.T) {
+		req := httptest.NewRequest("POST", testServer.URL+"/create", strings.NewReader("test body"))
+		req.Header.Set("Content-Type", "text/plain")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Errorf("Expected status 201, got %d", w.Code)
+		}
+	})
+}
+
+func TestCaptureStore_EdgeCases(t *testing.T) {
+	t.Run("store with capacity 1", func(t *testing.T) {
+		store := NewCaptureStore(1)
+
+		req1 := &CapturedRequest{ID: "1", URL: "http://example.com/1"}
+		req2 := &CapturedRequest{ID: "2", URL: "http://example.com/2"}
+
+		store.Add(req1)
+		store.Add(req2)
+
+		// Should only have the most recent one
+		all := store.All()
+		if len(all) != 1 {
+			t.Errorf("Expected 1 item, got %d", len(all))
+		}
+		if all[0].ID != "2" {
+			t.Errorf("Expected ID '2', got '%s'", all[0].ID)
+		}
+	})
+
+	t.Run("get non-existent ID", func(t *testing.T) {
+		store := NewCaptureStore(10)
+		result := store.Get("non-existent")
+		if result != nil {
+			t.Error("Expected nil for non-existent ID")
+		}
+	})
+
+	t.Run("clear and count", func(t *testing.T) {
+		store := NewCaptureStore(10)
+		store.Add(&CapturedRequest{ID: "1"})
+		store.Add(&CapturedRequest{ID: "2"})
+
+		if store.Count() != 2 {
+			t.Errorf("Expected count 2, got %d", store.Count())
+		}
+
+		store.Clear()
+
+		if store.Count() != 0 {
+			t.Errorf("Expected count 0 after clear, got %d", store.Count())
+		}
+	})
+}
+
+func TestConfig_HostFiltering(t *testing.T) {
+	t.Run("config with include hosts", func(t *testing.T) {
+		config := NewConfig()
+		config.IncludeHosts = []string{"example.com"}
+
+		// Verify config fields are set correctly
+		if len(config.IncludeHosts) != 1 {
+			t.Errorf("Expected 1 include host, got %d", len(config.IncludeHosts))
+		}
+		if config.IncludeHosts[0] != "example.com" {
+			t.Errorf("Expected 'example.com', got '%s'", config.IncludeHosts[0])
+		}
+	})
+
+	t.Run("config with exclude hosts", func(t *testing.T) {
+		config := NewConfig()
+		config.ExcludeHosts = []string{"excluded.com"}
+
+		if len(config.ExcludeHosts) != 1 {
+			t.Errorf("Expected 1 exclude host, got %d", len(config.ExcludeHosts))
+		}
+		if config.ExcludeHosts[0] != "excluded.com" {
+			t.Errorf("Expected 'excluded.com', got '%s'", config.ExcludeHosts[0])
+		}
+	})
+
+	t.Run("config with all options", func(t *testing.T) {
+		config := NewConfig(
+			WithListenAddr(":8888"),
+			WithHTTPS(true),
+			WithVerbose(true),
+			WithMaxBodySize(1024),
+			WithBufferSize(512),
+			WithIncludeHosts("api.example.com"),
+			WithExcludeHosts("internal.example.com"),
+		)
+
+		if config.ListenAddr != ":8888" {
+			t.Errorf("Expected ':8888', got '%s'", config.ListenAddr)
+		}
+		if !config.EnableHTTPS {
+			t.Error("Expected HTTPS to be enabled")
+		}
+		if !config.Verbose {
+			t.Error("Expected Verbose to be true")
+		}
+		if config.MaxBodySize != 1024 {
+			t.Errorf("Expected MaxBodySize 1024, got %d", config.MaxBodySize)
+		}
+		if config.BufferSize != 512 {
+			t.Errorf("Expected BufferSize 512, got %d", config.BufferSize)
+		}
+	})
+}

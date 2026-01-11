@@ -4950,3 +4950,303 @@ func TestServer_ResourcesReadCoverage(t *testing.T) {
 		assert.NotNil(t, resp.Error)
 	})
 }
+
+func TestServer_RenameCollectionSuccess(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	// First create a collection
+	createParams := ToolCallParams{
+		Name:      "create_collection",
+		Arguments: json.RawMessage(`{"name": "OldName"}`),
+	}
+	createJSON, _ := json.Marshal(createParams)
+	resp := server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`1`),
+		Method:  MethodToolsCall,
+		Params:  createJSON,
+	})
+	require.Nil(t, resp.Error)
+
+	t.Run("rename_collection successfully", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "rename_collection",
+			Arguments: json.RawMessage(`{"old_name": "OldName", "new_name": "NewName"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`2`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+		assert.Nil(t, resp.Error)
+
+		// Verify the collection was renamed by getting it
+		getParams := ToolCallParams{
+			Name:      "get_collection",
+			Arguments: json.RawMessage(`{"name": "NewName"}`),
+		}
+		getJSON, _ := json.Marshal(getParams)
+		getResp := server.handleToolsCall(&Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`3`),
+			Method:  MethodToolsCall,
+			Params:  getJSON,
+		})
+		assert.Nil(t, getResp.Error)
+	})
+}
+
+func TestServer_GetEnvironmentSuccess(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	// Create an environment with variables
+	createParams := ToolCallParams{
+		Name:      "create_environment",
+		Arguments: json.RawMessage(`{"name": "TestEnvGet"}`),
+	}
+	createJSON, _ := json.Marshal(createParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`1`),
+		Method:  MethodToolsCall,
+		Params:  createJSON,
+	})
+
+	// Set some variables
+	setParams := ToolCallParams{
+		Name:      "set_environment_variable",
+		Arguments: json.RawMessage(`{"environment": "TestEnvGet", "key": "api_key", "value": "secret123"}`),
+	}
+	setJSON, _ := json.Marshal(setParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`2`),
+		Method:  MethodToolsCall,
+		Params:  setJSON,
+	})
+
+	t.Run("get_environment returns environment details", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "get_environment",
+			Arguments: json.RawMessage(`{"name": "TestEnvGet"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`3`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+		assert.Nil(t, resp.Error)
+	})
+}
+
+func TestServer_DeleteFolderSuccess(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	// Create a collection with a folder
+	createCollParams := ToolCallParams{
+		Name:      "create_collection",
+		Arguments: json.RawMessage(`{"name": "FolderDeleteColl"}`),
+	}
+	createCollJSON, _ := json.Marshal(createCollParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`1`),
+		Method:  MethodToolsCall,
+		Params:  createCollJSON,
+	})
+
+	// Create a folder
+	createFolderParams := ToolCallParams{
+		Name:      "create_folder",
+		Arguments: json.RawMessage(`{"collection": "FolderDeleteColl", "name": "ToDelete"}`),
+	}
+	createFolderJSON, _ := json.Marshal(createFolderParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`2`),
+		Method:  MethodToolsCall,
+		Params:  createFolderJSON,
+	})
+
+	t.Run("delete_folder removes the folder", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "delete_folder",
+			Arguments: json.RawMessage(`{"collection": "FolderDeleteColl", "folder": "ToDelete"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`3`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+		assert.Nil(t, resp.Error)
+	})
+}
+
+func TestServer_DeleteRequestSuccess(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	// Create a collection with a request
+	createCollParams := ToolCallParams{
+		Name:      "create_collection",
+		Arguments: json.RawMessage(`{"name": "ReqDeleteColl"}`),
+	}
+	createCollJSON, _ := json.Marshal(createCollParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`1`),
+		Method:  MethodToolsCall,
+		Params:  createCollJSON,
+	})
+
+	// Save a request
+	saveParams := ToolCallParams{
+		Name: "save_request",
+		Arguments: json.RawMessage(`{
+			"collection": "ReqDeleteColl",
+			"name": "ToDeleteReq",
+			"method": "GET",
+			"url": "https://api.example.com/delete"
+		}`),
+	}
+	saveJSON, _ := json.Marshal(saveParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`2`),
+		Method:  MethodToolsCall,
+		Params:  saveJSON,
+	})
+
+	t.Run("delete_request removes the request", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "delete_request",
+			Arguments: json.RawMessage(`{"collection": "ReqDeleteColl", "request": "ToDeleteReq"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`3`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+		assert.Nil(t, resp.Error)
+	})
+}
+
+func TestServer_DeleteEnvironmentVariableSuccess(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	// Create an environment
+	createParams := ToolCallParams{
+		Name:      "create_environment",
+		Arguments: json.RawMessage(`{"name": "VarDeleteEnv"}`),
+	}
+	createJSON, _ := json.Marshal(createParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`1`),
+		Method:  MethodToolsCall,
+		Params:  createJSON,
+	})
+
+	// Set a variable
+	setParams := ToolCallParams{
+		Name:      "set_environment_variable",
+		Arguments: json.RawMessage(`{"environment": "VarDeleteEnv", "key": "to_delete", "value": "value"}`),
+	}
+	setJSON, _ := json.Marshal(setParams)
+	server.handleToolsCall(&Request{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`2`),
+		Method:  MethodToolsCall,
+		Params:  setJSON,
+	})
+
+	t.Run("delete_environment_variable removes the variable", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "delete_environment_variable",
+			Arguments: json.RawMessage(`{"environment": "VarDeleteEnv", "key": "to_delete"}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`3`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+		assert.Nil(t, resp.Error)
+	})
+}
+
+func TestServer_GetHistorySuccess(t *testing.T) {
+	server, cleanup := createTestServer(t)
+	defer cleanup()
+
+	t.Run("get_history returns history entries", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "get_history",
+			Arguments: json.RawMessage(`{"limit": 50}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`1`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+		assert.Nil(t, resp.Error)
+	})
+
+	t.Run("get_history with default limit", func(t *testing.T) {
+		params := ToolCallParams{
+			Name:      "get_history",
+			Arguments: json.RawMessage(`{}`),
+		}
+		paramsJSON, _ := json.Marshal(params)
+
+		req := &Request{
+			JSONRPC: "2.0",
+			ID:      json.RawMessage(`2`),
+			Method:  MethodToolsCall,
+			Params:  paramsJSON,
+		}
+
+		resp := server.handleToolsCall(req)
+		require.NotNil(t, resp)
+		assert.Nil(t, resp.Error)
+	})
+}
