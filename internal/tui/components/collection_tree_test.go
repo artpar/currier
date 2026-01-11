@@ -4518,3 +4518,62 @@ func TestCollectionTree_EnterVisualModeEdge(t *testing.T) {
 	})
 }
 
+func TestCollectionTree_HandleBulkDeleteRequests(t *testing.T) {
+	t.Run("deletes selected requests", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		coll := core.NewCollection("Test")
+		req1 := core.NewRequestDefinition("Req1", "GET", "http://example.com")
+		req2 := core.NewRequestDefinition("Req2", "POST", "http://example.com")
+		coll.AddRequest(req1)
+		coll.AddRequest(req2)
+		tree.SetCollections([]*core.Collection{coll})
+		tree.expanded[coll.ID()] = true
+		tree.rebuildItems()
+
+		// Select req1 (index 1)
+		tree.selected = map[string]bool{req1.ID(): true}
+
+		_, cmd := tree.handleBulkDelete()
+		assert.NotNil(t, cmd)
+	})
+
+	t.Run("returns nil when no selection", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		coll := core.NewCollection("Test")
+		coll.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+		tree.expanded[coll.ID()] = true
+		tree.rebuildItems()
+
+		// No selection
+		tree.selected = ClearSelection()
+
+		_, cmd := tree.handleBulkDelete()
+		assert.Nil(t, cmd)
+	})
+}
+
+func TestCollectionTree_HandleBulkDeleteFolders(t *testing.T) {
+	t.Run("deletes selected folders", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		coll := core.NewCollection("Test")
+		folder := coll.AddFolder("Folder1")
+		folder.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+		tree.expanded[coll.ID()] = true
+		tree.rebuildItems()
+
+		// Select folder
+		tree.selected = map[string]bool{folder.ID(): true}
+
+		_, cmd := tree.handleBulkDelete()
+		assert.NotNil(t, cmd)
+	})
+}
+
