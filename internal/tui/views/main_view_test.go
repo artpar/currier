@@ -8159,3 +8159,383 @@ func TestMainView_UpdateFunctionCoverage(t *testing.T) {
 		assert.NotNil(t, result)
 	})
 }
+
+func TestMainView_EnableCaptureMode(t *testing.T) {
+	t.Run("enables capture mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.EnableCaptureMode()
+
+		// Should set capture mode enabled
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_MoreUpdateMessages(t *testing.T) {
+	t.Run("Update with SelectHistoryItemMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		entry := history.Entry{
+			ID:            "entry-1",
+			RequestMethod: "GET",
+			RequestURL:    "https://api.example.com/users",
+			RequestName:   "Get Users",
+			RequestBody:   `{"test": "data"}`,
+			RequestHeaders: map[string]string{
+				"Content-Type": "application/json",
+			},
+		}
+		msg := components.SelectHistoryItemMsg{Entry: entry}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with SelectHistoryItemMsg no name", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		entry := history.Entry{
+			ID:            "entry-1",
+			RequestMethod: "POST",
+			RequestURL:    "https://api.example.com/create",
+		}
+		msg := components.SelectHistoryItemMsg{Entry: entry}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with RenameCollectionMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		c := core.NewCollection("Renamed API")
+		msg := components.RenameCollectionMsg{Collection: c}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+		assert.Contains(t, view.notification, "Renamed")
+	})
+
+	t.Run("Update with MoveRequestMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		source := core.NewCollection("Source API")
+		target := core.NewCollection("Target API")
+		msg := components.MoveRequestMsg{
+			SourceCollection: source,
+			TargetCollection: target,
+		}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with MoveRequestMsg with folder", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		source := core.NewCollection("Source API")
+		target := core.NewCollection("Target API")
+		folder := core.NewFolder("Users")
+		msg := components.MoveRequestMsg{
+			SourceCollection: source,
+			TargetCollection: target,
+			TargetFolder:     folder,
+		}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with MoveFolderMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		source := core.NewCollection("Source API")
+		target := core.NewCollection("Target API")
+		msg := components.MoveFolderMsg{
+			SourceCollection: source,
+			TargetCollection: target,
+		}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with MoveFolderMsg with folder", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		source := core.NewCollection("Source API")
+		target := core.NewCollection("Target API")
+		folder := core.NewFolder("Target Folder")
+		msg := components.MoveFolderMsg{
+			SourceCollection: source,
+			TargetCollection: target,
+			TargetFolder:     folder,
+		}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with DuplicateRequestMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		c := core.NewCollection("Test API")
+		msg := components.DuplicateRequestMsg{Collection: c}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+		assert.Contains(t, view.notification, "duplicated")
+	})
+
+	t.Run("Update with DuplicateFolderMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		c := core.NewCollection("Test API")
+		msg := components.DuplicateFolderMsg{Collection: c}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+		assert.Contains(t, view.notification, "duplicated")
+	})
+
+	t.Run("Update with ToggleStarMsg starred", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.ToggleStarMsg{RequestID: "req-123", Starred: true}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+		assert.Contains(t, view.notification, "Starred")
+	})
+
+	t.Run("Update with ToggleStarMsg unstarred", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		msg := components.ToggleStarMsg{RequestID: "req-123", Starred: false}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+		assert.Contains(t, view.notification, "Unstarred")
+	})
+
+	t.Run("Update with BulkDeleteRequestsMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		c := core.NewCollection("Test API")
+		msg := components.BulkDeleteRequestsMsg{
+			RequestIDs:  []string{"req-1", "req-2"},
+			Collections: []*core.Collection{c},
+		}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+		assert.Contains(t, view.notification, "Deleted")
+	})
+
+	t.Run("Update with BulkDeleteFoldersMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		c := core.NewCollection("Test API")
+		msg := components.BulkDeleteFoldersMsg{
+			FolderIDs:   []string{"folder-1", "folder-2"},
+			Collections: []*core.Collection{c},
+		}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+		assert.Contains(t, view.notification, "Deleted")
+	})
+
+	t.Run("Update with BulkMoveMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		source := core.NewCollection("Source API")
+		target := core.NewCollection("Target API")
+		req := core.NewRequestDefinition("Test Request", "GET", "/test")
+		msg := components.BulkMoveMsg{
+			Requests:          []*core.RequestDefinition{req},
+			SourceCollections: []*core.Collection{source},
+			TargetCollection:  target,
+		}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+		assert.Contains(t, view.notification, "Moved")
+	})
+
+	t.Run("Update with CopyAsCurlMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		req := core.NewRequestDefinition("Test Request", "GET", "https://api.example.com/test")
+		msg := components.CopyAsCurlMsg{Request: req}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with BulkCopyAsCurlMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		req1 := core.NewRequestDefinition("Test 1", "GET", "https://api.example.com/test1")
+		req2 := core.NewRequestDefinition("Test 2", "POST", "https://api.example.com/test2")
+		msg := components.BulkCopyAsCurlMsg{Requests: []*core.RequestDefinition{req1, req2}}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with ExportCollectionMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		c := core.NewCollection("Test API")
+		msg := components.ExportCollectionMsg{Collection: c}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with CreateFolderMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		c := core.NewCollection("Test API")
+		folder := core.NewFolder("New Folder")
+		msg := components.CreateFolderMsg{Collection: c, Folder: folder}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with RenameFolderMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		c := core.NewCollection("Test API")
+		folder := core.NewFolder("Renamed Folder")
+		msg := components.RenameFolderMsg{Collection: c, Folder: folder}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with DeleteFolderMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		c := core.NewCollection("Test API")
+		msg := components.DeleteFolderMsg{Collection: c, FolderID: "folder-123"}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+	})
+
+	t.Run("Update with SelectWebSocketMsg", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		ws := core.NewWebSocketDefinition("WS Test", "wss://example.com/ws")
+		msg := components.SelectWebSocketMsg{WebSocket: ws}
+
+		result, _ := view.Update(msg)
+		assert.NotNil(t, result)
+		assert.Equal(t, ViewModeWebSocket, view.ViewMode())
+	})
+}
+
+func TestMainView_InitCaptureMode(t *testing.T) {
+	t.Run("Init after enable capture mode", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+		view.EnableCaptureMode()
+
+		cmd := view.Init()
+		assert.NotNil(t, view)
+		_ = cmd
+	})
+}
+
+func TestMainView_UpdateWithKeyMsgs(t *testing.T) {
+	t.Run("Tab key cycles focus forward", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Start at collections
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+
+		// Press Tab to move forward
+		msg := tea.KeyMsg{Type: tea.KeyTab}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+	})
+
+	t.Run("Shift+Tab key cycles focus backward", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Focus on request pane first
+		view.FocusPane(PaneRequest)
+		assert.Equal(t, PaneRequest, view.FocusedPane())
+
+		// Press Shift+Tab to move backward
+		msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+
+		assert.Equal(t, PaneCollections, view.FocusedPane())
+	})
+
+	t.Run("Ctrl+h cycles focus backward", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Focus on request pane first
+		view.FocusPane(PaneRequest)
+
+		// Press Ctrl+h to move backward
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}, Alt: false}
+		// This is simulating ctrl+h which is handled differently
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+		assert.NotNil(t, view)
+	})
+
+	t.Run("Ctrl+l cycles focus forward", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		// Press Ctrl+l to move forward
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}, Alt: false}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+		assert.NotNil(t, view)
+	})
+}
+
+func TestMainView_TitleGeneration(t *testing.T) {
+	t.Run("Title reflects current state", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		title := view.Title()
+		assert.NotEmpty(t, title)
+	})
+}

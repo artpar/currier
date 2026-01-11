@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/artpar/currier/internal/core"
 	"github.com/artpar/currier/internal/history"
+	"github.com/artpar/currier/internal/proxy"
 	"github.com/artpar/currier/internal/starred"
 	"github.com/stretchr/testify/assert"
 )
@@ -3884,5 +3885,353 @@ func TestCollectionTree_StartMove(t *testing.T) {
 
 		// Just verify that startMove was called without panic
 		assert.NotNil(t, tree)
+	})
+}
+
+func TestCollectionTree_CaptureMode(t *testing.T) {
+	t.Run("moveCaptureCursor moves within bounds", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.captures = []*proxy.CapturedRequest{
+			{Method: "GET", URL: "http://example.com/1"},
+			{Method: "POST", URL: "http://example.com/2"},
+			{Method: "PUT", URL: "http://example.com/3"},
+		}
+		tree.captureCursor = 0
+
+		tree.moveCaptureCursor(1)
+		assert.Equal(t, 1, tree.captureCursor)
+
+		tree.moveCaptureCursor(1)
+		assert.Equal(t, 2, tree.captureCursor)
+
+		// Shouldn't go beyond bounds
+		tree.moveCaptureCursor(1)
+		assert.Equal(t, 2, tree.captureCursor)
+
+		tree.moveCaptureCursor(-1)
+		assert.Equal(t, 1, tree.captureCursor)
+	})
+
+	t.Run("cycleCaptureMethodFilter cycles through methods", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.captureMethodFilter = ""
+
+		tree.cycleCaptureMethodFilter()
+		assert.Equal(t, "GET", tree.captureMethodFilter)
+
+		tree.cycleCaptureMethodFilter()
+		assert.Equal(t, "POST", tree.captureMethodFilter)
+
+		// Keep cycling back to start
+		tree.captureMethodFilter = "OPTIONS"
+		tree.cycleCaptureMethodFilter()
+		assert.Equal(t, "", tree.captureMethodFilter)
+	})
+
+	t.Run("cycleCaptureStatusFilter cycles through status codes", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.captureStatusFilter = ""
+
+		tree.cycleCaptureStatusFilter()
+		assert.Equal(t, "2xx", tree.captureStatusFilter)
+
+		tree.cycleCaptureStatusFilter()
+		assert.Equal(t, "3xx", tree.captureStatusFilter)
+
+		// Keep cycling back to start
+		tree.captureStatusFilter = "5xx"
+		tree.cycleCaptureStatusFilter()
+		assert.Equal(t, "", tree.captureStatusFilter)
+	})
+
+	t.Run("handleCaptureEnter returns message for valid cursor", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		capture := &proxy.CapturedRequest{Method: "GET", URL: "http://example.com"}
+		tree.captures = []*proxy.CapturedRequest{capture}
+		tree.captureCursor = 0
+
+		_, cmd := tree.handleCaptureEnter()
+		assert.NotNil(t, cmd)
+
+		// Execute command and check message type
+		msg := cmd()
+		selectMsg, ok := msg.(SelectCaptureItemMsg)
+		assert.True(t, ok)
+		assert.Equal(t, capture, selectMsg.Capture)
+	})
+
+	t.Run("handleCaptureEnter returns nil for invalid cursor", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.captures = []*proxy.CapturedRequest{}
+		tree.captureCursor = 0
+
+		_, cmd := tree.handleCaptureEnter()
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("captureContentHeight returns positive value", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		height := tree.captureContentHeight()
+		assert.Greater(t, height, 0)
+	})
+}
+
+func TestCollectionTree_HandleCaptureKeyMsg(t *testing.T) {
+	setupCaptureTree := func() *CollectionTree {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCapture
+		tree.captures = []*proxy.CapturedRequest{
+			{Method: "GET", URL: "http://example.com/1", StatusCode: 200},
+			{Method: "POST", URL: "http://example.com/2", StatusCode: 201},
+			{Method: "PUT", URL: "http://example.com/3", StatusCode: 404},
+		}
+		return tree
+	}
+
+	t.Run("j key moves cursor down", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureCursor = 0
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, 1, result.captureCursor)
+	})
+
+	t.Run("k key moves cursor up", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureCursor = 2
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, 1, result.captureCursor)
+	})
+
+	t.Run("H key switches to history view", func(t *testing.T) {
+		tree := setupCaptureTree()
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, ViewHistory, result.viewMode)
+	})
+
+	t.Run("C key switches to collections view", func(t *testing.T) {
+		tree := setupCaptureTree()
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, ViewCollections, result.viewMode)
+	})
+
+	t.Run("Esc clears search filter first", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureSearch = "test"
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyEsc})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, "", result.captureSearch)
+		assert.Equal(t, ViewCapture, result.viewMode)
+	})
+
+	t.Run("Esc switches to collections when no search", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureSearch = ""
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyEsc})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, ViewCollections, result.viewMode)
+	})
+
+	t.Run("slash enters search mode", func(t *testing.T) {
+		tree := setupCaptureTree()
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+		result := updated.(*CollectionTree)
+		assert.True(t, result.searching)
+	})
+
+	t.Run("G goes to last item", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureCursor = 0
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, 2, result.captureCursor)
+	})
+
+	t.Run("gg goes to first item", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureCursor = 2
+
+		// First g
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+		result := updated.(*CollectionTree)
+		assert.True(t, result.gPressed)
+
+		// Second g
+		updated, _ = result.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+		result = updated.(*CollectionTree)
+		assert.Equal(t, 0, result.captureCursor)
+	})
+
+	t.Run("m cycles method filter", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureMethodFilter = ""
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, "GET", result.captureMethodFilter)
+	})
+
+	t.Run("s cycles status filter", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureStatusFilter = ""
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, "2xx", result.captureStatusFilter)
+	})
+
+	t.Run("x clears all filters", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureMethodFilter = "GET"
+		tree.captureStatusFilter = "2xx"
+		tree.captureHostFilter = "example.com"
+		tree.captureSearch = "test"
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, "", result.captureMethodFilter)
+		assert.Equal(t, "", result.captureStatusFilter)
+		assert.Equal(t, "", result.captureHostFilter)
+		assert.Equal(t, "", result.captureSearch)
+	})
+
+	t.Run("X clears all captures", func(t *testing.T) {
+		tree := setupCaptureTree()
+		assert.Equal(t, 3, len(tree.captures))
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, 0, len(result.captures))
+	})
+
+	t.Run("p returns toggle proxy command", func(t *testing.T) {
+		tree := setupCaptureTree()
+
+		_, cmd := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		_, ok := msg.(ToggleProxyMsg)
+		assert.True(t, ok)
+	})
+
+	t.Run("e returns export capture command", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureCursor = 0
+
+		_, cmd := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		exportMsg, ok := msg.(ExportCaptureMsg)
+		assert.True(t, ok)
+		assert.Equal(t, tree.captures[0], exportMsg.Capture)
+	})
+
+	t.Run("Enter selects current capture", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureCursor = 1
+
+		_, cmd := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyEnter})
+		assert.NotNil(t, cmd)
+		msg := cmd()
+		selectMsg, ok := msg.(SelectCaptureItemMsg)
+		assert.True(t, ok)
+		assert.Equal(t, tree.captures[1], selectMsg.Capture)
+	})
+
+	t.Run("h and l are no-op in capture mode", func(t *testing.T) {
+		tree := setupCaptureTree()
+		tree.captureCursor = 1
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+		result := updated.(*CollectionTree)
+		assert.Equal(t, 1, result.captureCursor)
+
+		updated, _ = result.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+		result = updated.(*CollectionTree)
+		assert.Equal(t, 1, result.captureCursor)
+	})
+
+	t.Run("r refreshes captures", func(t *testing.T) {
+		tree := setupCaptureTree()
+
+		updated, _ := tree.handleCaptureKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+		result := updated.(*CollectionTree)
+		assert.NotNil(t, result)
+	})
+}
+
+func TestCollectionTree_RenderCaptureView(t *testing.T) {
+	t.Run("renders capture view with items", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCapture
+		tree.captures = []*proxy.CapturedRequest{
+			{Method: "GET", URL: "http://example.com/api/users", StatusCode: 200, Host: "example.com"},
+			{Method: "POST", URL: "http://example.com/api/users", StatusCode: 201, Host: "example.com"},
+			{Method: "DELETE", URL: "http://example.com/api/users/1", StatusCode: 404, Host: "example.com"},
+		}
+		tree.Focus()
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+		assert.Contains(t, view, "Capture")
+	})
+
+	t.Run("renders empty capture view", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCapture
+		tree.captures = []*proxy.CapturedRequest{}
+		tree.Focus()
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renders capture view with filters", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCapture
+		tree.captureMethodFilter = "GET"
+		tree.captureStatusFilter = "2xx"
+		tree.captures = []*proxy.CapturedRequest{
+			{Method: "GET", URL: "http://example.com/api/users", StatusCode: 200},
+		}
+		tree.Focus()
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
+	})
+
+	t.Run("renders capture view with different status codes", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+		tree.viewMode = ViewCapture
+		tree.captures = []*proxy.CapturedRequest{
+			{Method: "GET", URL: "http://example.com/1", StatusCode: 200},
+			{Method: "GET", URL: "http://example.com/2", StatusCode: 301},
+			{Method: "GET", URL: "http://example.com/3", StatusCode: 404},
+			{Method: "GET", URL: "http://example.com/4", StatusCode: 500},
+		}
+		tree.Focus()
+
+		view := tree.View()
+		assert.NotEmpty(t, view)
 	})
 }
