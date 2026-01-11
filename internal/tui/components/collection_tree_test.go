@@ -4422,3 +4422,99 @@ func TestCollectionTree_FilterCycling(t *testing.T) {
 		assert.NotEqual(t, "", tree.historyStatusFilter)
 	})
 }
+
+func TestCollectionTree_HandleEnterEdgeCases(t *testing.T) {
+	t.Run("handles enter on folder", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		// Create collection with folder
+		coll := core.NewCollection("Test")
+		folder := coll.AddFolder("Folder1")
+		folder.AddRequest(core.NewRequestDefinition("Req", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+
+		// Expand collection to make folder visible
+		tree.expanded[coll.ID()] = true
+		tree.rebuildItems()
+
+		// Navigate to folder and press enter
+		tree.cursor = 1 // folder position
+		tree.handleEnter()
+
+		// Folder should be expanded
+		assert.True(t, tree.expanded[folder.ID()])
+	})
+
+	t.Run("handles enter when cursor out of bounds", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		tree.cursor = -1
+		_, cmd := tree.handleEnter()
+		assert.Nil(t, cmd)
+
+		tree.cursor = 1000
+		_, cmd = tree.handleEnter()
+		assert.Nil(t, cmd)
+	})
+
+	t.Run("handles enter on request", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		// Create collection with request
+		coll := core.NewCollection("Test")
+		coll.AddRequest(core.NewRequestDefinition("Req", "GET", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+		tree.expanded[coll.ID()] = true
+		tree.rebuildItems()
+
+		// Navigate to request
+		tree.cursor = 1 // request position
+		_, cmd := tree.handleEnter()
+		assert.NotNil(t, cmd)
+	})
+}
+
+func TestCollectionTree_HandleDeleteEdgeCases(t *testing.T) {
+	t.Run("handles delete when cursor out of bounds", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		tree.cursor = -1
+		_, cmd := tree.handleDeleteRequest()
+		assert.Nil(t, cmd)
+
+		tree.cursor = 1000
+		_, cmd = tree.handleDeleteRequest()
+		assert.Nil(t, cmd)
+	})
+}
+
+func TestCollectionTree_EnterVisualModeEdge(t *testing.T) {
+	t.Run("enters visual mode with items", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		coll := core.NewCollection("Test")
+		coll.AddRequest(core.NewRequestDefinition("Req1", "GET", "http://example.com"))
+		coll.AddRequest(core.NewRequestDefinition("Req2", "POST", "http://example.com"))
+		tree.SetCollections([]*core.Collection{coll})
+		tree.expanded[coll.ID()] = true
+		tree.rebuildItems()
+
+		tree.cursor = 1
+		tree.enterVisualMode()
+		assert.True(t, tree.selectMode)
+	})
+
+	t.Run("does nothing with empty items", func(t *testing.T) {
+		tree := NewCollectionTree()
+		tree.SetSize(80, 30)
+
+		tree.enterVisualMode()
+		assert.False(t, tree.selectMode)
+	})
+}
+

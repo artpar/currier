@@ -8745,3 +8745,71 @@ func TestMainView_FocusedState(t *testing.T) {
 	})
 }
 
+func TestMainView_EnvSwitcherToggle(t *testing.T) {
+	t.Run("closes env switcher with escape", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		view.showEnvSwitcher = true
+		msg := tea.KeyMsg{Type: tea.KeyEsc}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+		assert.False(t, view.showEnvSwitcher)
+	})
+
+	t.Run("env switcher navigation with keys", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		view.showEnvSwitcher = true
+		view.envList = []filesystem.EnvironmentMeta{
+			{Name: "env1"},
+			{Name: "env2"},
+			{Name: "env3"},
+		}
+		view.envCursor = 0
+
+		// Navigate down
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+		assert.Equal(t, 1, view.envCursor)
+	})
+
+	t.Run("env switcher stays at end", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		view.showEnvSwitcher = true
+		view.envList = []filesystem.EnvironmentMeta{
+			{Name: "env1"},
+			{Name: "env2"},
+		}
+		view.envCursor = 1
+
+		// Navigate down, should stay at end
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+		assert.Equal(t, 1, view.envCursor)
+	})
+
+	t.Run("env switcher navigate up", func(t *testing.T) {
+		view := NewMainView()
+		view.SetSize(120, 40)
+
+		view.showEnvSwitcher = true
+		view.envList = []filesystem.EnvironmentMeta{
+			{Name: "env1"},
+			{Name: "env2"},
+			{Name: "env3"},
+		}
+		view.envCursor = 1
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+		updated, _ := view.Update(msg)
+		view = updated.(*MainView)
+		assert.Equal(t, 0, view.envCursor)
+	})
+}
+

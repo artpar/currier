@@ -1824,3 +1824,106 @@ func TestCaptureStoreStatsEmpty(t *testing.T) {
 		t.Errorf("Expected 0 avg duration, got %v", stats.AvgDuration)
 	}
 }
+
+func TestProxyHandler_CaptureError(t *testing.T) {
+	store := NewCaptureStore(100)
+	config := NewConfig()
+	handler := NewProxyHandler(store, nil, config)
+
+	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+	testErr := http.ErrNotSupported
+	startTime := time.Now()
+
+	handler.captureError(req, []byte("request body"), testErr, startTime, false)
+
+	// Verify capture was stored
+	if store.Count() != 1 {
+		t.Errorf("Expected 1 capture, got %d", store.Count())
+	}
+
+	captures := store.All()
+	if len(captures) != 1 {
+		t.Fatal("Expected 1 capture in store")
+	}
+
+	capture := captures[0]
+	if capture.Error == "" {
+		t.Error("Expected error to be captured")
+	}
+	if capture.StatusCode != 0 {
+		t.Errorf("Expected status 0 for error, got %d", capture.StatusCode)
+	}
+}
+
+func TestProxyHandler_CaptureErrorHTTPS(t *testing.T) {
+	store := NewCaptureStore(100)
+	config := NewConfig()
+	handler := NewProxyHandler(store, nil, config)
+
+	req, _ := http.NewRequest("POST", "https://secure.example.com/api", strings.NewReader("body"))
+	testErr := http.ErrServerClosed
+	startTime := time.Now()
+
+	handler.captureError(req, []byte("request body"), testErr, startTime, true)
+
+	// Verify HTTPS capture was stored
+	if store.Count() != 1 {
+		t.Errorf("Expected 1 capture, got %d", store.Count())
+	}
+
+	captures := store.All()
+	capture := captures[0]
+	if !capture.IsHTTPS {
+		t.Error("Expected HTTPS flag to be true")
+	}
+}
+
+func TestServer_TLSConfig(t *testing.T) {
+	t.Run("returns nil when HTTPS is disabled", func(t *testing.T) {
+		server, err := NewServer(
+			WithListenAddr(":0"),
+			WithHTTPS(false),
+		)
+		if err != nil {
+			t.Fatalf("Failed to create server: %v", err)
+		}
+
+		if server.TLSConfig() != nil {
+			t.Error("Expected TLSConfig to be nil when HTTPS is disabled")
+		}
+	})
+}
+
+func TestServer_CACertPEM(t *testing.T) {
+	t.Run("returns empty bytes when HTTPS is disabled", func(t *testing.T) {
+		server, err := NewServer(
+			WithListenAddr(":0"),
+			WithHTTPS(false),
+		)
+		if err != nil {
+			t.Fatalf("Failed to create server: %v", err)
+		}
+
+		certPEM := server.CACertPEM()
+		if len(certPEM) != 0 {
+			t.Error("Expected empty CACertPEM when HTTPS is disabled")
+		}
+	})
+}
+
+func TestServer_ExportCACert(t *testing.T) {
+	t.Run("fails when HTTPS is disabled", func(t *testing.T) {
+		server, err := NewServer(
+			WithListenAddr(":0"),
+			WithHTTPS(false),
+		)
+		if err != nil {
+			t.Fatalf("Failed to create server: %v", err)
+		}
+
+		err = server.ExportCACert("/tmp/test-cert.pem")
+		if err == nil {
+			t.Error("Expected error when exporting CA cert with HTTPS disabled")
+		}
+	})
+}
